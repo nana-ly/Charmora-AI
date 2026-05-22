@@ -33,3 +33,5 @@ Thumbs.db
 # Logs
 *.log
 
+# Local-only workspace
+local-only/
