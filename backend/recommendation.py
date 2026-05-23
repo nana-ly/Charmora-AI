@@ -1,8 +1,8 @@
 """推荐后端的核心逻辑模块。
 
 本模块从 FastAPI 接口层拆出，负责需求解析、结构化筛选、候选商品兜底、
-推荐理由生成和商品卡片字段组装。阶段 3 先提供可单独测试的规则版本，
-后续阶段再接入成员 C 的真实商品数据和 RAG 检索函数。
+推荐理由生成和商品卡片字段组装。当前实现使用本地商品数据和临时检索函数，
+后续可以替换为真实商品数据来源和 RAG 检索能力。
 """
 
 import json
@@ -74,7 +74,7 @@ EMPTY_FILTERS: dict[str, Any] = {
 
 
 def load_products(dataset_dir: Path = DATASET_DIR) -> list[dict[str, Any]]:
-    """从本地数据集加载商品 JSON，作为成员 C 数据未接入前的商品来源。"""
+    """从本地数据集加载商品 JSON，作为推荐流程的商品来源。"""
     loaded_products: list[dict[str, Any]] = []
 
     for product_file in sorted(dataset_dir.glob("*/data/*.json")):

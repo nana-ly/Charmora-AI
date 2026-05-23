@@ -24,7 +24,7 @@ def read_root() -> dict[str, str]:
 
 @app.get("/health")
 def read_health() -> dict[str, str]:
-    """健康检查接口，阶段 1 用它验证 FastAPI 服务是否可访问。"""
+    """健康检查接口，用于验证 FastAPI 服务是否可访问。"""
     return {"status": "ok"}
 
 
