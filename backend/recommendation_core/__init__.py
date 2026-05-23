@@ -14,7 +14,7 @@ from recommendation_core.ranking import (
     structured_filter,
 )
 from recommendation_core.response_builder import build_response_item
-from recommendation_core.retrieval import build_searchable_text, retrieve
+from retrieval.keyword import build_searchable_text, retrieve
 
 __all__ = [
     "CATEGORY_RULES",
@@ -32,4 +32,3 @@ __all__ = [
     "retrieve",
     "structured_filter",
 ]
-

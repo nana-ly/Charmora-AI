@@ -12,7 +12,7 @@ from recommendation_core.fallback import fallback_items
 from recommendation_core.filters import EMPTY_FILTERS, extract_filters
 from recommendation_core.ranking import choose_candidates
 from recommendation_core.response_builder import build_response_item
-from recommendation_core.retrieval import retrieve
+from retrieval.keyword import retrieve
 
 
 def recommend_products(
@@ -50,4 +50,3 @@ def recommend_products(
             "items": fallback_items(query),
             "error": str(exc),
         }
-
