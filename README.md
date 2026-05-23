@@ -1,22 +1,22 @@
 # ShopGuide RAG
 
-RAG-based multimodal ecommerce shopping guide AI Agent.
+基于 RAG 的多模态电商智能导购 AI Agent。
 
-## Structure
+## 项目结构
 
 ```text
 ShopGuide-RAG/
-├─ android/                  # Native Android client
-├─ backend/                  # FastAPI backend service
-├─ docs/                     # Project docs, API docs, setup guide
-├─ ecommerce_agent_dataset/  # Product dataset
-├─ eval/                     # Evaluation datasets and scripts
-└─ scripts/                  # Project helper scripts
+├── android/                  # Android 原生客户端
+├── backend/                  # FastAPI 后端服务
+├── docs/                     # 项目文档、API 文档和部署/启动指南
+├── ecommerce_agent_dataset/  # 商品数据集
+├── eval/                     # 评测数据集和评测脚本
+└── scripts/                  # 项目辅助脚本
 ```
 
-## Quick Start
+## 快速开始
 
-Backend:
+启动后端服务：
 
 ```powershell
 cd backend
@@ -24,13 +24,13 @@ uv sync
 uv run fastapi dev main.py
 ```
 
-Open API docs:
+打开 API 文档：
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
-Run checks:
+运行检查：
 
 ```powershell
 cd backend
@@ -38,10 +38,9 @@ uv run pytest
 uv run ruff check .
 ```
 
-## Docs
+## 文档
 
-- [Setup guide](docs/setup.md)
-- [API draft](docs/api.md)
-- [Project brief](docs/项目说明.md)
-- [Android MVP plan](docs/Android原生3天最小闭环方案.md)
-
+- [环境配置指南](docs/setup.md)
+- [API 草案](docs/api.md)
+- [项目说明](docs/项目说明.md)
+- [Android MVP 方案](docs/Android原生3天最小闭环方案.md)
