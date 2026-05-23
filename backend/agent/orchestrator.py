@@ -53,7 +53,8 @@ class SimpleAgentRunner:
             items=items,
             state={
                 "intent": decision.intent.value,
-                "preferences": state.preferences,
+                # 返回状态快照，避免后续轮次修改内存状态时污染已返回的响应对象。
+                "preferences": state.preferences.copy(),
             },
         )
 
@@ -63,6 +64,7 @@ class SimpleAgentRunner:
         result: RecommendResponse,
     ) -> None:
         """保存推荐结果和结构化偏好，供后续追问或调整使用。"""
+        state.last_query = result.query
         state.last_filters = result.filters
         state.last_items = result.items
         state.preferences.update(result.filters.model_dump(exclude_none=True))
@@ -74,8 +76,8 @@ class SimpleAgentRunner:
     ) -> tuple[str, list[ProductCard]]:
         """处理基于上一轮的偏好调整。"""
         state.preferences["price_preference"] = "lower"
-        category = state.preferences.get("category")
-        follow_up_query = f"{category or ''} {message}".strip()
+        # 跟进偏好通常省略品类和预算，需要拼回上一轮原始需求，避免检索跳到无关品类。
+        follow_up_query = f"{state.last_query or ''} {message}".strip()
         result = self.recommendation_tool.run(follow_up_query or message)
         self._save_recommendation_result(state, result)
         state.preferences["price_preference"] = "lower"
@@ -94,4 +96,3 @@ class SimpleAgentRunner:
     def _handle_clarify(self) -> tuple[str, list[ProductCard]]:
         """信息不足时追问关键条件。"""
         return "可以告诉我想买的品类、预算和最在意的点吗？", []
-

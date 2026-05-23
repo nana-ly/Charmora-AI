@@ -64,6 +64,22 @@ def test_simple_agent_runner_uses_previous_state_for_follow_up():
     assert response.state["intent"] == AgentIntent.UPDATE_PREFERENCE.value
     assert response.state["preferences"]["price_preference"] == "lower"
     assert response.items
+    assert response.state["preferences"]["category"] == "数码电子"
+    assert all(item.product_id.startswith("p_digital_") for item in response.items)
+
+
+def test_simple_agent_runner_returns_state_snapshot():
+    runner = SimpleAgentRunner(
+        store=InMemoryConversationStore(),
+        recommendation_tool=RecommendationTool(),
+        policy=AgentPolicy(),
+    )
+
+    first_response = runner.run("session-1", "预算9000以内的拍照手机")
+    runner.run("session-1", "再便宜一点")
+
+    assert first_response.state["preferences"]["category"] == "数码电子"
+    assert "price_preference" not in first_response.state["preferences"]
 
 
 def test_simple_agent_runner_explains_last_recommendation():
@@ -93,4 +109,3 @@ def test_simple_agent_runner_clarifies_when_intent_missing():
     assert response.state["intent"] == AgentIntent.CLARIFY.value
     assert "预算" in response.reply
     assert response.items == []
-

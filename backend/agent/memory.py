@@ -18,6 +18,7 @@ class ConversationState(BaseModel):
     session_id: str
     messages: list[ChatMessage] = Field(default_factory=list)
     preferences: dict[str, Any] = Field(default_factory=dict)
+    last_query: str | None = None
     last_filters: RecommendFilters | None = None
     last_items: list[ProductCard] = Field(default_factory=list)
     last_intent: str | None = None
@@ -41,4 +42,3 @@ class InMemoryConversationStore:
     def save(self, state: ConversationState) -> None:
         """保存会话状态。"""
         self._states[state.session_id] = state
-
