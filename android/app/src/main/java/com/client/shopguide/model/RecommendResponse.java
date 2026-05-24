@@ -3,14 +3,13 @@ package com.client.shopguide.model;
 import java.util.List;
 
 /**
- * 推荐响应体
+ * 推荐响应体，匹配后端 /recommend 返回格式
  */
 public class RecommendResponse {
 
     private String query;
     private Filters filters;
-    private String answer;
-    private List<Product> products;
+    private List<Item> items;
 
     public RecommendResponse() {
     }
@@ -31,20 +30,12 @@ public class RecommendResponse {
         this.filters = filters;
     }
 
-    public String getAnswer() {
-        return answer;
+    public List<Item> getItems() {
+        return items;
     }
 
-    public void setAnswer(String answer) {
-        this.answer = answer;
-    }
-
-    public List<Product> getProducts() {
-        return products;
-    }
-
-    public void setProducts(List<Product> products) {
-        this.products = products;
+    public void setItems(List<Item> items) {
+        this.items = items;
     }
 
     /**
@@ -89,6 +80,69 @@ public class RecommendResponse {
 
         public void setKeywords(List<String> keywords) {
             this.keywords = keywords;
+        }
+    }
+
+    /**
+     * 后端返回的单条商品数据，字段与后端 recommendation.py 一致
+     */
+    public static class Item {
+        private String product_id;
+        private String title;
+        private String brand;
+        private double price;
+        private String reason;
+        private String evidence;
+
+        public Item() {
+        }
+
+        public String getProduct_id() {
+            return product_id;
+        }
+
+        public void setProduct_id(String product_id) {
+            this.product_id = product_id;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public void setTitle(String title) {
+            this.title = title;
+        }
+
+        public String getBrand() {
+            return brand;
+        }
+
+        public void setBrand(String brand) {
+            this.brand = brand;
+        }
+
+        public double getPrice() {
+            return price;
+        }
+
+        public void setPrice(double price) {
+            this.price = price;
+        }
+
+        public String getReason() {
+            return reason;
+        }
+
+        public void setReason(String reason) {
+            this.reason = reason;
+        }
+
+        public String getEvidence() {
+            return evidence;
+        }
+
+        public void setEvidence(String evidence) {
+            this.evidence = evidence;
         }
     }
 }

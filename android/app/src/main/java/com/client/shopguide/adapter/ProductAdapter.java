@@ -39,10 +39,24 @@ public class ProductAdapter extends RecyclerView.Adapter<ProductAdapter.ViewHold
         Product product = productList.get(position);
 
         holder.tvTitle.setText(product.getTitle());
-        holder.tvBrandCategory.setText(product.getBrand() + " | " + product.getCategory() + " / " + product.getSub_category());
+
+        String category = product.getCategory();
+        String subCategory = product.getSub_category();
+        if (category != null && !category.isEmpty()) {
+            holder.tvBrandCategory.setText(product.getBrand() + " | " + category + " / " + subCategory);
+        } else {
+            holder.tvBrandCategory.setText(product.getBrand());
+        }
+
         holder.tvPrice.setText("¥" + String.format("%.0f", product.getBase_price()));
         holder.tvReason.setText(product.getReason());
-        holder.tvMatchedEvidence.setText(product.getMatched_evidence());
+
+        String evidence = product.getMatched_evidence();
+        if (evidence != null && !evidence.isEmpty()) {
+            holder.tvMatchedEvidence.setText(evidence);
+        } else {
+            holder.tvMatchedEvidence.setText("");
+        }
     }
 
     @Override

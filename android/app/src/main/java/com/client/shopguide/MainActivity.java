@@ -1,122 +1,347 @@
 package com.client.shopguide;
 
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
-import android.view.View;
+import android.os.Looper;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.client.shopguide.adapter.ProductAdapter;
+import com.client.shopguide.adapter.ChatAdapter;
+import com.client.shopguide.model.ChatRequest;
+import com.client.shopguide.model.ChatResponse;
+import com.client.shopguide.model.ChatUiMessage;
 import com.client.shopguide.model.Product;
+import com.client.shopguide.model.RecommendResponse;
+import com.client.shopguide.network.ChatSseClient;
+import com.google.android.material.chip.Chip;
+import com.google.android.material.chip.ChipGroup;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class MainActivity extends AppCompatActivity {
 
-    EditText etQuery;
-    Button btnRecommend;
-    RecyclerView rvProducts;
-    TextView tvResultTitle;
-    TextView tvLoading;
+    private static final String PREFS_NAME = "shopguide_chat";
+    private static final String KEY_SESSION_ID = "session_id";
+    private static final String WELCOME_MESSAGE = "你好！告诉我品类、预算和偏好，我来帮你推荐商品。你也可以追问「再便宜一点」或「为什么推荐第一款」。";
 
-    ProductAdapter adapter;
-    List<Product> productList;
+    /** 联调阶段后端若仅有 POST /chat，保持 false；上线 SSE 后改为 true */
+    private static final boolean USE_SSE_STREAM = false;
+
+    private EditText etMessage;
+    private Button btnSend;
+    private Button btnNewChat;
+    private ChipGroup chipGroupExamples;
+    private RecyclerView rvChat;
+
+    private ChatAdapter chatAdapter;
+    private final List<ChatUiMessage> chatMessages = new ArrayList<>();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private SharedPreferences prefs;
+    private String sessionId;
+    private boolean isSending = false;
+
+    private ChatSseClient chatSseClient;
+    private int streamingAssistantIndex = -1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        etQuery = findViewById(R.id.etQuery);
-        btnRecommend = findViewById(R.id.btnRecommend);
-        rvProducts = findViewById(R.id.rvProducts);
-        tvResultTitle = findViewById(R.id.tvResultTitle);
-        tvLoading = findViewById(R.id.tvLoading);
+        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        chatSseClient = new ChatSseClient();
 
-        productList = new ArrayList<>();
-        adapter = new ProductAdapter(productList);
+        etMessage = findViewById(R.id.etMessage);
+        btnSend = findViewById(R.id.btnSend);
+        btnNewChat = findViewById(R.id.btnNewChat);
+        chipGroupExamples = findViewById(R.id.chipGroupExamples);
+        rvChat = findViewById(R.id.rvChat);
 
-        rvProducts.setLayoutManager(new LinearLayoutManager(this));
-        rvProducts.setAdapter(adapter);
+        chatAdapter = new ChatAdapter(chatMessages);
+        rvChat.setLayoutManager(new LinearLayoutManager(this));
+        rvChat.setAdapter(chatAdapter);
 
-        btnRecommend.setOnClickListener(new View.OnClickListener() {
+        sessionId = prefs.getString(KEY_SESSION_ID, null);
+        if (sessionId == null) {
+            startNewSession(false);
+        } else {
+            addWelcomeMessage();
+        }
+
+        btnSend.setOnClickListener(v -> sendCurrentMessage());
+        btnNewChat.setOnClickListener(v -> startNewSession(true));
+
+        etMessage.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEND) {
+                sendCurrentMessage();
+                return true;
+            }
+            return false;
+        });
+
+        setupExampleChips();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        chatSseClient.cancel();
+    }
+
+    private void setupExampleChips() {
+        chipGroupExamples.setOnCheckedStateChangeListener((group, checkedIds) -> {
+            if (checkedIds.isEmpty()) {
+                return;
+            }
+            Chip chip = findViewById(checkedIds.get(0));
+            if (chip == null) {
+                return;
+            }
+
+            String text = chip.getText().toString();
+            if ("拍照手机".equals(text)) {
+                etMessage.setText("预算9000以内，想买拍照好的手机");
+            } else if ("抗初老精华".equals(text)) {
+                etMessage.setText("敏感肌能用的抗初老精华");
+            } else if ("凉快T恤".equals(text)) {
+                etMessage.setText("夏天通勤穿的凉快 T 恤");
+            } else if ("速溶咖啡".equals(text)) {
+                etMessage.setText("新手想买精品速溶咖啡");
+            }
+            etMessage.setSelection(etMessage.getText().length());
+            chipGroupExamples.clearCheck();
+        });
+    }
+
+    private void startNewSession(boolean showToast) {
+        sessionId = UUID.randomUUID().toString();
+        prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
+        chatSseClient.cancel();
+        chatMessages.clear();
+        streamingAssistantIndex = -1;
+        addWelcomeMessage();
+        setSendingState(false);
+        if (showToast) {
+            Toast.makeText(this, "已开始新对话", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void addWelcomeMessage() {
+        chatMessages.add(ChatUiMessage.assistant(WELCOME_MESSAGE));
+        chatAdapter.notifyDataSetChanged();
+        scrollToBottom();
+    }
+
+    private void sendCurrentMessage() {
+        String message = etMessage.getText().toString().trim();
+        if (message.isEmpty()) {
+            Toast.makeText(this, "请输入消息", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (isSending) {
+            return;
+        }
+
+        if (sessionId == null) {
+            startNewSession(false);
+        }
+
+        etMessage.setText("");
+        chatMessages.add(ChatUiMessage.user(message));
+        chatMessages.add(ChatUiMessage.loading());
+        chatAdapter.notifyDataSetChanged();
+        scrollToBottom();
+
+        setSendingState(true);
+        if (USE_SSE_STREAM) {
+            sendViaSse(message);
+        } else {
+            sendViaRest(message);
+        }
+    }
+
+    /**
+     * 优先走 SSE；后端尚未提供 /chat/stream 时自动回退 POST /chat。
+     */
+    private void sendViaSse(String message) {
+        chatSseClient.streamChat(sessionId, message, new ChatSseClient.StreamListener() {
             @Override
-            public void onClick(View v) {
-                String query = etQuery.getText().toString().trim();
+            public void onTextDelta(String content) {
+                mainHandler.post(() -> appendStreamingText(content));
+            }
 
-                if (query.isEmpty()) {
-                    Toast.makeText(MainActivity.this, "请输入需求", Toast.LENGTH_SHORT).show();
-                    return;
-                }
+            @Override
+            public void onItems(List<RecommendResponse.Item> items) {
+                mainHandler.post(() -> appendProductItems(items));
+            }
 
-                // 显示加载状态
-                btnRecommend.setEnabled(false);
-                btnRecommend.setText("正在推荐...");
-                tvLoading.setVisibility(View.VISIBLE);
-                tvResultTitle.setVisibility(View.GONE);
+            @Override
+            public void onDone() {
+                mainHandler.post(() -> finishStreamingResponse());
+            }
 
-                // 模拟网络请求延迟，1.5秒后展示 Mock 数据
-                new Handler().postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        loadMockData();
-                    }
-                }, 1500);
+            @Override
+            public void onError(String errorMessage) {
+                mainHandler.post(() -> {
+                    removeLoadingMessage();
+                    chatMessages.add(ChatUiMessage.assistant(errorMessage));
+                    chatAdapter.notifyDataSetChanged();
+                    scrollToBottom();
+                    setSendingState(false);
+                });
+            }
+
+            @Override
+            public void onFallbackToRest() {
+                mainHandler.post(() -> sendViaRest(message));
             }
         });
     }
 
-    /**
-     * 加载 Mock 数据（Day 1 用，Day 2 会替换为 Retrofit 真实请求）
-     */
-    private void loadMockData() {
-        List<Product> mockProducts = new ArrayList<>();
+    private void sendViaRest(String message) {
+        ChatRequest request = new ChatRequest(sessionId, message);
 
-        mockProducts.add(new Product(
-                "p_digital_001",
-                "Apple iPhone 17 Pro 6.3英寸 A19 Pro 256GB 全网通旗舰手机",
-                "Apple 苹果",
-                "数码电子",
-                "智能手机",
-                8999.0,
-                "这款手机搭载 A19 Pro 芯片，适合视频剪辑；摄像头系统支持高质量拍摄，符合你的拍照和创作需求。",
-                "A19 Pro芯片、专业视频剪辑、摄像头系统升级"
-        ));
+        RetrofitClient.getInstance()
+                .getApiService()
+                .chat(request)
+                .enqueue(new Callback<ChatResponse>() {
+                    @Override
+                    public void onResponse(Call<ChatResponse> call, Response<ChatResponse> response) {
+                        if (!response.isSuccessful() || response.body() == null) {
+                            onFailure(call, new RuntimeException("HTTP " + response.code()));
+                            return;
+                        }
+                        handleChatResponse(response.body());
+                    }
 
-        mockProducts.add(new Product(
-                "p_digital_002",
-                "Samsung Galaxy S25 Ultra 12GB+256GB AI智能影像手机",
-                "Samsung 三星",
-                "数码电子",
-                "智能手机",
-                7999.0,
-                "2亿像素摄像头，AI影像增强，支持8K视频录制，拍照和视频创作能力出色。",
-                "2亿像素、8K视频、AI影像增强"
-        ));
+                    @Override
+                    public void onFailure(Call<ChatResponse> call, Throwable t) {
+                        removeLoadingMessage();
+                        chatMessages.add(ChatUiMessage.assistant("网络错误，请确认后端已启动（http://127.0.0.1:8000）"));
+                        chatAdapter.notifyDataSetChanged();
+                        scrollToBottom();
+                        setSendingState(false);
+                    }
+                });
+    }
 
-        mockProducts.add(new Product(
-                "p_digital_003",
-                "Xiaomi 15 Pro 骁龙8 Elite 12GB+512GB 专业影像旗舰",
-                "Xiaomi 小米",
-                "数码电子",
-                "智能手机",
-                5999.0,
-                "徕卡专业影像系统，骁龙8 Elite芯片性能强劲，适合拍照和游戏，性价比高。",
-                "徕卡影像、骁龙8 Elite、高性价比"
-        ));
+    private void appendStreamingText(String delta) {
+        removeLoadingMessage();
 
-        // 更新数据后恢复界面
-        adapter.updateData(mockProducts);
-        tvResultTitle.setVisibility(View.VISIBLE);
-        tvLoading.setVisibility(View.GONE);
-        btnRecommend.setEnabled(true);
-        btnRecommend.setText("开始推荐");
+        if (streamingAssistantIndex < 0 || streamingAssistantIndex >= chatMessages.size()) {
+            ChatUiMessage assistant = ChatUiMessage.assistant("");
+            assistant.setStreaming(true);
+            chatMessages.add(assistant);
+            streamingAssistantIndex = chatMessages.size() - 1;
+        }
+
+        ChatUiMessage assistant = chatMessages.get(streamingAssistantIndex);
+        assistant.appendContent(delta);
+        chatAdapter.notifyItemChanged(streamingAssistantIndex);
+        scrollToBottom();
+    }
+
+    private void appendProductItems(List<RecommendResponse.Item> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        for (RecommendResponse.Item item : items) {
+            chatMessages.add(ChatUiMessage.product(toProduct(item)));
+        }
+        chatAdapter.notifyDataSetChanged();
+        scrollToBottom();
+    }
+
+    private void finishStreamingResponse() {
+        if (streamingAssistantIndex >= 0 && streamingAssistantIndex < chatMessages.size()) {
+            ChatUiMessage assistant = chatMessages.get(streamingAssistantIndex);
+            assistant.setStreaming(false);
+            if (assistant.getContent() == null || assistant.getContent().isEmpty()) {
+                assistant.setContent("已完成推荐。");
+            }
+            chatAdapter.notifyItemChanged(streamingAssistantIndex);
+        }
+        streamingAssistantIndex = -1;
+        setSendingState(false);
+        scrollToBottom();
+    }
+
+    private void handleChatResponse(ChatResponse response) {
+        removeLoadingMessage();
+
+        if (response.getSession_id() != null) {
+            sessionId = response.getSession_id();
+            prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
+        }
+
+        String reply = response.getReply();
+        if (reply == null || reply.isEmpty()) {
+            reply = "已完成处理。";
+        }
+        chatMessages.add(ChatUiMessage.assistant(reply));
+
+        List<RecommendResponse.Item> items = response.getItems();
+        if (items != null) {
+            for (RecommendResponse.Item item : items) {
+                chatMessages.add(ChatUiMessage.product(toProduct(item)));
+            }
+        }
+
+        chatAdapter.notifyDataSetChanged();
+        scrollToBottom();
+        setSendingState(false);
+    }
+
+    private void removeLoadingMessage() {
+        for (int i = chatMessages.size() - 1; i >= 0; i--) {
+            if (chatMessages.get(i).getType() == ChatUiMessage.TYPE_LOADING) {
+                chatMessages.remove(i);
+                chatAdapter.notifyItemRemoved(i);
+                if (streamingAssistantIndex > i) {
+                    streamingAssistantIndex--;
+                }
+                break;
+            }
+        }
+    }
+
+    private Product toProduct(RecommendResponse.Item item) {
+        Product product = new Product();
+        product.setProduct_id(item.getProduct_id());
+        product.setTitle(item.getTitle());
+        product.setBrand(item.getBrand());
+        product.setBase_price(item.getPrice());
+        product.setReason(item.getReason());
+        product.setMatched_evidence(item.getEvidence());
+        product.setCategory("");
+        product.setSub_category("");
+        return product;
+    }
+
+    private void setSendingState(boolean sending) {
+        isSending = sending;
+        btnSend.setEnabled(!sending);
+        btnSend.setText(sending ? "发送中" : "发送");
+    }
+
+    private void scrollToBottom() {
+        if (chatMessages.isEmpty()) {
+            return;
+        }
+        rvChat.post(() -> rvChat.smoothScrollToPosition(chatMessages.size() - 1));
     }
 }
