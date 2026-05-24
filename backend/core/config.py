@@ -6,6 +6,9 @@
 
 from dataclasses import dataclass, field
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 
 @dataclass(frozen=True)
@@ -39,8 +42,12 @@ class AppConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
 
 
-def load_app_config() -> AppConfig:
-    """从环境变量加载配置，并提供适合本地开发的安全默认值。"""
+def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] / ".env") -> AppConfig:
+    """从 .env 和环境变量加载配置，并提供适合本地开发的安全默认值。"""
+    if env_file is not None:
+        # 不覆盖已存在的环境变量，便于测试和部署平台显式传入配置。
+        load_dotenv(env_file, override=False)
+
     return AppConfig(
         retriever_mode=os.getenv("RETRIEVER_MODE", "keyword"),
         default_top_k=int(os.getenv("DEFAULT_TOP_K", "3")),
@@ -52,4 +59,3 @@ def load_app_config() -> AppConfig:
             timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "8")),
         ),
     )
-

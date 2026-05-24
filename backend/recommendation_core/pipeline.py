@@ -16,6 +16,18 @@ from recommendation_core.reason import ReasonService
 from retrieval.keyword import retrieve
 
 
+def create_default_reason_service() -> ReasonService:
+    """创建默认推荐理由服务。
+
+    服务会读取 .env/环境变量中的 LLM 配置；如果未开启 LLM 或缺少 API Key，
+    LLMReasonService 会自动回退到模板理由，保证推荐主链路稳定。
+    """
+    from core.config import load_app_config
+    from llm.reason_service import LLMReasonService
+
+    return LLMReasonService(config=load_app_config().llm)
+
+
 def recommend_products(
     query: str,
     product_source: list[dict[str, Any]] | None = None,
@@ -25,13 +37,14 @@ def recommend_products(
 ) -> dict[str, Any]:
     """组装完整推荐链路，并在检索为空或异常时返回稳定兜底结果。"""
     try:
+        active_reason_service = reason_service or create_default_reason_service()
         filters = extract_filters(query)
         # None 表示使用默认商品库，空列表表示外部数据源暂时无商品，需要走兜底。
         selected_products = products if product_source is None else product_source
         candidates = choose_candidates(selected_products, filters)
         retrieved_items = retrieve_func(query, candidates=candidates, top_k=top_k)
         items = [
-            build_response_item(query, item, reason_service=reason_service)
+            build_response_item(query, item, reason_service=active_reason_service)
             for item in retrieved_items
         ]
 
