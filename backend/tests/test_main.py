@@ -73,3 +73,22 @@ def test_recommend_supports_budget_without_suffix():
     assert "续航" in payload["filters"]["keywords"]
     assert "学生" in payload["filters"]["keywords"]
     assert len(payload["items"]) == 3
+
+
+def test_chat_returns_agent_response_and_state():
+    response = client.post(
+        "/chat",
+        json={
+            "session_id": "test-chat-session",
+            "message": "预算9000以内的拍照手机",
+        },
+    )
+
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["session_id"] == "test-chat-session"
+    assert payload["reply"]
+    assert payload["state"]["intent"] == "recommend"
+    assert payload["state"]["preferences"]["category"] == "数码电子"
+    assert len(payload["items"]) == 3
