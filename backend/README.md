@@ -13,6 +13,7 @@
 - `GET /health`：健康检查。
 - `POST /recommend`：单轮商品推荐。
 - `POST /chat`：多轮导购对话，支持推荐、偏好调整、推荐解释和信息追问。
+- `POST /chat/stream`：多轮导购第一版事件级 SSE 流式接口。
 
 ---
 
@@ -94,11 +95,22 @@ Invoke-RestMethod `
   -Body '{"session_id":"demo-session","message":"预算9000以内的拍照手机"}'
 ```
 
+多轮导购 SSE：
+
+```powershell
+curl.exe -N `
+  -H "Accept: text/event-stream" `
+  -H "Content-Type: application/json; charset=utf-8" `
+  -X POST "http://127.0.0.1:8000/chat/stream" `
+  -d '{"session_id":"demo-session","message":"预算9000以内的拍照手机"}'
+```
+
 验收重点：
 
 - `/health` 返回 `{"status":"ok"}`。
 - `/recommend` 返回 `query`、`filters`、`items`。
 - `/chat` 返回 `session_id`、`reply`、`items`、`state`。
+- `/chat/stream` 返回 `text/event-stream`，正常事件顺序为 `start -> delta -> items -> state -> done`，业务异常事件顺序为 `start -> error -> done`。
 - `items` 中的商品卡片稳定包含 `product_id`、`title`、`brand`、`price`、`reason`、`evidence`。
 
 ---

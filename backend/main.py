@@ -1,4 +1,8 @@
+import logging
+from collections.abc import Iterator
+
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 
 from agent.memory import InMemoryConversationStore
 from agent.orchestrator import SimpleAgentRunner
@@ -7,9 +11,11 @@ from agent.tools import RecommendationTool
 from recommendation import recommend_products
 from schemas.chat import ChatRequest, ChatResponse
 from schemas.recommend import RecommendRequest
+from sse import sse_event
 
 
 app = FastAPI(title="ShopGuide RAG API")
+logger = logging.getLogger(__name__)
 
 agent_runner = SimpleAgentRunner(
     store=InMemoryConversationStore(),
@@ -43,3 +49,41 @@ def recommend(request: RecommendRequest) -> dict:
 def chat(request: ChatRequest) -> ChatResponse:
     """多轮对话接口：通过轻量 Agent 维护会话状态并调用推荐工具。"""
     return agent_runner.run(request.session_id, request.message)
+
+
+@app.post("/chat/stream")
+def chat_stream(request: ChatRequest) -> StreamingResponse:
+    """多轮对话 SSE 接口：按事件推送回复、商品和状态。"""
+
+    def event_generator() -> Iterator[str]:
+        yield sse_event("start", {"session_id": request.session_id})
+
+        try:
+            response = agent_runner.run(request.session_id, request.message)
+            success_events = [
+                sse_event("delta", {"text": response.reply}),
+                sse_event(
+                    "items",
+                    {"items": [item.model_dump() for item in response.items]},
+                ),
+                sse_event("state", {"state": response.state}),
+            ]
+            yield from success_events
+        except Exception:
+            logger.exception("chat stream failed")
+            yield sse_event(
+                "error",
+                {"message": "服务暂时不可用，请稍后再试。"},
+            )
+        finally:
+            yield sse_event("done")
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

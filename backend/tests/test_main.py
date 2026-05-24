@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
-from main import app
+from main import agent_runner, app
+from schemas.chat import ChatResponse
 
 
 client = TestClient(app)
@@ -92,3 +93,81 @@ def test_chat_returns_agent_response_and_state():
     assert payload["state"]["intent"] == "recommend"
     assert payload["state"]["preferences"]["category"] == "数码电子"
     assert len(payload["items"]) == 3
+
+
+def test_chat_stream_returns_sse_events():
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={
+            "session_id": "test-stream-session",
+            "message": "预算9000以内的拍照手机",
+        },
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        body = response.read().decode("utf-8")
+
+    start_index = body.index("event: start")
+    delta_index = body.index("event: delta")
+    items_index = body.index("event: items")
+    state_index = body.index("event: state")
+    done_index = body.index("event: done")
+
+    assert start_index < delta_index < items_index < state_index < done_index
+    assert '"session_id": "test-stream-session"' in body
+    assert '"product_id":' in body
+
+
+def test_chat_stream_returns_error_event_when_agent_fails(monkeypatch):
+    def fail_run(session_id: str, message: str):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(agent_runner, "run", fail_run)
+
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={
+            "session_id": "test-stream-session",
+            "message": "预算9000以内的拍照手机",
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = response.read().decode("utf-8")
+
+    assert "event: error" in body
+    assert "服务暂时不可用" in body
+    assert body.index("event: start") < body.index("event: error")
+    assert body.index("event: error") < body.index("event: done")
+
+
+def test_chat_stream_returns_error_before_success_events_when_serialization_fails(
+    monkeypatch,
+):
+    def run_with_unserializable_state(session_id: str, message: str):
+        return ChatResponse(
+            session_id=session_id,
+            reply="这段回复不应先发送给客户端。",
+            items=[],
+            state={"bad": object()},
+        )
+
+    monkeypatch.setattr(agent_runner, "run", run_with_unserializable_state)
+
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={
+            "session_id": "test-stream-session",
+            "message": "预算9000以内的拍照手机",
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = response.read().decode("utf-8")
+
+    assert "event: delta" not in body
+    assert "event: items" not in body
+    assert "event: state" not in body
+    assert body.index("event: start") < body.index("event: error")
+    assert body.index("event: error") < body.index("event: done")

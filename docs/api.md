@@ -249,6 +249,67 @@ clarify
 
 ---
 
+## Chat Stream
+
+### 接口定位
+
+`POST /chat/stream` 是多轮导购的第一版 SSE 流式接口。它复用 `/chat` 的请求体和业务语义，响应采用事件级 SSE，不承诺 token 级文本流式输出。
+
+### 请求
+
+```http
+POST /chat/stream
+Content-Type: application/json
+Accept: text/event-stream
+```
+
+```json
+{
+  "session_id": "demo-session",
+  "message": "预算9000以内的拍照手机"
+}
+```
+
+请求字段与 `POST /chat` 相同：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `session_id` | `string` | 是 | 会话 ID，同一个用户连续对话应保持一致。 |
+| `message` | `string` | 是 | 用户当前轮输入。 |
+
+### 响应
+
+```http
+Content-Type: text/event-stream
+```
+
+正常事件顺序固定为：
+
+```text
+start -> delta -> items -> state -> done
+```
+
+异常事件顺序固定为：
+
+```text
+start -> error -> done
+```
+
+请求体验证失败仍由 FastAPI 返回 `422`，不会进入 SSE 流。进入流式处理后的业务异常通过 `event: error` 返回，并随后发送 `event: done`。
+
+### 事件说明
+
+| 事件 | 说明 |
+| --- | --- |
+| `start` | 流式响应开始，通常包含 `session_id`。 |
+| `delta` | 事件级回复片段，用于逐步展示导购回复；第一版不承诺 token 级粒度。 |
+| `items` | 当前轮推荐商品列表。商品字段保持 `product_id`、`title`、`brand`、`price`、`reason`、`evidence`。 |
+| `state` | 当前会话状态，与 `/chat` 的 `state` 语义一致。 |
+| `error` | 进入流式处理后的业务异常信息。 |
+| `done` | 本次 SSE 响应结束。 |
+
+---
+
 ## 稳定字段
 
 以下商品字段名固定。后续可以增加字段，但不要改名或删除字段。
@@ -355,12 +416,12 @@ GET  /
 GET  /health
 POST /recommend
 POST /chat
+POST /chat/stream
 ```
 
 ## 后续可扩展接口
 
 ```http
-POST /chat/stream
 POST /images/upload
 GET  /products/{product_id}
 POST /knowledge/documents/upload
