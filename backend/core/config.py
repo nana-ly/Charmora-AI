@@ -44,9 +44,11 @@ class RAGConfig:
 class AppConfig:
     """后端应用级配置。
 
+    agent_runner 控制 /chat 使用规则版 Runner 还是 LangGraph Runner；
     retriever_mode 用来在关键词检索和向量检索之间切换；default_top_k 控制默认返回数量。
     """
 
+    agent_runner: str = "simple"
     retriever_mode: str = "vector"
     default_top_k: int = 3
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -60,6 +62,7 @@ def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] 
         load_dotenv(env_file, override=False)
 
     return AppConfig(
+        agent_runner=os.getenv("AGENT_RUNNER", "simple"),
         retriever_mode=os.getenv("RETRIEVER_MODE", "vector"),
         default_top_k=int(os.getenv("DEFAULT_TOP_K", "3")),
         llm=LLMConfig(

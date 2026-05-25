@@ -13,7 +13,7 @@
 - `GET /health`：健康检查。
 - `POST /rag/search`：RAG 向量检索调试接口。
 - `POST /recommend`：单轮商品推荐，默认使用 RAG 向量检索，`RETRIEVER_MODE=keyword` 时切回关键词检索。
-- `POST /chat`：多轮导购对话，支持推荐、偏好调整、推荐解释和信息追问。
+- `POST /chat`：多轮导购对话，默认使用规则版 `SimpleAgentRunner`；`AGENT_RUNNER=langgraph` 时切换到 LangGraph 首版 Runner，响应字段保持兼容。
 - `POST /chat/stream`：多轮导购第一版事件级 SSE 流式接口。
 
 ---
@@ -54,6 +54,7 @@ http://127.0.0.1:8000/docs
 可复制 `.env.example` 作为本地配置参考：
 
 ```text
+AGENT_RUNNER=simple
 RETRIEVER_MODE=vector
 DEFAULT_TOP_K=3
 
@@ -71,6 +72,8 @@ LLM_TIMEOUT_SECONDS=8
 ```
 
 默认配置不依赖外部大模型服务。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会尝试调用 LLM；调用失败会自动回退到模板理由，不影响接口返回。
+
+`AGENT_RUNNER=simple` 使用当前规则版编排器，适合本地稳定闭环；`AGENT_RUNNER=langgraph` 启用 LangGraph 首版编排器。Runner 切换只影响后端内部 `/chat` 编排方式，不改变 `/chat`、`/chat/stream` 请求体、响应字段和商品卡片字段。
 
 `RETRIEVER_MODE=vector` 时，`/recommend` 会复用 `rag/.chroma/products` 的 ChromaDB 商品向量索引，并通过 `embedding_url`、`embedding_api`、`embedding_model`、`embedding_dimensions` 调用兼容 OpenAI Embeddings API 的服务生成查询向量。`RETRIEVER_MODE=keyword` 时，推荐链路使用本地关键词检索，可离线运行。
 
@@ -129,7 +132,7 @@ curl.exe -N `
 - `/health` 返回 `{"status":"ok"}`。
 - `/rag/search` 返回 `query`、`items`，用于检查向量召回结果和 evidence。
 - `/recommend` 返回 `query`、`filters`、`items`。
-- `/chat` 返回 `session_id`、`reply`、`items`、`state`。
+- `/chat` 返回 `session_id`、`reply`、`items`、`state`；`AGENT_RUNNER=simple` 和 `AGENT_RUNNER=langgraph` 下字段保持一致。
 - `/chat/stream` 返回 `text/event-stream`，正常事件顺序为 `start -> delta -> items -> state -> done`，业务异常事件顺序为 `start -> error -> done`。
 - `items` 中的商品卡片稳定包含 `product_id`、`title`、`brand`、`price`、`reason`、`evidence`。
 
@@ -146,7 +149,7 @@ backend/
   recommendation_core/     推荐核心链路
   retrieval/               检索抽象、关键词检索、RAG 向量检索适配器
   llm/                     可选 LLM 理由生成
-  agent/                   轻量多轮 Agent
+  agent/                   多轮 Agent、Runner 工厂和 LangGraph 首版编排器
   tests/                   后端测试
 ```
 

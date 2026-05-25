@@ -6,9 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from agent.memory import InMemoryConversationStore
-from agent.orchestrator import SimpleAgentRunner
-from agent.policy import AgentPolicy
+from agent.runner import create_agent_runner
 from agent.tools import RecommendationTool
 from core.config import load_app_config
 from recommendation import recommend_products
@@ -73,10 +71,8 @@ def run_recommendation(query: str, top_k: int = 3) -> dict:
     return recommend_products(query, top_k=top_k, retrieve_func=retrieve_func)
 
 
-agent_runner = SimpleAgentRunner(
-    store=InMemoryConversationStore(),
+agent_runner = create_agent_runner(
     recommendation_tool=RecommendationTool(recommend_func=run_recommendation),
-    policy=AgentPolicy(),
 )
 
 

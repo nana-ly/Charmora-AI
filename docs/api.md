@@ -180,6 +180,8 @@ Content-Type: application/json
 
 `POST /chat` 是多轮导购接口。它在 `/recommend` 的基础上增加 `session_id`、会话状态和意图处理，用于支持追问、偏好调整和推荐解释。
 
+Runner 切换属于后端内部实现：`AGENT_RUNNER=simple` 使用规则版 Runner，`AGENT_RUNNER=langgraph` 使用 LangGraph 首版 Runner。两种模式下请求字段、HTTP 状态码、响应字段和商品卡片字段保持一致。
+
 ### 请求
 
 ```http
@@ -246,6 +248,17 @@ update_preference
 explain
 clarify
 ```
+
+### 兼容性约定
+
+```text
+AGENT_RUNNER -> simple/langgraph -> ChatResponse
+```
+
+- 客户端不需要感知 Runner 类型。
+- LangGraph 首版不新增客户端必填字段，也不改变 `state.intent` 取值。
+- `/chat` 通过现有 `RecommendationTool` 调用推荐入口；RAG、关键词检索和 fallback 仍由推荐链路负责。
+- 商品卡片继续稳定包含 `product_id`、`title`、`brand`、`price`、`reason`、`evidence`。
 
 ---
 

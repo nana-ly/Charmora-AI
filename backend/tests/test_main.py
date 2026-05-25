@@ -2,6 +2,8 @@ from fastapi.testclient import TestClient
 
 import main
 from main import agent_runner, app
+from agent.runner import create_agent_runner
+from core.config import AppConfig
 from schemas.chat import ChatResponse
 
 
@@ -211,6 +213,42 @@ def test_chat_returns_agent_response_and_state():
     assert payload["state"]["intent"] == "recommend"
     assert payload["state"]["preferences"]["category"] == "数码电子"
     assert len(payload["items"]) == 3
+
+
+def test_chat_keeps_response_contract_with_langgraph_runner(monkeypatch):
+    monkeypatch.setattr(
+        main,
+        "agent_runner",
+        create_agent_runner(
+            config=AppConfig(agent_runner="langgraph"),
+            recommendation_tool=main.RecommendationTool(
+                recommend_func=main.run_recommendation,
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/chat",
+        json={
+            "session_id": "test-chat-langgraph-session",
+            "message": "预算9000以内的拍照手机",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"session_id", "reply", "items", "state"}
+    assert payload["session_id"] == "test-chat-langgraph-session"
+    assert payload["state"]["intent"] == "recommend"
+    assert len(payload["items"]) == 3
+    assert {
+        "product_id",
+        "title",
+        "brand",
+        "price",
+        "reason",
+        "evidence",
+    } <= payload["items"][0].keys()
 
 
 def test_chat_stream_returns_sse_events():

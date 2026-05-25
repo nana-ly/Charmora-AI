@@ -2,6 +2,7 @@ from agent.memory import InMemoryConversationStore
 from agent.orchestrator import SimpleAgentRunner
 from agent.policy import AgentIntent, AgentPolicy
 from agent.tools import RecommendationTool
+from core.config import AppConfig, load_app_config
 
 
 def test_conversation_store_creates_and_updates_state():
@@ -105,6 +106,108 @@ def test_simple_agent_runner_clarifies_when_intent_missing():
     )
 
     response = runner.run("session-1", "你好")
+
+    assert response.state["intent"] == AgentIntent.CLARIFY.value
+    assert "预算" in response.reply
+    assert response.items == []
+
+
+def test_load_app_config_reads_agent_runner(monkeypatch):
+    monkeypatch.setenv("AGENT_RUNNER", "langgraph")
+
+    config = load_app_config(env_file=None)
+
+    assert config.agent_runner == "langgraph"
+
+
+def test_create_agent_runner_defaults_to_simple_runner():
+    from agent.runner import create_agent_runner
+
+    runner = create_agent_runner(config=AppConfig(agent_runner="simple"))
+
+    assert isinstance(runner, SimpleAgentRunner)
+
+
+def test_create_agent_runner_can_create_langgraph_runner():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.runner import create_agent_runner
+
+    runner = create_agent_runner(config=AppConfig(agent_runner="langgraph"))
+
+    assert isinstance(runner, LangGraphAgentRunner)
+
+
+def test_create_agent_runner_rejects_unknown_runner():
+    import pytest
+
+    from agent.runner import create_agent_runner
+
+    with pytest.raises(ValueError, match="AGENT_RUNNER"):
+        create_agent_runner(config=AppConfig(agent_runner="unknown"))
+
+
+def test_langgraph_agent_runner_recommends_and_keeps_state():
+    from agent.graph.runner import LangGraphAgentRunner
+
+    runner = LangGraphAgentRunner(
+        store=InMemoryConversationStore(),
+        recommendation_tool=RecommendationTool(),
+        policy=AgentPolicy(),
+    )
+
+    response = runner.run("langgraph-session-1", "预算9000以内的拍照手机")
+
+    assert response.session_id == "langgraph-session-1"
+    assert len(response.items) == 3
+    assert response.state["intent"] == AgentIntent.RECOMMEND.value
+    assert response.state["preferences"]["category"] == "数码电子"
+
+
+def test_langgraph_agent_runner_uses_previous_state_for_follow_up():
+    from agent.graph.runner import LangGraphAgentRunner
+
+    runner = LangGraphAgentRunner(
+        store=InMemoryConversationStore(),
+        recommendation_tool=RecommendationTool(),
+        policy=AgentPolicy(),
+    )
+
+    runner.run("langgraph-session-1", "预算9000以内的拍照手机")
+    response = runner.run("langgraph-session-1", "再便宜一点")
+
+    assert response.state["intent"] == AgentIntent.UPDATE_PREFERENCE.value
+    assert response.state["preferences"]["price_preference"] == "lower"
+    assert response.items
+    assert response.state["preferences"]["category"] == "数码电子"
+
+
+def test_langgraph_agent_runner_explains_last_recommendation():
+    from agent.graph.runner import LangGraphAgentRunner
+
+    runner = LangGraphAgentRunner(
+        store=InMemoryConversationStore(),
+        recommendation_tool=RecommendationTool(),
+        policy=AgentPolicy(),
+    )
+
+    runner.run("langgraph-session-1", "预算9000以内的拍照手机")
+    response = runner.run("langgraph-session-1", "为什么推荐第一款")
+
+    assert response.state["intent"] == AgentIntent.EXPLAIN.value
+    assert "因为" in response.reply
+    assert response.items
+
+
+def test_langgraph_agent_runner_clarifies_when_intent_missing():
+    from agent.graph.runner import LangGraphAgentRunner
+
+    runner = LangGraphAgentRunner(
+        store=InMemoryConversationStore(),
+        recommendation_tool=RecommendationTool(),
+        policy=AgentPolicy(),
+    )
+
+    response = runner.run("langgraph-session-1", "你好")
 
     assert response.state["intent"] == AgentIntent.CLARIFY.value
     assert "预算" in response.reply
