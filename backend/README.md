@@ -1,6 +1,6 @@
 # ShopGuide RAG 后端
 
-本目录是 ShopGuide RAG 的 FastAPI 后端，提供商品推荐和多轮导购接口。当前后端默认使用本地商品 JSON 数据集和关键词检索，可以离线跑通最小闭环；如果开启 LLM 配置，会尝试用 OpenAI 兼容接口生成更自然的推荐理由。
+本目录是 ShopGuide RAG 的 FastAPI 后端，提供商品推荐和多轮导购接口。当前后端默认使用 RAG 向量检索召回商品；如果向量检索不可用，推荐链路会自动回退到本地关键词检索。开启 LLM 配置后，会尝试用 OpenAI 兼容接口生成更自然的推荐理由。
 
 更多实现细节见：[后端技术文档](../docs/后端技术文档.md)
 接口字段契约见：[API 接口契约](../docs/api.md)
@@ -11,7 +11,8 @@
 
 - `GET /`：服务基本信息。
 - `GET /health`：健康检查。
-- `POST /recommend`：单轮商品推荐。
+- `POST /rag/search`：RAG 向量检索调试接口。
+- `POST /recommend`：单轮商品推荐，默认使用 RAG 向量检索，`RETRIEVER_MODE=keyword` 时切回关键词检索。
 - `POST /chat`：多轮导购对话，支持推荐、偏好调整、推荐解释和信息追问。
 - `POST /chat/stream`：多轮导购第一版事件级 SSE 流式接口。
 
@@ -53,8 +54,14 @@ http://127.0.0.1:8000/docs
 可复制 `.env.example` 作为本地配置参考：
 
 ```text
-RETRIEVER_MODE=keyword
+RETRIEVER_MODE=vector
 DEFAULT_TOP_K=3
+
+# RAG 向量检索配置
+embedding_url=https://dashscope.aliyuncs.com/compatible-mode/v1
+embedding_api=
+embedding_model=text-embedding-v4
+embedding_dimensions=1024
 
 LLM_ENABLED=false
 LLM_API_KEY=
@@ -64,6 +71,8 @@ LLM_TIMEOUT_SECONDS=8
 ```
 
 默认配置不依赖外部大模型服务。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会尝试调用 LLM；调用失败会自动回退到模板理由，不影响接口返回。
+
+`RETRIEVER_MODE=vector` 时，`/recommend` 会复用 `rag/.chroma/products` 的 ChromaDB 商品向量索引，并通过 `embedding_url`、`embedding_api`、`embedding_model`、`embedding_dimensions` 调用兼容 OpenAI Embeddings API 的服务生成查询向量。`RETRIEVER_MODE=keyword` 时，推荐链路使用本地关键词检索，可离线运行。
 
 ---
 
@@ -83,6 +92,16 @@ Invoke-RestMethod `
   -Method Post `
   -ContentType "application/json; charset=utf-8" `
   -Body '{"query":"预算9000以内，想买拍照和剪视频好的手机"}'
+```
+
+RAG 检索调试：
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/rag/search" `
+  -Method Post `
+  -ContentType "application/json; charset=utf-8" `
+  -Body '{"query":"适合熬夜后修护的抗初老精华","top_k":5}'
 ```
 
 多轮导购：
@@ -108,6 +127,7 @@ curl.exe -N `
 验收重点：
 
 - `/health` 返回 `{"status":"ok"}`。
+- `/rag/search` 返回 `query`、`items`，用于检查向量召回结果和 evidence。
 - `/recommend` 返回 `query`、`filters`、`items`。
 - `/chat` 返回 `session_id`、`reply`、`items`、`state`。
 - `/chat/stream` 返回 `text/event-stream`，正常事件顺序为 `start -> delta -> items -> state -> done`，业务异常事件顺序为 `start -> error -> done`。
@@ -124,7 +144,7 @@ backend/
   core/                    应用配置和错误类型
   schemas/                 推荐、商品、对话接口模型
   recommendation_core/     推荐核心链路
-  retrieval/               检索抽象、关键词检索、向量检索占位
+  retrieval/               检索抽象、关键词检索、RAG 向量检索适配器
   llm/                     可选 LLM 理由生成
   agent/                   轻量多轮 Agent
   tests/                   后端测试

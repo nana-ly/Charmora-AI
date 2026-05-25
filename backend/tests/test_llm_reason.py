@@ -104,6 +104,10 @@ def test_recommendation_reason_accepts_injected_service():
 def test_load_app_config_reads_dotenv_file(tmp_path, monkeypatch):
     """配置加载应支持读取 .env 文件，便于本地通过环境变量开启 LLM。"""
     for key in [
+        "embedding_url",
+        "embedding_api",
+        "embedding_model",
+        "embedding_dimensions",
         "LLM_ENABLED",
         "LLM_API_KEY",
         "LLM_BASE_URL",
@@ -121,6 +125,10 @@ def test_load_app_config_reads_dotenv_file(tmp_path, monkeypatch):
                 "LLM_BASE_URL=https://example.test/v1",
                 "LLM_MODEL=test-model",
                 "LLM_TIMEOUT_SECONDS=3",
+                "embedding_url=https://embedding.example.test/v1",
+                "embedding_api=embedding-key",
+                "embedding_model=test-embedding",
+                "embedding_dimensions=512",
             ]
         ),
         encoding="utf-8",
@@ -133,6 +141,10 @@ def test_load_app_config_reads_dotenv_file(tmp_path, monkeypatch):
     assert config.llm.base_url == "https://example.test/v1"
     assert config.llm.model == "test-model"
     assert config.llm.timeout_seconds == 3
+    assert config.rag.embedding_url == "https://embedding.example.test/v1"
+    assert config.rag.embedding_api == "embedding-key"
+    assert config.rag.embedding_model == "test-embedding"
+    assert config.rag.embedding_dimensions == 512
 
 
 def test_recommend_products_uses_default_llm_reason_service(monkeypatch):

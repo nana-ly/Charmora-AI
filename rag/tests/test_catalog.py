@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from shopguide_rag import chroma_store
 from shopguide_rag.catalog import build_product_document, load_products, product_metadata
 
 
@@ -36,3 +37,39 @@ def test_product_metadata_contains_filterable_fields():
     assert "sku_count" in metadata
     assert "faq_count" in metadata
     assert "review_count" in metadata
+
+
+def test_product_vector_store_passes_embedding_configuration(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+
+    class FakeEmbeddingService:
+        def __init__(
+            self,
+            base_url=None,
+            api_key=None,
+            model=None,
+            dimensions=None,
+        ):
+            captured["base_url"] = base_url
+            captured["api_key"] = api_key
+            captured["model"] = model
+            captured["dimensions"] = dimensions
+
+    monkeypatch.setattr(chroma_store, "EmbeddingService", FakeEmbeddingService)
+
+    store = chroma_store.ProductVectorStore(
+        persist_dir=tmp_path,
+        embedding_base_url="https://embedding.example.test/v1",
+        embedding_api_key="test-key",
+        embedding_model="test-embedding",
+        embedding_dimensions=512,
+    )
+
+    assert store.embedding_base_url == "https://embedding.example.test/v1"
+    assert store.embedding_api_key == "test-key"
+    assert captured == {
+        "base_url": "https://embedding.example.test/v1",
+        "api_key": "test-key",
+        "model": "test-embedding",
+        "dimensions": 512,
+    }
