@@ -2,10 +2,9 @@
 <androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/cardProduct"
-    android:layout_width="160dp"
+    android:layout_width="150dp"
     android:layout_height="wrap_content"
     android:layout_marginEnd="10dp"
-    android:layout_marginBottom="4dp"
     app:cardCornerRadius="10dp"
     app:cardElevation="2dp"
     app:cardBackgroundColor="#FFFFFF"
@@ -17,7 +16,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
-        <!-- 商品占位图 -->
         <ImageView
             android:id="@+id/ivProductImage"
             android:layout_width="match_parent"
@@ -26,39 +24,35 @@
             android:background="#F0F0F0"
             android:contentDescription="商品图片" />
 
-        <!-- 右上角加入购物车 -->
         <Button
             android:id="@+id/btnAddToCart"
             style="@style/Widget.Material3.Button.Icon"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
             android:layout_gravity="top|end"
             android:layout_marginTop="4dp"
             android:layout_marginEnd="4dp"
             android:backgroundTint="#FF5722"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
             android:minWidth="0dp"
             android:minHeight="0dp"
-            android:padding="4dp"
+            android:padding="3dp"
             app:icon="@android:drawable/ic_menu_add"
-            app:iconSize="18dp"
+            app:iconSize="16dp"
             app:iconTint="#FFFFFF" />
 
-        <!-- 底部信息区 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
             android:orientation="vertical"
             android:background="#FFFFFF"
-            android:padding="8dp">
+            android:padding="6dp">
 
             <TextView
                 android:id="@+id/tvTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="13sp"
+                android:textSize="12sp"
                 android:textStyle="bold"
                 android:textColor="#333333"
                 android:maxLines="1"
@@ -69,19 +63,9 @@
                 android:id="@+id/tvPrice"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="15sp"
+                android:textSize="14sp"
                 android:textStyle="bold"
                 android:textColor="#FF5722" />
-
-            <TextView
-                android:id="@+id/tvBrandCategory"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="11sp"
-                android:textColor="#999999"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:visibility="gone" />
 
         </LinearLayout>
 

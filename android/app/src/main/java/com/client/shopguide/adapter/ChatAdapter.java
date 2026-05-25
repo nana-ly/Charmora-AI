@@ -3,9 +3,12 @@ package com.client.shopguide.adapter;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.client.shopguide.R;
@@ -41,6 +44,8 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 return new UserViewHolder(inflater.inflate(R.layout.item_chat_user, parent, false));
             case ChatUiMessage.TYPE_ASSISTANT:
                 return new AssistantViewHolder(inflater.inflate(R.layout.item_chat_assistant, parent, false));
+            case ChatUiMessage.TYPE_PRODUCT_ROW:
+                return new ProductRowViewHolder(inflater.inflate(R.layout.item_chat_product_row, parent, false));
             case ChatUiMessage.TYPE_PRODUCT:
                 return new ProductViewHolder(inflater.inflate(R.layout.item_product, parent, false));
             case ChatUiMessage.TYPE_LOADING:
@@ -59,11 +64,18 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             case ChatUiMessage.TYPE_ASSISTANT:
                 String text = message.getContent();
                 if (message.isStreaming() && (text == null || text.isEmpty())) {
-                    text = "▌";
+                    text = "\u258C";
                 } else if (message.isStreaming()) {
-                    text = text + " ▌";
+                    text = text + " \u258C";
                 }
                 ((AssistantViewHolder) holder).tvAssistantMessage.setText(text);
+                break;
+            case ChatUiMessage.TYPE_PRODUCT_ROW:
+                List<Product> products = message.getProductList();
+                if (products != null && !products.isEmpty()) {
+                    ProductCardAdapter cardAdapter = new ProductCardAdapter(products);
+                    ((ProductRowViewHolder) holder).rvProductRow.setAdapter(cardAdapter);
+                }
                 break;
             case ChatUiMessage.TYPE_PRODUCT:
                 bindProduct((ProductViewHolder) holder, message.getProduct());
@@ -77,21 +89,15 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     private void bindProduct(ProductViewHolder holder, Product product) {
-        if (product == null) {
-            return;
-        }
-
+        if (product == null) return;
+        holder.ivProductImage.setImageResource(R.drawable.ic_placeholder_product);
         holder.tvTitle.setText(product.getTitle());
-        holder.tvBrandCategory.setText(product.getBrand());
         holder.tvPrice.setText("¥" + String.format("%.0f", product.getBase_price()));
-        holder.tvReason.setText(product.getReason());
-
-        String evidence = product.getMatched_evidence();
-        if (evidence != null && !evidence.isEmpty()) {
-            holder.tvMatchedEvidence.setText(evidence);
-        } else {
-            holder.tvMatchedEvidence.setText("");
-        }
+        holder.btnAddToCart.setOnClickListener(v -> {
+            android.widget.Toast.makeText(v.getContext(),
+                    product.getTitle() + " 已加入购物车",
+                    android.widget.Toast.LENGTH_SHORT).show();
+        });
     }
 
     @Override
@@ -101,7 +107,6 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     static class UserViewHolder extends RecyclerView.ViewHolder {
         TextView tvUserMessage;
-
         UserViewHolder(@NonNull View itemView) {
             super(itemView);
             tvUserMessage = itemView.findViewById(R.id.tvUserMessage);
@@ -110,7 +115,6 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     static class AssistantViewHolder extends RecyclerView.ViewHolder {
         TextView tvAssistantMessage;
-
         AssistantViewHolder(@NonNull View itemView) {
             super(itemView);
             tvAssistantMessage = itemView.findViewById(R.id.tvAssistantMessage);
@@ -119,27 +123,35 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     static class LoadingViewHolder extends RecyclerView.ViewHolder {
         TextView tvLoadingMessage;
-
         LoadingViewHolder(@NonNull View itemView) {
             super(itemView);
             tvLoadingMessage = itemView.findViewById(R.id.tvLoadingMessage);
         }
     }
 
+    static class ProductRowViewHolder extends RecyclerView.ViewHolder {
+        RecyclerView rvProductRow;
+        ProductRowViewHolder(@NonNull View itemView) {
+            super(itemView);
+            rvProductRow = itemView.findViewById(R.id.rvProductRow);
+            rvProductRow.setLayoutManager(
+                    new LinearLayoutManager(itemView.getContext(),
+                            LinearLayoutManager.HORIZONTAL, false));
+        }
+    }
+
     static class ProductViewHolder extends RecyclerView.ViewHolder {
+        ImageView ivProductImage;
         TextView tvTitle;
-        TextView tvBrandCategory;
         TextView tvPrice;
-        TextView tvReason;
-        TextView tvMatchedEvidence;
+        Button btnAddToCart;
 
         ProductViewHolder(@NonNull View itemView) {
             super(itemView);
+            ivProductImage = itemView.findViewById(R.id.ivProductImage);
             tvTitle = itemView.findViewById(R.id.tvTitle);
-            tvBrandCategory = itemView.findViewById(R.id.tvBrandCategory);
             tvPrice = itemView.findViewById(R.id.tvPrice);
-            tvReason = itemView.findViewById(R.id.tvReason);
-            tvMatchedEvidence = itemView.findViewById(R.id.tvMatchedEvidence);
+            btnAddToCart = itemView.findViewById(R.id.btnAddToCart);
         }
     }
 }

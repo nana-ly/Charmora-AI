@@ -12,10 +12,10 @@
         android:layout_gravity="end"
         android:layout_marginStart="56dp"
         android:background="@drawable/bg_bubble_user"
+        android:lineSpacingExtra="2dp"
         android:paddingHorizontal="14dp"
         android:paddingVertical="10dp"
-        android:textColor="@color/chat_user_text"
-        android:textSize="15sp"
-        android:lineSpacingExtra="2dp" />
+        android:textColor="@color/white"
+        android:textSize="15sp" />
 
 </FrameLayout>

@@ -3,7 +3,7 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="chat_bg">#F5F5F5</color>
-    <color name="chat_user_bubble">#FF5722</color>
+    <color name="chat_user_bubble">#663AB6</color>
     <color name="chat_assistant_bubble">#FFFFFF</color>
     <color name="chat_user_text">#FFFFFF</color>
     <color name="chat_assistant_text">#333333</color>

@@ -3,7 +3,9 @@ package com.client.shopguide.adapter;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -38,25 +40,9 @@ public class ProductAdapter extends RecyclerView.Adapter<ProductAdapter.ViewHold
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         Product product = productList.get(position);
 
+        holder.ivProductImage.setImageResource(R.drawable.ic_placeholder_product);
         holder.tvTitle.setText(product.getTitle());
-
-        String category = product.getCategory();
-        String subCategory = product.getSub_category();
-        if (category != null && !category.isEmpty()) {
-            holder.tvBrandCategory.setText(product.getBrand() + " | " + category + " / " + subCategory);
-        } else {
-            holder.tvBrandCategory.setText(product.getBrand());
-        }
-
         holder.tvPrice.setText("¥" + String.format("%.0f", product.getBase_price()));
-        holder.tvReason.setText(product.getReason());
-
-        String evidence = product.getMatched_evidence();
-        if (evidence != null && !evidence.isEmpty()) {
-            holder.tvMatchedEvidence.setText(evidence);
-        } else {
-            holder.tvMatchedEvidence.setText("");
-        }
     }
 
     @Override
@@ -66,19 +52,15 @@ public class ProductAdapter extends RecyclerView.Adapter<ProductAdapter.ViewHold
 
     static class ViewHolder extends RecyclerView.ViewHolder {
 
+        ImageView ivProductImage;
         TextView tvTitle;
-        TextView tvBrandCategory;
         TextView tvPrice;
-        TextView tvReason;
-        TextView tvMatchedEvidence;
 
         ViewHolder(@NonNull View itemView) {
             super(itemView);
+            ivProductImage = itemView.findViewById(R.id.ivProductImage);
             tvTitle = itemView.findViewById(R.id.tvTitle);
-            tvBrandCategory = itemView.findViewById(R.id.tvBrandCategory);
             tvPrice = itemView.findViewById(R.id.tvPrice);
-            tvReason = itemView.findViewById(R.id.tvReason);
-            tvMatchedEvidence = itemView.findViewById(R.id.tvMatchedEvidence);
         }
     }
 }

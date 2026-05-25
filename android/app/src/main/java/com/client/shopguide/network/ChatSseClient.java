@@ -28,7 +28,7 @@ import okhttp3.ResponseBody;
 
 /**
  * SSE 流式对话客户端，对接 POST /chat/stream。
- * 后端尚未提供该接口时会回调 onFallbackToRest，由调用方走 POST /chat。
+ * 事件：start → delta → items → state → done；异常时 start → error → done。
  */
 public class ChatSseClient {
 
@@ -153,7 +153,11 @@ public class ChatSseClient {
         }
 
         if ("error".equals(eventName)) {
-            listener.onError(data);
+            listener.onError(parseErrorMessage(data));
+            return;
+        }
+
+        if ("start".equals(eventName) || "state".equals(eventName)) {
             return;
         }
 
@@ -168,25 +172,28 @@ public class ChatSseClient {
             return;
         }
 
-        if ("text".equals(eventName) && json.has("content")) {
-            listener.onTextDelta(json.get("content").getAsString());
+        if ("delta".equals(eventName) && json.has("text")) {
+            listener.onTextDelta(json.get("text").getAsString());
             return;
         }
 
-        if (("items".equals(eventName) || "card".equals(eventName)) && json.has("items")) {
+        if ("items".equals(eventName) && json.has("items")) {
             List<RecommendResponse.Item> items = GSON.fromJson(json.get("items"), ITEM_LIST_TYPE);
             if (items != null) {
                 listener.onItems(items);
             }
-            return;
         }
+    }
 
-        if ("card".equals(eventName) && json.has("product")) {
-            RecommendResponse.Item item = GSON.fromJson(json.get("product"), RecommendResponse.Item.class);
-            if (item != null) {
-                listener.onItems(java.util.Collections.singletonList(item));
+    private String parseErrorMessage(String data) {
+        try {
+            JsonObject json = GSON.fromJson(data, JsonObject.class);
+            if (json != null && json.has("message")) {
+                return json.get("message").getAsString();
             }
+        } catch (Exception ignored) {
         }
+        return data;
     }
 
     public void cancel() {

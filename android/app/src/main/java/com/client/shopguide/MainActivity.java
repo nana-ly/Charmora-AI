@@ -37,8 +37,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_SESSION_ID = "session_id";
     private static final String WELCOME_MESSAGE = "你好！告诉我品类、预算和偏好，我来帮你推荐商品。你也可以追问「再便宜一点」或「为什么推荐第一款」。";
 
-    /** 联调阶段后端若仅有 POST /chat，保持 false；上线 SSE 后改为 true */
-    private static final boolean USE_SSE_STREAM = false;
+    /** 后端 POST /chat/stream 已就绪，默认走 SSE；404 时自动回退 POST /chat */
+    private static final boolean USE_SSE_STREAM = true;
 
     private EditText etMessage;
     private Button btnSend;
@@ -259,9 +259,11 @@ public class MainActivity extends AppCompatActivity {
         if (items == null || items.isEmpty()) {
             return;
         }
+        List<Product> productList = new ArrayList<>();
         for (RecommendResponse.Item item : items) {
-            chatMessages.add(ChatUiMessage.product(toProduct(item)));
+            productList.add(toProduct(item));
         }
+        chatMessages.add(ChatUiMessage.productRow(productList));
         chatAdapter.notifyDataSetChanged();
         scrollToBottom();
     }
@@ -295,10 +297,12 @@ public class MainActivity extends AppCompatActivity {
         chatMessages.add(ChatUiMessage.assistant(reply));
 
         List<RecommendResponse.Item> items = response.getItems();
-        if (items != null) {
+        if (items != null && !items.isEmpty()) {
+            List<Product> productList = new ArrayList<>();
             for (RecommendResponse.Item item : items) {
-                chatMessages.add(ChatUiMessage.product(toProduct(item)));
+                productList.add(toProduct(item));
             }
+            chatMessages.add(ChatUiMessage.productRow(productList));
         }
 
         chatAdapter.notifyDataSetChanged();
