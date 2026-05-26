@@ -17,14 +17,20 @@ class ProductVectorStore:
         self,
         persist_dir: Path,
         collection_name: str = "products",
+        embedding_base_url: str | None = None,
+        embedding_api_key: str | None = None,
         embedding_model: str = "text-embedding-v4",
         embedding_dimensions: int | None = None,
     ) -> None:
         self.persist_dir = persist_dir
         self.collection_name = collection_name
+        self.embedding_base_url = embedding_base_url
+        self.embedding_api_key = embedding_api_key
         self.embedding_model = embedding_model
         self.embedding_dimensions = embedding_dimensions
         self.embedding_service = EmbeddingService(
+            base_url=self.embedding_base_url,
+            api_key=self.embedding_api_key,
             model=self.embedding_model,
             dimensions=self.embedding_dimensions,
         )

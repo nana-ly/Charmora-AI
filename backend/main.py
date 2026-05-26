@@ -1,14 +1,17 @@
 import logging
 from collections.abc import Iterator
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
-from agent.memory import InMemoryConversationStore
-from agent.orchestrator import SimpleAgentRunner
-from agent.policy import AgentPolicy
+from agent.runner import create_agent_runner
 from agent.tools import RecommendationTool
+from core.config import load_app_config
 from recommendation import recommend_products
+from retrieval.keyword import retrieve as keyword_retrieve
+from retrieval.vector import VectorRetriever
 from schemas.chat import ChatRequest, ChatResponse
 from schemas.recommend import RecommendRequest
 from sse import sse_event
@@ -17,10 +20,59 @@ from sse import sse_event
 app = FastAPI(title="ShopGuide RAG API")
 logger = logging.getLogger(__name__)
 
-agent_runner = SimpleAgentRunner(
-    store=InMemoryConversationStore(),
-    recommendation_tool=RecommendationTool(),
-    policy=AgentPolicy(),
+class RagSearchRequest(BaseModel):
+    """RAG 调试检索请求。"""
+
+    query: str
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+def create_vector_retriever() -> VectorRetriever:
+    """创建真实向量检索器；测试中可 monkeypatch 以避免外部 embedding 调用。"""
+    config = load_app_config()
+    return VectorRetriever(
+        embedding_base_url=config.rag.embedding_url or None,
+        embedding_api_key=config.rag.embedding_api or None,
+        embedding_model=config.rag.embedding_model,
+        embedding_dimensions=config.rag.embedding_dimensions,
+    )
+
+
+def _legacy_retrieve_from_retriever(retriever: Any):
+    def retrieve_func(query: str, candidates=None, top_k: int = 3):
+        try:
+            return [
+                result.to_legacy_item()
+                for result in retriever.search(query, candidates=candidates, top_k=top_k)
+            ]
+        except Exception:
+            logger.exception("vector search failed; falling back to keyword")
+            return keyword_retrieve(query, candidates=candidates, top_k=top_k)
+
+    return retrieve_func
+
+
+def _select_retrieve_func():
+    config = load_app_config()
+    if config.retriever_mode.lower() == "vector":
+        try:
+            return _legacy_retrieve_from_retriever(create_vector_retriever())
+        except Exception:
+            logger.exception("vector retriever unavailable; falling back to keyword")
+            return None
+    return None
+
+
+def run_recommendation(query: str, top_k: int = 3) -> dict:
+    """统一推荐入口，供 /recommend 和 Agent 工具共用。"""
+    retrieve_func = _select_retrieve_func()
+    if retrieve_func is None:
+        return recommend_products(query, top_k=top_k)
+    return recommend_products(query, top_k=top_k, retrieve_func=retrieve_func)
+
+
+agent_runner = create_agent_runner(
+    recommendation_tool=RecommendationTool(recommend_func=run_recommendation),
 )
 
 
@@ -42,7 +94,26 @@ def read_health() -> dict[str, str]:
 @app.post("/recommend")
 def recommend(request: RecommendRequest) -> dict:
     """推荐接口：调用完整推荐链路，并保证异常时也返回稳定商品卡片。"""
-    return recommend_products(request.query)
+    return run_recommendation(request.query)
+
+
+@app.post("/rag/search")
+def rag_search(request: RagSearchRequest) -> dict[str, Any]:
+    """RAG 调试接口：直接返回向量检索结果，便于验证索引和召回质量。"""
+    results = create_vector_retriever().search(request.query, top_k=request.top_k)
+    return {
+        "query": request.query,
+        "items": [
+            {
+                "product_id": result.product.get("product_id", ""),
+                "title": result.product.get("title", ""),
+                "brand": result.product.get("brand", ""),
+                "score": result.score,
+                "evidence": result.evidence,
+            }
+            for result in results
+        ],
+    }
 
 
 @app.post("/chat", response_model=ChatResponse)

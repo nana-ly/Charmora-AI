@@ -1,10 +1,38 @@
 from fastapi.testclient import TestClient
 
+import main
 from main import agent_runner, app
+from agent.runner import create_agent_runner
+from core.config import AppConfig
 from schemas.chat import ChatResponse
 
 
 client = TestClient(app)
+
+
+class FakeVectorRetriever:
+    def search(self, query: str, candidates=None, top_k: int = 3):
+        from retrieval.base import RetrievalResult
+
+        product = {
+            "product_id": "p_rag_1",
+            "title": "RAG 拍照旗舰手机",
+            "brand": "Apple",
+            "category": "数码电子",
+            "base_price": 8999,
+        }
+        return [
+            RetrievalResult(
+                product=product,
+                evidence=f"向量召回：匹配“{query}”。",
+                score=0.91,
+            )
+        ][:top_k]
+
+
+class FailingVectorSearchRetriever:
+    def search(self, query: str, candidates=None, top_k: int = 3):
+        raise RuntimeError("embedding api failed")
 
 
 def test_root_returns_service_metadata():
@@ -24,7 +52,8 @@ def test_health_returns_ok_status():
     assert response.json() == {"status": "ok"}
 
 
-def test_recommend_returns_three_product_cards_from_loaded_products():
+def test_recommend_returns_three_product_cards_from_loaded_products(monkeypatch):
+    monkeypatch.setenv("RETRIEVER_MODE", "keyword")
     response = client.post(
         "/recommend",
         json={"query": "预算9000以内，想买拍照和剪视频好的手机"},
@@ -60,6 +89,98 @@ def test_recommend_returns_three_product_cards_from_loaded_products():
     assert items[0]["evidence"].startswith("临时匹配")
 
 
+def test_rag_search_returns_vector_retrieval_debug_results(monkeypatch):
+    monkeypatch.setattr(main, "create_vector_retriever", lambda: FakeVectorRetriever())
+
+    response = client.post(
+        "/rag/search",
+        json={"query": "预算9000以内，想买拍照好的手机", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["query"] == "预算9000以内，想买拍照好的手机"
+    assert payload["items"] == [
+        {
+            "product_id": "p_rag_1",
+            "title": "RAG 拍照旗舰手机",
+            "brand": "Apple",
+            "score": 0.91,
+            "evidence": "向量召回：匹配“预算9000以内，想买拍照好的手机”。",
+        }
+    ]
+
+
+def test_recommend_uses_vector_retriever_by_default(monkeypatch):
+    monkeypatch.setenv("RETRIEVER_MODE", "vector")
+    monkeypatch.setattr(main, "create_vector_retriever", lambda: FakeVectorRetriever())
+
+    response = client.post(
+        "/recommend",
+        json={"query": "预算9000以内，想买拍照好的手机"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["product_id"] == "p_rag_1"
+    assert payload["items"][0]["evidence"].startswith("向量召回")
+
+
+def test_recommend_falls_back_to_keyword_when_vector_retriever_fails(monkeypatch):
+    def fail_create_vector_retriever():
+        raise RuntimeError("missing embedding config")
+
+    monkeypatch.setenv("RETRIEVER_MODE", "vector")
+    monkeypatch.setattr(main, "create_vector_retriever", fail_create_vector_retriever)
+
+    response = client.post(
+        "/recommend",
+        json={"query": "预算9000以内，想买拍照好的手机"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["items"]) == 3
+    assert payload["items"][0]["evidence"].startswith("临时匹配")
+
+
+def test_recommend_falls_back_to_keyword_when_vector_search_fails(monkeypatch):
+    monkeypatch.setenv("RETRIEVER_MODE", "vector")
+    monkeypatch.setattr(
+        main,
+        "create_vector_retriever",
+        lambda: FailingVectorSearchRetriever(),
+    )
+
+    response = client.post(
+        "/recommend",
+        json={"query": "预算9000以内，想买拍照好的手机"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["items"]) == 3
+    assert payload["items"][0]["evidence"].startswith("临时匹配")
+
+
+def test_chat_uses_vector_retriever_by_default(monkeypatch):
+    monkeypatch.setenv("RETRIEVER_MODE", "vector")
+    monkeypatch.setattr(main, "create_vector_retriever", lambda: FakeVectorRetriever())
+
+    response = client.post(
+        "/chat",
+        json={
+            "session_id": "test-chat-vector-session",
+            "message": "预算9000以内的拍照手机",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["product_id"] == "p_rag_1"
+    assert payload["items"][0]["evidence"].startswith("向量召回")
+
+
 def test_recommend_supports_budget_without_suffix():
     response = client.post(
         "/recommend",
@@ -93,6 +214,42 @@ def test_chat_returns_agent_response_and_state():
     assert payload["state"]["intent"] == "recommend"
     assert payload["state"]["preferences"]["category"] == "数码电子"
     assert len(payload["items"]) == 3
+
+
+def test_chat_keeps_response_contract_with_langgraph_runner(monkeypatch):
+    monkeypatch.setattr(
+        main,
+        "agent_runner",
+        create_agent_runner(
+            config=AppConfig(agent_runner="langgraph"),
+            recommendation_tool=main.RecommendationTool(
+                recommend_func=main.run_recommendation,
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/chat",
+        json={
+            "session_id": "test-chat-langgraph-session",
+            "message": "预算9000以内的拍照手机",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"session_id", "reply", "items", "state"}
+    assert payload["session_id"] == "test-chat-langgraph-session"
+    assert payload["state"]["intent"] == "recommend"
+    assert len(payload["items"]) == 3
+    assert {
+        "product_id",
+        "title",
+        "brand",
+        "price",
+        "reason",
+        "evidence",
+    } <= payload["items"][0].keys()
 
 
 def test_chat_stream_returns_sse_events():
