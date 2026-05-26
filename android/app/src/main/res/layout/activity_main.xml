@@ -48,8 +48,8 @@
         android:paddingBottom="8dp" />
 
     <!-- 快捷示例 -->
-
     <HorizontalScrollView
+        android:id="@+id/hsvExamples"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
@@ -97,14 +97,35 @@
 
     <!-- 底部输入栏 -->
     <LinearLayout
+        android:id="@+id/llInputBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="#FFFFFF"
         android:elevation="6dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="10dp">
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="8dp">
+
+        <ImageButton
+            android:id="@+id/btnPlus"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginEnd="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="更多功能"
+            android:src="@android:drawable/ic_input_add"
+            android:tint="#666666" />
+
+        <ImageButton
+            android:id="@+id/btnMic"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginEnd="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="语音输入"
+            android:src="@android:drawable/ic_btn_speak_now"
+            android:tint="#666666" />
 
         <EditText
             android:id="@+id/etMessage"
@@ -114,25 +135,146 @@
             android:background="@drawable/bg_input"
             android:hint="输入消息，支持多轮追问..."
             android:imeOptions="actionSend"
-            android:inputType="textCapSentences|textMultiLine"
-            android:maxLines="4"
-            android:minLines="1"
+            android:inputType="textCapSentences"
+            android:maxLines="1"
+            android:singleLine="true"
             android:paddingHorizontal="14dp"
             android:paddingVertical="10dp"
             android:textColor="#333333"
             android:textColorHint="@color/chat_hint"
             android:textSize="15sp" />
 
-        <Button
+        <ImageButton
             android:id="@+id/btnSend"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:layout_marginStart="8dp"
-            android:backgroundTint="#673AB7"
-            android:minWidth="72dp"
-            android:text="发送"
-            android:textColor="#FFFFFF"
-            android:textSize="15sp" />
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="发送"
+            android:src="@android:drawable/ic_menu_send"
+            android:tint="#673AB7" />
+    </LinearLayout>
+
+    <!-- 功能面板（默认隐藏，点击加号展开） -->
+    <LinearLayout
+        android:id="@+id/llFunctionPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_bubble_assistant"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="28dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="16dp">
+
+            <!-- 相册 -->
+            <LinearLayout
+                android:id="@+id/llAlbum"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="10dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@android:drawable/ic_menu_gallery"
+                    android:tint="#4CAF50"
+                    android:layout_marginBottom="6dp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="相册"
+                    android:textSize="13sp"
+                    android:textColor="#333333" />
+            </LinearLayout>
+
+            <!-- 拍照 -->
+            <LinearLayout
+                android:id="@+id/llCamera"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="10dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@android:drawable/ic_menu_camera"
+                    android:tint="#2196F3"
+                    android:layout_marginBottom="6dp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="拍照"
+                    android:textSize="13sp"
+                    android:textColor="#333333" />
+            </LinearLayout>
+
+            <!-- 购物车 -->
+            <LinearLayout
+                android:id="@+id/llCart"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="10dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@android:drawable/ic_menu_compass"
+                    android:tint="#FF9800"
+                    android:layout_marginBottom="6dp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="购物车"
+                    android:textSize="13sp"
+                    android:textColor="#333333" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 取消按钮 -->
+        <LinearLayout
+            android:id="@+id/llCancel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="10dp"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="取消"
+                android:textSize="14sp"
+                android:textColor="#999999" />
+        </LinearLayout>
     </LinearLayout>
 
 </LinearLayout>

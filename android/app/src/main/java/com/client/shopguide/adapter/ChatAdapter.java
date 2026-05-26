@@ -5,6 +5,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -13,6 +14,8 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.client.shopguide.R;
 import com.client.shopguide.model.ChatUiMessage;
+import com.client.shopguide.model.CompareItem;
+import com.client.shopguide.model.CompareResponse;
 import com.client.shopguide.model.Product;
 
 import java.util.List;
@@ -48,6 +51,8 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 return new ProductRowViewHolder(inflater.inflate(R.layout.item_chat_product_row, parent, false));
             case ChatUiMessage.TYPE_PRODUCT:
                 return new ProductViewHolder(inflater.inflate(R.layout.item_product, parent, false));
+            case ChatUiMessage.TYPE_COMPARE:
+                return new CompareViewHolder(inflater.inflate(R.layout.item_chat_compare, parent, false));
             case ChatUiMessage.TYPE_LOADING:
             default:
                 return new LoadingViewHolder(inflater.inflate(R.layout.item_chat_loading, parent, false));
@@ -79,6 +84,9 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 break;
             case ChatUiMessage.TYPE_PRODUCT:
                 bindProduct((ProductViewHolder) holder, message.getProduct());
+                break;
+            case ChatUiMessage.TYPE_COMPARE:
+                bindCompare((CompareViewHolder) holder, message.getCompareResponse());
                 break;
             case ChatUiMessage.TYPE_LOADING:
                 ((LoadingViewHolder) holder).tvLoadingMessage.setText(message.getContent());
@@ -129,6 +137,37 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
+    private void bindCompare(CompareViewHolder holder, CompareResponse data) {
+        if (data == null) return;
+        CompareItem left = data.getLeftItem();
+        CompareItem right = data.getRightItem();
+
+        if (left != null) {
+            holder.tvLeftName.setText(left.getName() != null ? left.getName() : "");
+            holder.tvLeftPrice.setText(left.getPrice() != null ? left.getPrice() : "");
+            addBulletItems(holder.llLeftPros, left.getPros(), true);
+            addBulletItems(holder.llLeftCons, left.getCons(), false);
+        }
+        if (right != null) {
+            holder.tvRightName.setText(right.getName() != null ? right.getName() : "");
+            holder.tvRightPrice.setText(right.getPrice() != null ? right.getPrice() : "");
+            addBulletItems(holder.llRightPros, right.getPros(), true);
+            addBulletItems(holder.llRightCons, right.getCons(), false);
+        }
+    }
+
+    private void addBulletItems(LinearLayout container, List<String> items, boolean isPros) {
+        if (items == null || items.isEmpty()) return;
+        for (String item : items) {
+            TextView tv = new TextView(container.getContext());
+            tv.setText("• " + item);
+            tv.setTextSize(11);
+            tv.setTextColor(isPros ? 0xFF4CAF50 : 0xFFF44336);
+            tv.setPadding(0, 2, 0, 2);
+            container.addView(tv);
+        }
+    }
+
     static class ProductRowViewHolder extends RecyclerView.ViewHolder {
         RecyclerView rvProductRow;
         ProductRowViewHolder(@NonNull View itemView) {
@@ -137,6 +176,23 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             rvProductRow.setLayoutManager(
                     new LinearLayoutManager(itemView.getContext(),
                             LinearLayoutManager.HORIZONTAL, false));
+        }
+    }
+
+    static class CompareViewHolder extends RecyclerView.ViewHolder {
+        TextView tvLeftName, tvLeftPrice, tvRightName, tvRightPrice;
+        LinearLayout llLeftPros, llLeftCons, llRightPros, llRightCons;
+
+        CompareViewHolder(@NonNull View itemView) {
+            super(itemView);
+            tvLeftName = itemView.findViewById(R.id.tvLeftName);
+            tvLeftPrice = itemView.findViewById(R.id.tvLeftPrice);
+            tvRightName = itemView.findViewById(R.id.tvRightName);
+            tvRightPrice = itemView.findViewById(R.id.tvRightPrice);
+            llLeftPros = itemView.findViewById(R.id.llLeftPros);
+            llLeftCons = itemView.findViewById(R.id.llLeftCons);
+            llRightPros = itemView.findViewById(R.id.llRightPros);
+            llRightCons = itemView.findViewById(R.id.llRightCons);
         }
     }
 
