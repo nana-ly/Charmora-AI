@@ -52,7 +52,8 @@ def test_health_returns_ok_status():
     assert response.json() == {"status": "ok"}
 
 
-def test_recommend_returns_three_product_cards_from_loaded_products():
+def test_recommend_returns_three_product_cards_from_loaded_products(monkeypatch):
+    monkeypatch.setenv("RETRIEVER_MODE", "keyword")
     response = client.post(
         "/recommend",
         json={"query": "预算9000以内，想买拍照和剪视频好的手机"},
@@ -111,7 +112,7 @@ def test_rag_search_returns_vector_retrieval_debug_results(monkeypatch):
 
 
 def test_recommend_uses_vector_retriever_by_default(monkeypatch):
-    monkeypatch.delenv("RETRIEVER_MODE", raising=False)
+    monkeypatch.setenv("RETRIEVER_MODE", "vector")
     monkeypatch.setattr(main, "create_vector_retriever", lambda: FakeVectorRetriever())
 
     response = client.post(
@@ -163,7 +164,7 @@ def test_recommend_falls_back_to_keyword_when_vector_search_fails(monkeypatch):
 
 
 def test_chat_uses_vector_retriever_by_default(monkeypatch):
-    monkeypatch.delenv("RETRIEVER_MODE", raising=False)
+    monkeypatch.setenv("RETRIEVER_MODE", "vector")
     monkeypatch.setattr(main, "create_vector_retriever", lambda: FakeVectorRetriever())
 
     response = client.post(

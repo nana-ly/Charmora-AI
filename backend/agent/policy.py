@@ -37,6 +37,43 @@ class AgentPolicy:
         "护肤",
         "咖啡",
         "衣",
+        "精华",
+        "面霜",
+        "洁面",
+        "防晒",
+        "敏感肌",
+        "抗初老",
+        "T恤",
+        "通勤",
+        "凉快",
+        "穿",
+        "速溶",
+        "食品",
+    ]
+    _product_need_keywords = [
+        "能用",
+        "适合",
+        "好用",
+        "想要",
+        "需要",
+        "以内",
+        "抗初老",
+        "通勤",
+        "凉快",
+    ]
+    _product_category_keywords = [
+        "手机",
+        "耳机",
+        "电脑",
+        "护肤",
+        "咖啡",
+        "衣",
+        "精华",
+        "面霜",
+        "洁面",
+        "防晒",
+        "T恤",
+        "食品",
     ]
     _update_keywords = ["再便宜", "便宜一点", "换一个", "更低", "贵了"]
     _explain_keywords = ["为什么", "原因", "解释", "怎么推荐"]
@@ -50,6 +87,13 @@ class AgentPolicy:
             return AgentDecision(intent=AgentIntent.UPDATE_PREFERENCE)
 
         if any(keyword in message for keyword in self._recommend_keywords):
+            return AgentDecision(intent=AgentIntent.RECOMMEND)
+
+        # 用户常用“敏感肌能用的抗初老精华”这类省略句表达商品需求。
+        # 这类句子没有“买/推荐/预算”，但同时包含商品属性和品类，应进入推荐链路。
+        has_product_need = any(keyword in message for keyword in self._product_need_keywords)
+        has_product_category = any(keyword in message for keyword in self._product_category_keywords)
+        if has_product_need and has_product_category:
             return AgentDecision(intent=AgentIntent.RECOMMEND)
 
         return AgentDecision(intent=AgentIntent.CLARIFY, confidence=0.6)

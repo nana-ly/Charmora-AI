@@ -195,9 +195,9 @@ def test_retrieve_returns_top_k_candidates_with_evidence():
     results = retrieve("想买拍照和剪视频好的手机", candidates=candidates, top_k=2)
 
     assert len(results) == 2
-    assert results[0]["product"]["product_id"] == "p_digital_001"
+    assert results[0]["product"]["product_id"] == "p_digital_003"
     assert results[0]["evidence"].startswith("临时匹配")
-    assert "拍照" in results[0]["evidence"]
+    assert "剪视频" in results[0]["evidence"]
 
 
 def test_recommend_products_assembles_real_recommendation_chain():

@@ -56,6 +56,35 @@ def test_keyword_retriever_searches_candidates_with_evidence():
     assert results[0].score >= 1
 
 
+def test_keyword_retriever_prioritizes_requested_product_type():
+    retriever = KeywordRetriever()
+    candidates = [
+        {
+            "product_id": "p_tablet",
+            "title": "小米平板 12.1英寸高刷大屏平板电脑",
+            "brand": "小米",
+            "category": "数码电子",
+            "sub_category": "平板电脑",
+            "base_price": 3299,
+            "rag_knowledge": {"marketing_description": "支持和手机跨屏互联。"},
+        },
+        {
+            "product_id": "p_phone",
+            "title": "OPPO Reno 轻薄人像摄影5G智能手机",
+            "brand": "OPPO",
+            "category": "数码电子",
+            "sub_category": "智能手机",
+            "base_price": 3299,
+            "rag_knowledge": {"marketing_description": "适合人像摄影和日常拍摄。"},
+        },
+    ]
+
+    results = retriever.search("预算9000以内的拍照手机", candidates=candidates, top_k=1)
+
+    assert results[0].product["product_id"] == "p_phone"
+    assert results[0].score >= 2
+
+
 def test_keyword_retriever_keeps_legacy_retrieve_shape():
     results = retrieve(
         "想买拍照好的手机",

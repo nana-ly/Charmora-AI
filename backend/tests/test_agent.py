@@ -27,6 +27,13 @@ def test_agent_policy_detects_recommend_update_explain_and_clarify():
     assert policy.detect_intent("你好").intent == AgentIntent.CLARIFY
 
 
+def test_agent_policy_detects_product_need_without_buy_word():
+    policy = AgentPolicy()
+
+    assert policy.detect_intent("敏感肌能用的抗初老精华").intent == AgentIntent.RECOMMEND
+    assert policy.detect_intent("夏天通勤穿的凉快T恤").intent == AgentIntent.RECOMMEND
+
+
 def test_recommendation_tool_wraps_recommendation_pipeline():
     tool = RecommendationTool()
 
