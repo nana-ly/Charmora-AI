@@ -6,7 +6,7 @@ from recommendation_core.pipeline import recommend_products
 from recommendation_core.ranking import choose_candidates, get_product_price, structured_filter
 from recommendation_core.response_builder import build_response_item
 from retrieval.base import RetrievalResult
-from retrieval.keyword import retrieve
+from retrieval.keyword import KeywordRetriever
 
 
 class FakeEmptyRetriever:
@@ -185,7 +185,8 @@ def test_products_global_is_available_for_recommend_flow():
     assert len(products) >= 100
 
 
-def test_retrieve_returns_top_k_candidates_with_evidence():
+def test_keyword_retriever_returns_top_k_candidates_with_evidence():
+    retriever = KeywordRetriever()
     candidates = [
         {
             "product_id": "p_digital_001",
@@ -210,12 +211,12 @@ def test_retrieve_returns_top_k_candidates_with_evidence():
         },
     ]
 
-    results = retrieve("想买拍照和剪视频好的手机", candidates=candidates, top_k=2)
+    results = retriever.search("想买拍照和剪视频好的手机", candidates=candidates, top_k=2)
 
     assert len(results) == 2
-    assert results[0]["product"]["product_id"] == "p_digital_003"
-    assert results[0]["evidence"].startswith("临时匹配")
-    assert "剪视频" in results[0]["evidence"]
+    assert results[0].product["product_id"] == "p_digital_003"
+    assert results[0].evidence.startswith("临时匹配")
+    assert "剪视频" in results[0].evidence
 
 
 def test_recommend_products_assembles_real_recommendation_chain():

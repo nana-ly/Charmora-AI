@@ -1,5 +1,5 @@
 from retrieval.base import RetrievalResult, Retriever
-from retrieval.keyword import KeywordRetriever, build_searchable_text, retrieve
+from retrieval.keyword import KeywordRetriever, build_searchable_text
 from retrieval.vector import VectorRetriever
 
 
@@ -85,8 +85,10 @@ def test_keyword_retriever_prioritizes_requested_product_type():
     assert results[0].score >= 2
 
 
-def test_keyword_retriever_keeps_legacy_retrieve_shape():
-    results = retrieve(
+def test_keyword_retriever_returns_retrieval_results():
+    retriever = KeywordRetriever()
+
+    results = retriever.search(
         "想买拍照好的手机",
         candidates=[
             {
@@ -100,18 +102,9 @@ def test_keyword_retriever_keeps_legacy_retrieve_shape():
         top_k=1,
     )
 
-    assert results == [
-        {
-            "product": {
-                "product_id": "p_1",
-                "title": "拍照旗舰手机",
-                "brand": "Apple",
-                "category": "数码电子",
-                "base_price": 8999,
-            },
-            "evidence": "临时匹配：命中 手机、拍照；来自结构化筛选结果。",
-        }
-    ]
+    assert results[0].product["product_id"] == "p_1"
+    assert results[0].evidence == "临时匹配：命中 手机、拍照；来自结构化筛选结果。"
+    assert results[0].score >= 1
 
 
 def test_build_searchable_text_includes_product_fields():

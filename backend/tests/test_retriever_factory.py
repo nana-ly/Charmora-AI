@@ -23,11 +23,6 @@ class FakeVectorRetriever:
         ][:top_k]
 
 
-class FailingVectorRetriever:
-    def search(self, query: str, candidates=None, top_k: int = 3):
-        raise RuntimeError("vector failed")
-
-
 def test_create_vector_retriever_passes_rag_config(monkeypatch):
     captured = {}
 
@@ -81,37 +76,32 @@ def test_select_retriever_returns_vector_retriever(monkeypatch):
     assert isinstance(retriever, FakeVectorRetriever)
 
 
-def test_select_retrieve_func_returns_vector_adapter(monkeypatch):
+def test_select_retriever_returns_selected_vector_retriever(monkeypatch):
+    selected_retriever = FakeVectorRetriever()
+
     monkeypatch.setattr(
         retriever_factory,
         "create_vector_retriever",
-        lambda config=None: FakeVectorRetriever(),
+        lambda config=None: selected_retriever,
     )
 
-    retrieve_func = retriever_factory.select_retrieve_func(
-        AppConfig(retriever_mode="vector")
-    )
+    retriever = retriever_factory.select_retriever(AppConfig(retriever_mode="vector"))
 
-    assert retrieve_func is not None
-    results = retrieve_func("拍照手机", candidates=None, top_k=1)
-    assert results[0]["product"]["product_id"] == "p_vector"
-    assert results[0]["evidence"].startswith("向量召回")
+    assert retriever is selected_retriever
 
 
-def test_select_retrieve_func_returns_none_for_keyword_mode():
-    retrieve_func = retriever_factory.select_retrieve_func(
-        AppConfig(retriever_mode="keyword")
-    )
+def test_select_retriever_returns_keyword_instance_for_keyword_mode():
+    retriever = retriever_factory.select_retriever(AppConfig(retriever_mode="keyword"))
 
-    assert retrieve_func is None
+    assert isinstance(retriever, KeywordRetriever)
 
 
-def test_select_retrieve_func_rejects_unknown_mode():
+def test_select_retriever_rejects_unknown_mode():
     with pytest.raises(ValueError, match="RETRIEVER_MODE"):
-        retriever_factory.select_retrieve_func(AppConfig(retriever_mode="vectro"))
+        retriever_factory.select_retriever(AppConfig(retriever_mode="vectro"))
 
 
-def test_select_retrieve_func_propagates_vector_creation_error(monkeypatch):
+def test_select_retriever_propagates_vector_creation_error(monkeypatch):
     def fail_create_vector_retriever(config=None):
         raise RuntimeError("missing embedding config")
 
@@ -122,13 +112,4 @@ def test_select_retrieve_func_propagates_vector_creation_error(monkeypatch):
     )
 
     with pytest.raises(RuntimeError, match="missing embedding config"):
-        retriever_factory.select_retrieve_func(AppConfig(retriever_mode="vector"))
-
-
-def test_vector_adapter_propagates_search_error():
-    retrieve_func = retriever_factory.legacy_retrieve_from_retriever(
-        FailingVectorRetriever()
-    )
-
-    with pytest.raises(RuntimeError, match="vector failed"):
-        retrieve_func("想买拍照手机", candidates=None, top_k=1)
+        retriever_factory.select_retriever(AppConfig(retriever_mode="vector"))

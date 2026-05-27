@@ -117,14 +117,3 @@ class KeywordRetriever(Retriever):
 
         return results
 
-
-def retrieve(
-    query: str,
-    candidates: list[dict[str, Any]] | None = None,
-    top_k: int = 3,
-) -> list[dict[str, Any]]:
-    """兼容旧链路的检索函数，返回原有字典结构。"""
-    return [
-        result.to_legacy_item()
-        for result in KeywordRetriever().search(query, candidates=candidates, top_k=top_k)
-    ]
