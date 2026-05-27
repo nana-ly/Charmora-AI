@@ -35,6 +35,13 @@ Internal behavior to remove rather than support:
 
 LLM failure may still return a conservative `clarify` response. That is an availability fallback, not compatibility with the old rule system.
 
+Current code references that must be removed during implementation:
+
+- `backend/agent/runner.py` imports `AgentPolicy`, accepts `policy`, creates `shared_policy`, and passes it into `LangGraphAgentRunner`.
+- `backend/agent/graph/runner.py` imports `AgentDecision`, `AgentIntent`, and `AgentPolicy`; stores `self.policy`; and calls `self.policy.detect_intent`.
+- `backend/agent/__init__.py` exports `AgentIntent` and `AgentPolicy`.
+- `backend/tests/test_agent.py` imports and directly tests `AgentPolicy`; those tests should be replaced with understanding-driven tests.
+
 ## Current Problem
 
 The current implementation uses `AgentPolicy.detect_intent(message)` as the first decision point. It only inspects the latest user message and relies on keyword lists.
@@ -130,6 +137,21 @@ Supported reply types:
 - `no_results_reply`
 
 Recommendation tool exceptions are not no-results. No-results only means the recommendation tool completed successfully and returned an empty `items` list.
+
+### Recommendation Query Boundary
+
+The current `RecommendationTool.run(query, top_k=3)` accepts one natural-language query and returns a `RecommendResponse`.
+
+`RecommendFilters` currently contains only:
+
+- `category`
+- `max_price`
+- `brand`
+- `keywords`
+
+Therefore v1 should keep passing a natural-language `purchase_need` into the recommendation tool. Structured preferences such as `excluded_brands`, `usage`, `focus`, and `price_preference` should be stored in agent memory and folded into `purchase_need` text for retrieval. The v1 implementation should not require the recommendation pipeline to accept a new structured filter object.
+
+If a preference cannot be enforced by the existing recommendation pipeline, the agent may still include it in `purchase_need` and memory, but it should not claim that the filter was strictly applied unless the returned filters or items prove it.
 
 ### Node Responsibilities
 
@@ -320,6 +342,12 @@ Relaxation option generation should be deterministic in v1. Suggested rules:
 
 The no-results response returns `items: []` and sets `state.result_status` to `no_results`.
 
+Because the current recommendation pipeline raises infrastructure failures instead of returning fallback products, exception handling remains transport-level:
+
+- `/chat` may surface the exception through FastAPI/TestClient behavior.
+- `/chat/stream` should continue converting post-start exceptions into an `error` SSE event.
+- Only successful empty `RecommendResponse.items` triggers `no_results_reply`.
+
 ## LLM Prompt and Parsing Contract
 
 The understanding service should call the LLM with a compact, explicit context block:
@@ -346,6 +374,51 @@ Parsing rules:
 - Treat parse or validation failure as LLM-unavailable behavior.
 - Do not inspect the output with ad hoc string matching.
 - The understanding call should have enough output budget for the JSON object and should not reuse a response limit meant only for short recommendation reasons.
+
+Current LLM client note:
+
+- `backend/llm/client.py::OpenAIInvokeChatClient.invoke` currently uses `max_tokens=160`, which is sized for short text and may be too small for structured understanding JSON.
+- Implementation should either raise that limit for `invoke` or add an optional `max_tokens` parameter so the understanding service can request enough output.
+- Tests should cover parsing directly with fake LLM responses instead of relying on the OpenAI client.
+
+## Current Code Migration Map
+
+The implementation should update these files deliberately:
+
+```text
+backend/agent/understanding.py
+  Create. Owns UserUnderstanding schemas, fake-friendly service protocol,
+  LLMUserUnderstandingService, JSON parsing, validation, and clarify fallback.
+
+backend/agent/memory.py
+  Extend ConversationState with purchase_need, excluded_brands, target_item_index,
+  last_result_status, last_no_results_need, and last_no_results_relax_options.
+
+backend/agent/graph/runner.py
+  Replace parse_intent/run_agent_step with understand_user/update_memory/
+  decide_next_action/execute_action/generate_reply/finalize_response nodes.
+  Remove AgentPolicy imports and policy constructor argument.
+
+backend/agent/runner.py
+  Remove AgentPolicy import and policy parameter.
+  Create or inject a UserUnderstandingService and pass it to LangGraphAgentRunner.
+
+backend/agent/__init__.py
+  Remove AgentIntent and AgentPolicy exports.
+  Export the new understanding types only if callers need them.
+
+backend/llm/client.py
+  Allow the understanding service to request enough max_tokens for JSON output.
+
+backend/tests/test_agent.py
+  Replace policy tests and policy-based runner construction with understanding-service fakes.
+
+backend/tests/test_main.py
+  Update chat tests to inject fake understanding where needed.
+  Keep response-contract and SSE event-shape tests.
+```
+
+`backend/api/deps.py` currently creates the app-level singleton using `create_agent_runner(recommendation_tool=...)`. That pattern can stay, but `create_agent_runner` must construct the new understanding service internally from config unless a test passes a fake.
 
 ## File Layout
 
@@ -445,6 +518,15 @@ Add focused tests for:
 
 Tests should use fake LLM and fake recommendation services where possible so they are deterministic and do not depend on network calls.
 
+Concrete test migration notes:
+
+- Delete or replace `test_agent_policy_detects_recommend_update_explain_and_clarify`.
+- Delete or replace `test_agent_policy_detects_product_need_without_buy_word`.
+- Update runner construction in tests so it passes `understanding_service=FakeUnderstandingService(...)` instead of `policy=AgentPolicy()`.
+- Keep `test_conversation_store_creates_and_updates_state`, but extend it for the new memory fields.
+- Keep API contract assertions in `test_main.py`, but avoid depending on keyword detection for chat behavior.
+- Keep `/chat/stream` serialization-failure coverage because `state` remains a free-form JSON-like dict and must stay serializable.
+
 Acceptance criteria:
 
 - No active chat path calls `AgentPolicy.detect_intent`.
@@ -455,6 +537,8 @@ Acceptance criteria:
 - `last_items` still points to the last successful recommendation after a no-results turn.
 - `/chat/stream` emits the existing `start`, `delta`, `items`, `state`, and `done` events.
 - Tests can run without real LLM credentials.
+- Chat response `state` contains only JSON-serializable values.
+- Recommendation integration still uses `RecommendationTool.run(query, top_k=3)` and `RecommendResponse`.
 
 ## Migration Notes
 
@@ -463,9 +547,10 @@ Implementation should be incremental:
 1. Add the new understanding schema and service with tests.
 2. Extend conversation memory for structured shopping context.
 3. Inject the understanding service into `LangGraphAgentRunner` so tests can provide fakes.
-4. Update the LangGraph runner nodes to use `understand_user`.
-5. Add no-results action handling.
-6. Keep API response contracts stable.
-7. Delete the old `AgentPolicy` path, including production imports and obsolete keyword-policy tests.
+4. Update `create_agent_runner` to remove `policy` and wire the understanding service.
+5. Update the LangGraph runner nodes to use `understand_user`.
+6. Add no-results action handling.
+7. Keep API response contracts stable.
+8. Delete the old `AgentPolicy` path, including production imports and obsolete keyword-policy tests.
 
 The implementation should not mix the old keyword policy with the new LLM understanding path. When a test conflicts with the new architecture because it asserts keyword-policy behavior, replace it with an understanding-driven agent test instead of preserving compatibility.
