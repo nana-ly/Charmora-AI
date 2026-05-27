@@ -1,11 +1,11 @@
 import pytest
 
 from recommendation_core.data import load_products, products
-from recommendation_core.filters import EMPTY_FILTERS, extract_filters
+from recommendation_core.filters import extract_filters
 from recommendation_core.pipeline import recommend_products
 from recommendation_core.ranking import choose_candidates, get_product_price, structured_filter
 from recommendation_core.response_builder import build_response_item
-from retrieval.keyword import build_searchable_text, retrieve
+from retrieval.keyword import retrieve
 
 
 def test_extract_filters_parses_category_budget_and_keywords():
