@@ -1,15 +1,11 @@
-from recommendation import (
-    build_response_item,
-    choose_candidates,
-    extract_filters,
-    fallback_items,
-    get_product_price,
-    load_products,
-    products,
-    recommend_products,
-    retrieve,
-    structured_filter,
-)
+import pytest
+
+from recommendation_core.data import load_products, products
+from recommendation_core.filters import EMPTY_FILTERS, extract_filters
+from recommendation_core.pipeline import recommend_products
+from recommendation_core.ranking import choose_candidates, get_product_price, structured_filter
+from recommendation_core.response_builder import build_response_item
+from retrieval.keyword import build_searchable_text, retrieve
 
 
 def test_extract_filters_parses_category_budget_and_keywords():
@@ -79,7 +75,7 @@ def test_structured_filter_filters_by_category_budget_and_brand():
     assert [product["product_id"] for product in results] == ["p_1"]
 
 
-def test_choose_candidates_relaxes_brand_then_price_then_all_products():
+def test_choose_candidates_applies_filters_without_relaxing_constraints():
     products = [
         {
             "product_id": "p_1",
@@ -95,7 +91,7 @@ def test_choose_candidates_relaxes_brand_then_price_then_all_products():
         },
     ]
 
-    brand_relaxed = choose_candidates(
+    brand_mismatch = choose_candidates(
         products,
         {
             "category": "数码电子",
@@ -104,7 +100,7 @@ def test_choose_candidates_relaxes_brand_then_price_then_all_products():
             "keywords": [],
         },
     )
-    price_relaxed = choose_candidates(
+    budget_mismatch = choose_candidates(
         products,
         {
             "category": "数码电子",
@@ -113,7 +109,7 @@ def test_choose_candidates_relaxes_brand_then_price_then_all_products():
             "keywords": [],
         },
     )
-    all_products = choose_candidates(
+    category_mismatch = choose_candidates(
         products,
         {
             "category": "美妆护肤",
@@ -123,9 +119,9 @@ def test_choose_candidates_relaxes_brand_then_price_then_all_products():
         },
     )
 
-    assert [product["product_id"] for product in brand_relaxed] == ["p_1"]
-    assert [product["product_id"] for product in price_relaxed] == ["p_1", "p_2"]
-    assert all_products == products
+    assert brand_mismatch == []
+    assert budget_mismatch == []
+    assert category_mismatch == []
 
 
 def test_build_response_item_converts_retrieved_result_to_card_fields():
@@ -240,24 +236,7 @@ def test_recommend_products_assembles_real_recommendation_chain():
     assert response["items"][0]["evidence"].startswith("临时匹配")
 
 
-def test_fallback_items_returns_three_stable_cards():
-    items = fallback_items("完全无法匹配的需求")
-
-    assert len(items) == 3
-    assert [item["product_id"] for item in items] == [
-        "fallback_001",
-        "fallback_002",
-        "fallback_003",
-    ]
-    for item in items:
-        assert item["title"]
-        assert item["brand"] == "系统推荐"
-        assert item["price"] == 0
-        assert item["reason"]
-        assert item["evidence"]
-
-
-def test_recommend_products_uses_fallback_when_retrieve_returns_empty():
+def test_recommend_products_returns_empty_items_when_retrieve_returns_empty():
     def empty_retrieve(
         query: str,
         candidates: list[dict],
@@ -271,22 +250,20 @@ def test_recommend_products_uses_fallback_when_retrieve_returns_empty():
         retrieve_func=empty_retrieve,
     )
 
-    assert len(response["items"]) == 3
-    assert response["items"][0]["product_id"] == "fallback_001"
+    assert response["items"] == []
     assert "error" not in response
 
 
-def test_recommend_products_uses_fallback_when_product_source_is_empty():
+def test_recommend_products_returns_empty_items_when_product_source_is_empty():
     response = recommend_products(
         "预算9000以内的手机",
         product_source=[],
     )
 
-    assert len(response["items"]) == 3
-    assert response["items"][0]["product_id"] == "fallback_001"
+    assert response["items"] == []
 
 
-def test_recommend_products_uses_fallback_when_retrieve_fails():
+def test_recommend_products_propagates_retrieve_errors():
     def failing_retrieve(
         query: str,
         candidates: list[dict],
@@ -294,12 +271,9 @@ def test_recommend_products_uses_fallback_when_retrieve_fails():
     ) -> list[dict]:
         raise RuntimeError("检索模块不可用")
 
-    response = recommend_products(
-        "预算9000以内的手机",
-        product_source=[{"product_id": "p_1", "title": "测试商品"}],
-        retrieve_func=failing_retrieve,
-    )
-
-    assert len(response["items"]) == 3
-    assert response["items"][0]["product_id"] == "fallback_001"
-    assert response["error"] == "检索模块不可用"
+    with pytest.raises(RuntimeError, match="检索模块不可用"):
+        recommend_products(
+            "预算9000以内的手机",
+            product_source=[{"product_id": "p_1", "title": "测试商品"}],
+            retrieve_func=failing_retrieve,
+        )
