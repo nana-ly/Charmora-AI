@@ -15,6 +15,26 @@ The v1 agent should:
 - Handle no-results recommendations honestly without fabricating products.
 - Keep the external `/chat` and `/chat/stream` response contracts stable.
 
+## Migration Policy
+
+The implementation should not preserve the old internal rule-based chain.
+
+Stable external contracts:
+
+- Keep `/chat` request and response shape stable.
+- Keep `/chat/stream` event shape stable.
+- Keep recommendation product cards sourced from the recommendation tool.
+
+Internal behavior to remove rather than support:
+
+- Remove `AgentPolicy` from the active backend path.
+- Remove keyword intent detection from `LangGraphAgentRunner`.
+- Remove policy injection from `create_agent_runner` and runner constructors.
+- Remove tests that assert keyword-policy behavior as product behavior.
+- Do not add a compatibility adapter that maps old policy decisions into the new agent.
+
+LLM failure may still return a conservative `clarify` response. That is an availability fallback, not compatibility with the old rule system.
+
 ## Current Problem
 
 The current implementation uses `AgentPolicy.detect_intent(message)` as the first decision point. It only inspects the latest user message and relies on keyword lists.
@@ -44,6 +64,72 @@ The v1 agent should keep LangGraph as the orchestration layer, but move intent a
   -> generate_reply
   -> finalize_response
 ```
+
+## Internal Contracts
+
+### UserUnderstanding
+
+The LLM understanding layer should return one validated JSON object. The object is parsed and validated before the graph uses it.
+
+```json
+{
+  "intent": "recommend",
+  "confidence": 0.9,
+  "purchase_need": "9000以内、拍照好的手机",
+  "preference_updates": {
+    "category": "手机",
+    "budget": "9000以内",
+    "focus": ["拍照"],
+    "usage": ["日常"],
+    "preferred_brands": [],
+    "excluded_brands": [],
+    "price_preference": null
+  },
+  "target_item_index": null,
+  "clarifying_question": null
+}
+```
+
+Field rules:
+
+- `intent` must be one of `recommend`, `update_preference`, `explain`, or `clarify`.
+- `confidence` must be between `0` and `1`.
+- `purchase_need` should contain the complete current shopping need for recommendation retrieval. For `recommend` and `update_preference`, it is required unless memory already has a usable `purchase_need`.
+- `preference_updates` is a partial update. Missing keys mean "no change".
+- `target_item_index` is 1-based because users refer to "第一个/第二个". The runner converts it to 0-based only when reading `last_items`.
+- `clarifying_question` is used when the intent is `clarify` or when required recommendation fields are missing.
+
+If the LLM returns invalid JSON, an unknown intent, an out-of-range confidence, or an unusable shape, the understanding service must return a conservative `clarify` object.
+
+### ActionResult
+
+The execution layer should produce a small action result for `generate_reply`.
+
+```json
+{
+  "action": "recommend",
+  "reply_type": "recommendation_reply",
+  "recommendation_query": "9000以内、拍照好的手机",
+  "items": [],
+  "no_results": null,
+  "target_item_index": null
+}
+```
+
+Supported actions:
+
+- `recommend`
+- `explain`
+- `clarify`
+
+Supported reply types:
+
+- `recommendation_reply`
+- `explain_reply`
+- `clarify_reply`
+- `no_results_reply`
+
+Recommendation tool exceptions are not no-results. No-results only means the recommendation tool completed successfully and returned an empty `items` list.
 
 ### Node Responsibilities
 
@@ -83,6 +169,8 @@ Example:
 
 The LLM must return structured data only. If the LLM is unavailable or the response cannot be parsed, the system should return a conservative `clarify` understanding instead of falling back to keyword rules.
 
+The prompt should explicitly forbid Markdown fences, explanations, and product fabrication. The parser should use a JSON parser plus Pydantic validation rather than string matching.
+
 #### update_memory
 
 Merge the structured understanding into the session state.
@@ -96,10 +184,23 @@ The memory should track:
 - `last_query`
 - `last_filters`
 - `last_items`
+- `last_result_status`
+- `last_no_results_need`
+- `last_no_results_relax_options`
 - `last_intent`
 - `messages`
 
 The existing `ConversationState` can be extended rather than replaced.
+
+Memory merge rules:
+
+- Latest scalar values win, such as `category`, `budget`, and `price_preference`.
+- List values are merged and de-duplicated while preserving order, such as `focus`, `usage`, `preferred_brands`, and `excluded_brands`.
+- `excluded_brands` should be kept both in `preferences` and as a top-level convenience field if implementation chooses to add one.
+- A successful non-empty recommendation updates `last_items`.
+- A no-results recommendation must not overwrite `last_items`; `last_items` should continue to mean the last successful recommendation list.
+- No-results metadata is stored in `last_result_status`, `last_no_results_need`, and `last_no_results_relax_options`.
+- `last_query` should record the query sent to the recommendation tool, even when the result is empty.
 
 #### decide_next_action
 
@@ -122,6 +223,8 @@ Execute the selected action:
 - `clarify`: prepare a clarifying question without calling the recommendation tool.
 
 Product cards must only come from the recommendation tool or previous saved recommendation results.
+
+For `explain`, if `target_item_index` is missing, default to the first item. If the index is out of range or there is no `last_items`, return a clarify-style reply asking the user which product they want to discuss or asking for an initial shopping need.
 
 #### generate_reply
 
@@ -148,6 +251,8 @@ Append the assistant message, save the conversation state, and return the existi
   "state": {}
 }
 ```
+
+`state` should remain compact. It may include `intent`, `action`, `confidence`, `purchase_need`, `preferences`, and `result_status`, but should not include full message history or duplicate product cards.
 
 ## No-Results Strategy
 
@@ -205,6 +310,43 @@ Internal action result example:
 
 The LLM may help phrase the reply, but only from the structured need, known filters, empty result, and relaxation options. It must not create product cards.
 
+Relaxation option generation should be deterministic in v1. Suggested rules:
+
+- If a budget or price ceiling is present, include an option to raise the budget or loosen the price ceiling.
+- If a specific brand is required or many brands are excluded, include an option to loosen brand constraints.
+- If the category is narrow, include an option to consider a nearby broader category.
+- If there are multiple focus points, include an option to keep only the most important one.
+- If no clear blocker is detected, use generic options: loosen budget, loosen brand/category, or tell the agent which condition matters most.
+
+The no-results response returns `items: []` and sets `state.result_status` to `no_results`.
+
+## LLM Prompt and Parsing Contract
+
+The understanding service should call the LLM with a compact, explicit context block:
+
+- Latest user message.
+- Recent conversation, capped to the latest useful turns.
+- Current `purchase_need`.
+- Current preferences and excluded brands.
+- Previous successful recommendation list with 1-based indexes, title, brand, price, and evidence.
+
+The response must be JSON only. Example system requirement:
+
+```text
+Return one JSON object only. Do not use Markdown. Do not explain.
+Do not invent product cards. Product recommendations come only from tools.
+If the user asks about an indexed previous item, set target_item_index to that 1-based index.
+If the user need is not specific enough to recommend, set intent to clarify and provide clarifying_question.
+```
+
+Parsing rules:
+
+- Parse with `json.loads`.
+- Validate with the `UserUnderstanding` schema.
+- Treat parse or validation failure as LLM-unavailable behavior.
+- Do not inspect the output with ad hoc string matching.
+- The understanding call should have enough output budget for the JSON object and should not reuse a response limit meant only for short recommendation reasons.
+
 ## File Layout
 
 Initial v1 layout:
@@ -222,10 +364,15 @@ backend/agent/
 `understanding.py` should define:
 
 - `UserUnderstanding`
+- `UserIntent`
+- `AgentAction`
+- `ActionResult`
+- `NoResultsSuggestion`
 - `LLMUserUnderstandingService`
+- `UserUnderstandingService` protocol or equivalent fake-friendly interface
 - parsing and conservative fallback behavior
 
-`policy.py` should stop being the core agent decision path. It may remain temporarily for compatibility until tests and imports are migrated.
+`policy.py` should be deleted when the implementation removes the old rule-based path. Any exports from `agent.__init__` and imports in tests should be updated instead of kept compatible.
 
 If the understanding layer grows, it can later be split into:
 
@@ -246,6 +393,21 @@ return clarify understanding
 The agent should ask for the missing shopping basics, such as category, budget, and key preferences.
 
 The system should not fall back to keyword rules because the target architecture is an LLM-driven shopping agent, not a rule system.
+
+The clarify fallback should be explicit and stable:
+
+```json
+{
+  "intent": "clarify",
+  "confidence": 0.0,
+  "purchase_need": null,
+  "preference_updates": {},
+  "target_item_index": null,
+  "clarifying_question": "可以告诉我想买的品类、预算和最在意的点吗？"
+}
+```
+
+This fallback is an availability behavior, not a business rule classifier.
 
 ## Out of Scope for v1
 
@@ -283,13 +445,27 @@ Add focused tests for:
 
 Tests should use fake LLM and fake recommendation services where possible so they are deterministic and do not depend on network calls.
 
+Acceptance criteria:
+
+- No active chat path calls `AgentPolicy.detect_intent`.
+- `backend/agent/policy.py` is deleted or contains no active production code.
+- `create_agent_runner` no longer accepts or wires a `policy` dependency.
+- No LLM parse failure causes `/chat` to crash.
+- Empty recommendation results never produce fabricated product cards.
+- `last_items` still points to the last successful recommendation after a no-results turn.
+- `/chat/stream` emits the existing `start`, `delta`, `items`, `state`, and `done` events.
+- Tests can run without real LLM credentials.
+
 ## Migration Notes
 
 Implementation should be incremental:
 
 1. Add the new understanding schema and service with tests.
 2. Extend conversation memory for structured shopping context.
-3. Update the LangGraph runner nodes to use `understand_user`.
-4. Add no-results action handling.
-5. Keep API response contracts stable.
-6. Retire `AgentPolicy` from the active path once the new tests cover the agent behavior.
+3. Inject the understanding service into `LangGraphAgentRunner` so tests can provide fakes.
+4. Update the LangGraph runner nodes to use `understand_user`.
+5. Add no-results action handling.
+6. Keep API response contracts stable.
+7. Delete the old `AgentPolicy` path, including production imports and obsolete keyword-policy tests.
+
+The implementation should not mix the old keyword policy with the new LLM understanding path. When a test conflicts with the new architecture because it asserts keyword-policy behavior, replace it with an understanding-driven agent test instead of preserving compatibility.
