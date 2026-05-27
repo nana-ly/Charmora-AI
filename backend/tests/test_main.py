@@ -1,10 +1,15 @@
+import pytest
 from fastapi.testclient import TestClient
 
-import main
-from main import agent_runner, app
+import api.deps as api_deps
+import api.rag as api_rag
+import services.retriever_factory as retriever_factory
 from agent.runner import create_agent_runner
+from agent.tools import RecommendationTool
 from core.config import AppConfig
+from main import app
 from schemas.chat import ChatResponse
+from services.recommendation_service import run_recommendation
 
 
 client = TestClient(app)
@@ -90,7 +95,12 @@ def test_recommend_returns_three_product_cards_from_loaded_products(monkeypatch)
 
 
 def test_rag_search_returns_vector_retrieval_debug_results(monkeypatch):
-    monkeypatch.setattr(main, "create_vector_retriever", lambda: FakeVectorRetriever())
+    monkeypatch.setattr(api_rag, "create_vector_retriever", lambda: FakeVectorRetriever())
+    monkeypatch.setattr(
+        retriever_factory,
+        "create_vector_retriever",
+        lambda config=None: FakeVectorRetriever(),
+    )
 
     response = client.post(
         "/rag/search",
@@ -113,7 +123,11 @@ def test_rag_search_returns_vector_retrieval_debug_results(monkeypatch):
 
 def test_recommend_uses_vector_retriever_by_default(monkeypatch):
     monkeypatch.setenv("RETRIEVER_MODE", "vector")
-    monkeypatch.setattr(main, "create_vector_retriever", lambda: FakeVectorRetriever())
+    monkeypatch.setattr(
+        retriever_factory,
+        "create_vector_retriever",
+        lambda config=None: FakeVectorRetriever(),
+    )
 
     response = client.post(
         "/recommend",
@@ -126,46 +140,46 @@ def test_recommend_uses_vector_retriever_by_default(monkeypatch):
     assert payload["items"][0]["evidence"].startswith("向量召回")
 
 
-def test_recommend_falls_back_to_keyword_when_vector_retriever_fails(monkeypatch):
-    def fail_create_vector_retriever():
+def test_recommend_returns_500_when_vector_retriever_fails(monkeypatch):
+    def fail_create_vector_retriever(config=None):
         raise RuntimeError("missing embedding config")
 
     monkeypatch.setenv("RETRIEVER_MODE", "vector")
-    monkeypatch.setattr(main, "create_vector_retriever", fail_create_vector_retriever)
-
-    response = client.post(
-        "/recommend",
-        json={"query": "预算9000以内，想买拍照好的手机"},
+    monkeypatch.setattr(
+        retriever_factory,
+        "create_vector_retriever",
+        fail_create_vector_retriever,
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert len(payload["items"]) == 3
-    assert payload["items"][0]["evidence"].startswith("临时匹配")
+    with pytest.raises(RuntimeError, match="missing embedding config"):
+        client.post(
+            "/recommend",
+            json={"query": "预算9000以内，想买拍照好的手机"},
+        )
 
 
-def test_recommend_falls_back_to_keyword_when_vector_search_fails(monkeypatch):
+def test_recommend_returns_500_when_vector_search_fails(monkeypatch):
     monkeypatch.setenv("RETRIEVER_MODE", "vector")
     monkeypatch.setattr(
-        main,
+        retriever_factory,
         "create_vector_retriever",
-        lambda: FailingVectorSearchRetriever(),
+        lambda config=None: FailingVectorSearchRetriever(),
     )
 
-    response = client.post(
-        "/recommend",
-        json={"query": "预算9000以内，想买拍照好的手机"},
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert len(payload["items"]) == 3
-    assert payload["items"][0]["evidence"].startswith("临时匹配")
+    with pytest.raises(RuntimeError, match="embedding api failed"):
+        client.post(
+            "/recommend",
+            json={"query": "预算9000以内，想买拍照好的手机"},
+        )
 
 
 def test_chat_uses_vector_retriever_by_default(monkeypatch):
     monkeypatch.setenv("RETRIEVER_MODE", "vector")
-    monkeypatch.setattr(main, "create_vector_retriever", lambda: FakeVectorRetriever())
+    monkeypatch.setattr(
+        retriever_factory,
+        "create_vector_retriever",
+        lambda config=None: FakeVectorRetriever(),
+    )
 
     response = client.post(
         "/chat",
@@ -218,12 +232,12 @@ def test_chat_returns_agent_response_and_state():
 
 def test_chat_keeps_response_contract_with_langgraph_runner(monkeypatch):
     monkeypatch.setattr(
-        main,
+        api_deps,
         "agent_runner",
         create_agent_runner(
             config=AppConfig(agent_runner="langgraph"),
-            recommendation_tool=main.RecommendationTool(
-                recommend_func=main.run_recommendation,
+            recommendation_tool=RecommendationTool(
+                recommend_func=run_recommendation,
             ),
         ),
     )
@@ -280,7 +294,7 @@ def test_chat_stream_returns_error_event_when_agent_fails(monkeypatch):
     def fail_run(session_id: str, message: str):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(agent_runner, "run", fail_run)
+    monkeypatch.setattr(api_deps.agent_runner, "run", fail_run)
 
     with client.stream(
         "POST",
@@ -308,9 +322,9 @@ def test_chat_stream_returns_error_before_success_events_when_serialization_fail
             reply="这段回复不应先发送给客户端。",
             items=[],
             state={"bad": object()},
-        )
+    )
 
-    monkeypatch.setattr(agent_runner, "run", run_with_unserializable_state)
+    monkeypatch.setattr(api_deps.agent_runner, "run", run_with_unserializable_state)
 
     with client.stream(
         "POST",
@@ -328,3 +342,14 @@ def test_chat_stream_returns_error_before_success_events_when_serialization_fail
     assert "event: state" not in body
     assert body.index("event: start") < body.index("event: error")
     assert body.index("event: error") < body.index("event: done")
+
+
+def test_app_registers_split_api_routes():
+    route_paths = {route.path for route in app.routes}
+
+    assert "/" in route_paths
+    assert "/health" in route_paths
+    assert "/recommend" in route_paths
+    assert "/rag/search" in route_paths
+    assert "/chat" in route_paths
+    assert "/chat/stream" in route_paths
