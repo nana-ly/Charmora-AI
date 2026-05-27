@@ -5,7 +5,29 @@ from recommendation_core.filters import extract_filters
 from recommendation_core.pipeline import recommend_products
 from recommendation_core.ranking import choose_candidates, get_product_price, structured_filter
 from recommendation_core.response_builder import build_response_item
+from retrieval.base import RetrievalResult
 from retrieval.keyword import retrieve
+
+
+class FakeEmptyRetriever:
+    def search(self, query: str, candidates=None, top_k: int = 3):
+        return []
+
+
+class FakeResultRetriever:
+    def search(self, query: str, candidates=None, top_k: int = 3):
+        return [
+            RetrievalResult(
+                product=candidates[0],
+                evidence="测试 evidence",
+                score=1.0,
+            )
+        ][:top_k]
+
+
+class FakeFailingRetriever:
+    def search(self, query: str, candidates=None, top_k: int = 3):
+        raise RuntimeError("检索模块不可用")
 
 
 def test_extract_filters_parses_category_budget_and_keywords():
@@ -236,18 +258,30 @@ def test_recommend_products_assembles_real_recommendation_chain():
     assert response["items"][0]["evidence"].startswith("临时匹配")
 
 
-def test_recommend_products_returns_empty_items_when_retrieve_returns_empty():
-    def empty_retrieve(
-        query: str,
-        candidates: list[dict],
-        top_k: int,
-    ) -> list[dict]:
-        return []
+def test_recommend_products_consumes_retriever_results_directly():
+    response = recommend_products(
+        "预算9000以内的测试商品",
+        product_source=[
+            {
+                "product_id": "p_1",
+                "title": "测试商品",
+                "brand": "测试品牌",
+                "category": "数码电子",
+                "base_price": 100,
+            }
+        ],
+        retriever=FakeResultRetriever(),
+    )
 
+    assert response["items"][0]["product_id"] == "p_1"
+    assert response["items"][0]["evidence"] == "测试 evidence"
+
+
+def test_recommend_products_returns_empty_items_when_retriever_returns_empty():
     response = recommend_products(
         "找一个不存在的商品",
         product_source=[{"product_id": "p_1", "title": "测试商品"}],
-        retrieve_func=empty_retrieve,
+        retriever=FakeEmptyRetriever(),
     )
 
     assert response["items"] == []
@@ -263,17 +297,10 @@ def test_recommend_products_returns_empty_items_when_product_source_is_empty():
     assert response["items"] == []
 
 
-def test_recommend_products_propagates_retrieve_errors():
-    def failing_retrieve(
-        query: str,
-        candidates: list[dict],
-        top_k: int,
-    ) -> list[dict]:
-        raise RuntimeError("检索模块不可用")
-
+def test_recommend_products_propagates_retriever_errors():
     with pytest.raises(RuntimeError, match="检索模块不可用"):
         recommend_products(
             "预算9000以内的手机",
             product_source=[{"product_id": "p_1", "title": "测试商品"}],
-            retrieve_func=failing_retrieve,
+            retriever=FakeFailingRetriever(),
         )
