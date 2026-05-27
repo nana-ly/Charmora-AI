@@ -5,21 +5,19 @@ from services import recommendation_service
 
 
 def test_run_recommendation_uses_config_default_top_k_when_not_supplied(monkeypatch):
+    selected_retriever = object()
     calls = {}
 
-    def fake_select_retrieve_func(config=None):
-        return None
-
-    def fake_recommend_products(query: str, top_k: int = 3, retrieve_func=None):
+    def fake_recommend_products(query: str, top_k: int = 3, retriever=None):
         calls["query"] = query
         calls["top_k"] = top_k
-        calls["retrieve_func"] = retrieve_func
+        calls["retriever"] = retriever
         return {"query": query, "filters": {}, "items": []}
 
     monkeypatch.setattr(
         recommendation_service,
-        "select_retrieve_func",
-        fake_select_retrieve_func,
+        "select_retriever",
+        lambda config=None: selected_retriever,
     )
     monkeypatch.setattr(
         recommendation_service,
@@ -38,21 +36,21 @@ def test_run_recommendation_uses_config_default_top_k_when_not_supplied(monkeypa
     assert calls == {
         "query": "拍照手机",
         "top_k": 4,
-        "retrieve_func": None,
+        "retriever": selected_retriever,
     }
 
 
 def test_run_recommendation_allows_explicit_top_k(monkeypatch):
     calls = {}
 
-    def fake_recommend_products(query: str, top_k: int = 3, retrieve_func=None):
+    def fake_recommend_products(query: str, top_k: int = 3, retriever=None):
         calls["top_k"] = top_k
         return {"query": query, "filters": {}, "items": []}
 
     monkeypatch.setattr(
         recommendation_service,
-        "select_retrieve_func",
-        lambda config=None: None,
+        "select_retriever",
+        lambda config=None: object(),
     )
     monkeypatch.setattr(
         recommendation_service,
@@ -70,22 +68,20 @@ def test_run_recommendation_allows_explicit_top_k(monkeypatch):
     assert calls["top_k"] == 2
 
 
-def test_run_recommendation_passes_selected_retrieve_func(monkeypatch):
+def test_run_recommendation_passes_selected_retriever(monkeypatch):
+    selected_retriever = object()
     calls = {}
 
-    def fake_retrieve_func(query: str, candidates=None, top_k: int = 3):
-        return []
-
-    def fake_recommend_products(query: str, top_k: int = 3, retrieve_func=None):
+    def fake_recommend_products(query: str, top_k: int = 3, retriever=None):
         calls["query"] = query
         calls["top_k"] = top_k
-        calls["retrieve_func"] = retrieve_func
+        calls["retriever"] = retriever
         return {"query": query, "filters": {}, "items": []}
 
     monkeypatch.setattr(
         recommendation_service,
-        "select_retrieve_func",
-        lambda config=None: fake_retrieve_func,
+        "select_retriever",
+        lambda config=None: selected_retriever,
     )
     monkeypatch.setattr(
         recommendation_service,
@@ -97,17 +93,17 @@ def test_run_recommendation_passes_selected_retrieve_func(monkeypatch):
 
     assert calls["query"] == "拍照手机"
     assert calls["top_k"] == 5
-    assert calls["retrieve_func"] is fake_retrieve_func
+    assert calls["retriever"] is selected_retriever
 
 
 def test_run_recommendation_propagates_pipeline_errors(monkeypatch):
-    def fake_recommend_products(query: str, top_k: int = 3, retrieve_func=None):
+    def fake_recommend_products(query: str, top_k: int = 3, retriever=None):
         raise RuntimeError("pipeline failed")
 
     monkeypatch.setattr(
         recommendation_service,
-        "select_retrieve_func",
-        lambda config=None: None,
+        "select_retriever",
+        lambda config=None: object(),
     )
     monkeypatch.setattr(
         recommendation_service,
