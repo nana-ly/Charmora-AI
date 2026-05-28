@@ -69,7 +69,18 @@ def clear_active_context(conversation: ConversationState) -> None:
 
     conversation.purchase_need = None
     conversation.preferences = {}
+    conversation.excluded_product_ids = []
     conversation.excluded_brands = []
+    conversation.excluded_keywords = []
+    conversation.excluded_price_ranges = []
+    conversation.negative_feedback_items = []
+    conversation.latest_attempt_status = None
+    conversation.latest_attempt_error = None
+    conversation.latest_no_results_relax_options = []
+    conversation.last_successful_items = []
+    conversation.last_successful_result_id = None
+    conversation.last_successful_query = None
+    conversation.last_successful_filters = None
     conversation.target_item_index = None
     conversation.last_query = None
     conversation.last_filters = None

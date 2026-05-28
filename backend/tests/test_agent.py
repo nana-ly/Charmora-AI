@@ -346,6 +346,25 @@ def test_conversation_state_tracks_shopping_memory_defaults():
     assert state.pending_restore_category is None
 
 
+def test_conversation_state_tracks_negative_feedback_defaults():
+    from agent.memory import ConversationState
+
+    state = ConversationState(session_id="session-negative-defaults")
+
+    assert state.excluded_product_ids == []
+    assert state.excluded_brands == []
+    assert state.excluded_keywords == []
+    assert state.excluded_price_ranges == []
+    assert state.negative_feedback_items == []
+    assert state.latest_attempt_status is None
+    assert state.latest_attempt_error is None
+    assert state.latest_no_results_relax_options == []
+    assert state.last_successful_items == []
+    assert state.last_successful_result_id is None
+    assert state.last_successful_query is None
+    assert state.last_successful_filters is None
+
+
 def test_purchase_context_copies_active_conversation_fields():
     from agent.memory import PurchaseContext
 
@@ -370,6 +389,40 @@ def test_purchase_context_copies_active_conversation_fields():
     assert archived.last_no_results_relax_options == ["提高预算"]
     assert archived.target_category == "手机"
     assert archived.category == "数码电子"
+
+
+def test_purchase_context_copies_negative_feedback_and_latest_success_fields():
+    from agent.memory import ConversationState, PurchaseContext
+    from schemas.product import ProductCard
+
+    state = ConversationState(session_id="session-negative-archive")
+    state.purchase_need = "预算9000以内，想买拍照好的手机"
+    state.excluded_product_ids = ["p_2"]
+    state.excluded_brands = ["苹果"]
+    state.latest_attempt_status = "success"
+    state.last_successful_result_id = "result-1"
+    state.last_successful_query = "拍照手机"
+    state.last_successful_items = [
+        ProductCard(
+            product_id="p_1",
+            title="测试手机",
+            brand="华为",
+            price=5999,
+            reason="适合拍照。",
+            evidence="命中拍照。",
+        )
+    ]
+
+    archived = PurchaseContext.from_conversation(state)
+    state.excluded_product_ids.append("p_3")
+    state.last_successful_items[0].title = "被修改"
+
+    assert archived.excluded_product_ids == ["p_2"]
+    assert archived.excluded_brands == ["苹果"]
+    assert archived.latest_attempt_status == "success"
+    assert archived.last_successful_result_id == "result-1"
+    assert archived.last_successful_query == "拍照手机"
+    assert archived.last_successful_items[0].title == "测试手机"
 
 
 def test_purchase_context_apply_replaces_active_conversation_fields():
