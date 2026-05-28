@@ -1,8 +1,12 @@
 """LLM 推荐理由服务。"""
 
+import logging
 from typing import Any, Protocol
 
 from core.config import LLMConfig
+from recommendation_core.reason import template_reason
+
+logger = logging.getLogger(__name__)
 
 
 class CompletionClient(Protocol):
@@ -34,8 +38,9 @@ class LLMReasonService:
         fallback_reason: str | None = None,
     ) -> str:
         """生成推荐理由；不可调用 LLM 时返回模板兜底理由。"""
-        fallback = fallback_reason or self._template_reason(query, product, evidence)
+        fallback = fallback_reason or template_reason(query, product, evidence)
         if not self.config.is_available:
+            logger.debug("llm reason generation skipped; using fallback")
             return fallback
 
         try:
@@ -44,6 +49,7 @@ class LLMReasonService:
             return reason or fallback
         except Exception:
             # LLM 是增强能力，失败时不能影响推荐主链路。
+            logger.exception("llm reason generation failed; using fallback")
             return fallback
 
     def _create_client(self) -> CompletionClient:
@@ -69,13 +75,4 @@ class LLMReasonService:
             f"证据：{evidence}"
         )
 
-    def _template_reason(
-        self,
-        query: str,
-        product: dict[str, Any],
-        evidence: str,
-    ) -> str:
-        """生成稳定模板理由，作为 LLM 不可用时的降级结果。"""
-        title = product.get("title", "这款商品")
-        return f"{title} 与你的需求「{query}」匹配，{evidence}"
 

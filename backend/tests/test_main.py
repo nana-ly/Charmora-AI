@@ -6,6 +6,7 @@ import api.rag as api_rag
 import services.retriever_factory as retriever_factory
 from agent.runner import create_agent_runner
 from agent.tools import RecommendationTool
+from agent.understanding import UserIntent, UserUnderstanding
 from core.config import AppConfig
 from main import app
 from schemas.chat import ChatResponse
@@ -38,6 +39,33 @@ class FakeVectorRetriever:
 class FailingVectorSearchRetriever:
     def search(self, query: str, candidates=None, top_k: int = 3):
         raise RuntimeError("embedding api failed")
+
+
+class FakeUnderstandingService:
+    def understand(self, *, message, conversation):
+        return UserUnderstanding(
+            intent=UserIntent.RECOMMEND,
+            confidence=0.9,
+            purchase_need=message,
+            preference_updates={
+                "category": "数码电子",
+                "budget": "9000以内",
+                "focus": ["拍照"],
+            },
+        )
+
+
+def inject_recommend_chat_runner(monkeypatch, *, recommendation_tool=None):
+    monkeypatch.setattr(
+        api_deps,
+        "agent_runner",
+        create_agent_runner(
+            config=AppConfig(agent_runner="langgraph"),
+            recommendation_tool=recommendation_tool
+            or RecommendationTool(recommend_func=run_recommendation),
+            understanding_service=FakeUnderstandingService(),
+        ),
+    )
 
 
 def test_root_returns_service_metadata():
@@ -180,6 +208,7 @@ def test_chat_uses_vector_retriever_by_default(monkeypatch):
         "create_vector_retriever",
         lambda config=None: FakeVectorRetriever(),
     )
+    inject_recommend_chat_runner(monkeypatch)
 
     response = client.post(
         "/chat",
@@ -211,7 +240,9 @@ def test_recommend_supports_budget_without_suffix():
     assert len(payload["items"]) == 3
 
 
-def test_chat_returns_agent_response_and_state():
+def test_chat_returns_agent_response_and_state(monkeypatch):
+    inject_recommend_chat_runner(monkeypatch)
+
     response = client.post(
         "/chat",
         json={
@@ -231,14 +262,10 @@ def test_chat_returns_agent_response_and_state():
 
 
 def test_chat_keeps_response_contract_with_langgraph_runner(monkeypatch):
-    monkeypatch.setattr(
-        api_deps,
-        "agent_runner",
-        create_agent_runner(
-            config=AppConfig(agent_runner="langgraph"),
-            recommendation_tool=RecommendationTool(
-                recommend_func=run_recommendation,
-            ),
+    inject_recommend_chat_runner(
+        monkeypatch,
+        recommendation_tool=RecommendationTool(
+            recommend_func=run_recommendation,
         ),
     )
 
@@ -266,7 +293,37 @@ def test_chat_keeps_response_contract_with_langgraph_runner(monkeypatch):
     } <= payload["items"][0].keys()
 
 
-def test_chat_stream_returns_sse_events():
+def test_chat_tool_error_keeps_response_shape(monkeypatch):
+    def fail_recommendation(query: str, top_k: int = 3):
+        raise RuntimeError("boom")
+
+    inject_recommend_chat_runner(
+        monkeypatch,
+        recommendation_tool=RecommendationTool(recommend_func=fail_recommendation),
+    )
+
+    response = client.post(
+        "/chat",
+        json={
+            "session_id": "test-chat-tool-error-session",
+            "message": "recommend a camera phone under 9000",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"session_id", "reply", "items", "state"}
+    assert payload["session_id"] == "test-chat-tool-error-session"
+    assert payload["items"] == []
+    assert "推荐服务暂时不可用" in payload["reply"]
+    assert payload["state"]["action"] == "recommend"
+    assert payload["state"]["result_status"] == "tool_error"
+    assert payload["state"]["tool_error"] == "recommendation_failed"
+
+
+def test_chat_stream_returns_sse_events(monkeypatch):
+    inject_recommend_chat_runner(monkeypatch)
+
     with client.stream(
         "POST",
         "/chat/stream",
@@ -288,6 +345,42 @@ def test_chat_stream_returns_sse_events():
     assert start_index < delta_index < items_index < state_index < done_index
     assert '"session_id": "test-stream-session"' in body
     assert '"product_id":' in body
+
+
+def test_chat_stream_tool_error_returns_success_events(monkeypatch):
+    def fail_recommendation(query: str, top_k: int = 3):
+        raise RuntimeError("boom")
+
+    inject_recommend_chat_runner(
+        monkeypatch,
+        recommendation_tool=RecommendationTool(recommend_func=fail_recommendation),
+    )
+
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={
+            "session_id": "test-stream-tool-error-session",
+            "message": "recommend a camera phone under 9000",
+        },
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        body = response.read().decode("utf-8")
+
+    start_index = body.index("event: start")
+    delta_index = body.index("event: delta")
+    items_index = body.index("event: items")
+    state_index = body.index("event: state")
+    done_index = body.index("event: done")
+
+    assert "event: error" not in body
+    assert start_index < delta_index < items_index < state_index < done_index
+    assert '"session_id": "test-stream-tool-error-session"' in body
+    assert '"items": []' in body
+    assert "推荐服务暂时不可用" in body
+    assert '"result_status": "tool_error"' in body
+    assert '"tool_error": "recommendation_failed"' in body
 
 
 def test_chat_stream_returns_error_event_when_agent_fails(monkeypatch):

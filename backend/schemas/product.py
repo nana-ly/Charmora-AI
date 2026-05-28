@@ -1,6 +1,6 @@
 """商品相关数据结构。"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class ProductCard(BaseModel):
@@ -16,13 +16,3 @@ class ProductCard(BaseModel):
     reason: str
     evidence: str
 
-
-class RetrievedProduct(BaseModel):
-    """检索层返回的商品候选项。
-
-    score 表示召回或排序分数，metadata 保留给向量库、标签和库存等扩展信息。
-    """
-
-    product: dict
-    score: float = 0.0
-    metadata: dict = Field(default_factory=dict)

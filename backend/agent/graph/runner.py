@@ -1,38 +1,50 @@
-"""LangGraph 版导购 Agent Runner。
+"""LangGraph 版导购 Agent Runner。"""
 
-首版只把现有 SimpleAgentRunner 的多轮流程迁移到图编排：
-识别意图 -> 按意图路由到工具节点 -> 统一保存状态并组装 ChatResponse。
-"""
-
-from typing import Any, Literal, TypedDict
+import logging
+from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from agent.context_manager import (
+    ConversationCommand,
+    confirm_restore,
+    reject_restore,
+    request_restore,
+    reset_for_new_target,
+    resolve_pending_restore,
+)
 from agent.memory import ConversationState, InMemoryConversationStore
-from agent.policy import AgentDecision, AgentIntent, AgentPolicy
+from agent.query_builder import build_recommendation_query
 from agent.tools import RecommendationTool
+from agent.understanding import (
+    ActionResult,
+    AgentAction,
+    LLMUserUnderstandingService,
+    NoResultsSuggestion,
+    UserIntent,
+    UserUnderstanding,
+    UserUnderstandingService,
+    clarify_understanding,
+)
+from core.config import LLMConfig, load_app_config
 from schemas.chat import ChatMessage, ChatResponse
 from schemas.product import ProductCard
 from schemas.recommend import RecommendResponse
 
+logger = logging.getLogger(__name__)
+
 
 class ShoppingAgentState(TypedDict, total=False):
-    """LangGraph 节点之间共享的状态。
-
-    这里保留 ConversationState 对象，是为了首版复用现有内存会话存储；
-    后续接入 checkpoint 时，可以再把字段拆成更细的可序列化状态。
-    """
-
     session_id: str
     message: str
     conversation: ConversationState
-    decision: AgentDecision
+    understanding: UserUnderstanding
+    pending_restore_command: ConversationCommand
+    action: AgentAction
+    action_result: ActionResult
     reply: str
     items: list[ProductCard]
     response: ChatResponse
-
-
-RouteName = Literal["recommend", "update_preference", "explain", "clarify"]
 
 
 class LangGraphAgentRunner:
@@ -42,133 +54,410 @@ class LangGraphAgentRunner:
         self,
         store: InMemoryConversationStore,
         recommendation_tool: RecommendationTool,
-        policy: AgentPolicy,
+        understanding_service: UserUnderstandingService | None = None,
+        llm_config: LLMConfig | None = None,
     ):
         self.store = store
         self.recommendation_tool = recommendation_tool
-        self.policy = policy
+        self.llm_config = llm_config or load_app_config().llm
+        self.understanding_service = understanding_service or LLMUserUnderstandingService(
+            config=self.llm_config
+        )
         self.graph = self._build_graph()
 
     def run(self, session_id: str, message: str) -> ChatResponse:
-        """处理一轮用户消息，并保持与 SimpleAgentRunner 相同的响应契约。"""
+        logger.info("agent run started session_id=%s", session_id)
+        logger.debug("agent input message_length=%s", len(message))
         result = self.graph.invoke({"session_id": session_id, "message": message})
+        logger.info("agent run completed session_id=%s", session_id)
         return result["response"]
 
     def _build_graph(self):
-        """构建首版导购状态图。"""
         graph = StateGraph(ShoppingAgentState)
-        graph.add_node("detect_intent", self._detect_intent)
-        graph.add_node("recommend", self._recommend)
-        graph.add_node("update_preference", self._update_preference)
-        graph.add_node("explain", self._explain)
-        graph.add_node("clarify", self._clarify)
-        graph.add_node("finalize", self._finalize)
+        graph.add_node("understand_user", self._understand_user)
+        graph.add_node("update_memory", self._update_memory)
+        graph.add_node("decide_next_action", self._decide_next_action)
+        graph.add_node("execute_action", self._execute_action)
+        graph.add_node("generate_reply", self._generate_reply)
+        graph.add_node("finalize_response", self._finalize_response)
 
-        graph.add_edge(START, "detect_intent")
-        # 条件边只负责选择业务节点，避免 API 层理解具体意图分支。
-        graph.add_conditional_edges(
-            "detect_intent",
-            self._route_by_intent,
-            {
-                AgentIntent.RECOMMEND.value: "recommend",
-                AgentIntent.UPDATE_PREFERENCE.value: "update_preference",
-                AgentIntent.EXPLAIN.value: "explain",
-                AgentIntent.CLARIFY.value: "clarify",
-            },
-        )
-        graph.add_edge("recommend", "finalize")
-        graph.add_edge("update_preference", "finalize")
-        graph.add_edge("explain", "finalize")
-        graph.add_edge("clarify", "finalize")
-        graph.add_edge("finalize", END)
+        graph.add_edge(START, "understand_user")
+        graph.add_edge("understand_user", "update_memory")
+        graph.add_edge("update_memory", "decide_next_action")
+        graph.add_edge("decide_next_action", "execute_action")
+        graph.add_edge("execute_action", "generate_reply")
+        graph.add_edge("generate_reply", "finalize_response")
+        graph.add_edge("finalize_response", END)
         return graph.compile()
 
-    def _detect_intent(self, state: ShoppingAgentState) -> dict[str, Any]:
-        """读取/创建会话状态，并判断本轮用户意图。"""
+    def _understand_user(self, state: ShoppingAgentState) -> dict[str, Any]:
         conversation = self.store.get_or_create(state["session_id"])
-        conversation.messages.append(ChatMessage(role="user", content=state["message"]))
-        decision = self.policy.detect_intent(state["message"])
-        return {"conversation": conversation, "decision": decision}
+        message = state["message"]
+        conversation.messages.append(ChatMessage(role="user", content=message))
 
-    def _route_by_intent(self, state: ShoppingAgentState) -> RouteName:
-        """把意图结果映射到 LangGraph 节点名称。"""
-        return state["decision"].intent.value  # type: ignore[return-value]
-
-    def _recommend(self, state: ShoppingAgentState) -> dict[str, Any]:
-        """执行推荐工具节点。"""
-        result = self.recommendation_tool.run(state["message"])
-        self._save_recommendation_result(state["conversation"], result)
-        return {
-            "reply": "我根据你的需求筛选了这几款商品，可以先看第一款的匹配理由。",
-            "items": result.items,
-        }
-
-    def _update_preference(self, state: ShoppingAgentState) -> dict[str, Any]:
-        """基于上一轮需求处理偏好调整节点。"""
-        conversation = state["conversation"]
-        conversation.preferences["price_preference"] = "lower"
-        # 跟进偏好通常省略品类和预算，需要拼回上一轮原始需求，避免检索跳到无关品类。
-        follow_up_query = f"{conversation.last_query or ''} {state['message']}".strip()
-        result = self.recommendation_tool.run(follow_up_query or state["message"])
-        self._save_recommendation_result(conversation, result)
-        conversation.preferences["price_preference"] = "lower"
-        return {
-            "reply": "我已按更低预算重新调整推荐，优先保留和上一轮相近的需求。",
-            "items": result.items,
-        }
-
-    def _explain(self, state: ShoppingAgentState) -> dict[str, Any]:
-        """解释上一轮推荐结果节点。"""
-        items = state["conversation"].last_items
-        if not items:
+        resolution = resolve_pending_restore(conversation, message)
+        if resolution.handled:
+            understanding = resolution.understanding or clarify_understanding(
+                "正在恢复之前的需求。"
+            )
+            logger.info(
+                "agent pending restore resolved command=%s",
+                resolution.command.value,
+            )
             return {
-                "reply": "我还没有上一轮推荐结果，可以先告诉我品类、预算和偏好。",
-                "items": [],
+                "conversation": conversation,
+                "understanding": understanding,
+                "pending_restore_command": resolution.command,
             }
 
-        first_item = items[0]
+        if resolution.clear_pending_before_understanding:
+            conversation.pending_restore_category = None
+
+        understanding = self.understanding_service.understand(
+            message=message,
+            conversation=conversation,
+        )
+
+        restore_category = understanding.restore_context_category
+        if restore_category and request_restore(conversation, restore_category):
+            understanding = UserUnderstanding(
+                intent=UserIntent.CLARIFY,
+                confidence=understanding.confidence,
+                clarifying_question=f"是否恢复之前的{restore_category}需求？",
+                restore_context_category=restore_category,
+            )
+
+        logger.info("agent intent understood intent=%s", understanding.intent.value)
+        return {"conversation": conversation, "understanding": understanding}
+
+    def _update_memory(self, state: ShoppingAgentState) -> dict[str, Any]:
+        conversation = state["conversation"]
+        understanding = state["understanding"]
+        restore_command = state.get("pending_restore_command")
+
+        if restore_command == ConversationCommand.CONFIRM_RESTORE:
+            restored_understanding = confirm_restore(conversation)
+            conversation.last_intent = restored_understanding.intent.value
+            return {
+                "conversation": conversation,
+                "understanding": restored_understanding,
+            }
+
+        if restore_command == ConversationCommand.REJECT_RESTORE:
+            reject_restore(conversation)
+
+        if understanding.reset_context:
+            # 切换目标前先归档旧需求，避免新旧品类状态混在一起。
+            reset_for_new_target(conversation)
+
+        if understanding.purchase_need:
+            conversation.purchase_need = understanding.purchase_need
+        if understanding.target_item_index is not None:
+            conversation.target_item_index = understanding.target_item_index
+
+        self._merge_preferences(conversation, understanding.preference_updates)
+        conversation.last_intent = understanding.intent.value
+        return {"conversation": conversation}
+
+    def _decide_next_action(self, state: ShoppingAgentState) -> dict[str, AgentAction]:
+        understanding = state["understanding"]
+        conversation = state["conversation"]
+
+        if understanding.intent == UserIntent.EXPLAIN:
+            return {"action": AgentAction.EXPLAIN}
+        if understanding.intent == UserIntent.CLARIFY:
+            return {"action": AgentAction.CLARIFY}
+        if conversation.purchase_need:
+            return {"action": AgentAction.RECOMMEND}
+        return {"action": AgentAction.CLARIFY}
+
+    def _execute_action(self, state: ShoppingAgentState) -> dict[str, ActionResult]:
+        action = state["action"]
+        conversation = state["conversation"]
+        understanding = state["understanding"]
+
+        if action == AgentAction.RECOMMEND:
+            return {"action_result": self._execute_recommendation(conversation)}
+
+        if action == AgentAction.EXPLAIN:
+            return {
+                "action_result": self._execute_explain(
+                    conversation,
+                    understanding.target_item_index,
+                )
+            }
+
+        question = (
+            understanding.clarifying_question
+            or "可以告诉我想买的品类、预算和最在意的点吗？"
+        )
         return {
-            "reply": f"因为{first_item.evidence}，所以我优先推荐 {first_item.title}。",
-            "items": items,
+            "action_result": ActionResult(
+                action=AgentAction.CLARIFY,
+                reply_type="clarify_reply",
+                clarifying_question=question,
+            )
         }
 
-    def _clarify(self, state: ShoppingAgentState) -> dict[str, Any]:
-        """信息不足时追问关键条件节点。"""
-        return {"reply": "可以告诉我想买的品类、预算和最在意的点吗？", "items": []}
+    def _generate_reply(self, state: ShoppingAgentState) -> dict[str, Any]:
+        action_result = state["action_result"]
 
-    def _finalize(self, state: ShoppingAgentState) -> dict[str, ChatResponse]:
-        """保存会话并组装对外响应。
+        if action_result.reply_type == "recommendation_reply":
+            reply = "我根据你的需求筛选了这几款商品，可以先看第一款的匹配理由。"
+        elif action_result.reply_type == "explain_reply":
+            reply = self._build_explain_reply(action_result)
+        elif action_result.reply_type == "no_results_reply":
+            reply = self._build_no_results_reply(action_result.no_results)
+        elif action_result.reply_type == "tool_error_reply":
+            reply = "推荐服务暂时不可用，可以稍后重试或放宽条件。"
+        else:
+            reply = action_result.clarifying_question or "可以告诉我想买的品类、预算和最在意的点吗？"
 
-        响应中的 preferences 使用 copy，避免后续轮次修改内存状态时污染已返回对象。
-        """
+        return {"reply": reply, "items": action_result.items}
+
+    def _finalize_response(self, state: ShoppingAgentState) -> dict[str, ChatResponse]:
         conversation = state["conversation"]
-        decision = state["decision"]
-        reply = state["reply"]
-        items = state["items"]
+        understanding = state["understanding"]
+        action = state["action"]
+        action_result = state["action_result"]
 
-        conversation.last_intent = decision.intent.value
-        conversation.messages.append(ChatMessage(role="assistant", content=reply))
+        conversation.messages.append(ChatMessage(role="assistant", content=state["reply"]))
         self.store.save(conversation)
+
+        response_state: dict[str, Any] = {
+            "intent": understanding.intent.value,
+            "action": action.value,
+            "confidence": understanding.confidence,
+            "purchase_need": conversation.purchase_need,
+            "preferences": conversation.preferences.copy(),
+        }
+        # 只暴露本轮推荐执行状态，避免 explain 继承上一轮失败标记。
+        if action_result.action == AgentAction.RECOMMEND and conversation.last_result_status:
+            response_state["result_status"] = conversation.last_result_status
+        if action_result.tool_error:
+            response_state["tool_error"] = action_result.tool_error
+        if action_result.no_results:
+            response_state["relax_options"] = action_result.no_results.relax_options
 
         return {
             "response": ChatResponse(
                 session_id=state["session_id"],
-                reply=reply,
-                items=items,
-                state={
-                    "intent": decision.intent.value,
-                    "preferences": conversation.preferences.copy(),
-                },
+                reply=state["reply"],
+                items=state["items"],
+                state=response_state,
             )
         }
 
-    def _save_recommendation_result(
+    def _execute_recommendation(self, conversation: ConversationState) -> ActionResult:
+        recommendation_query = self._build_recommendation_query(conversation)
+        logger.debug("agent recommendation query_length=%s", len(recommendation_query))
+        try:
+            result = self.recommendation_tool.run(recommendation_query)
+        except Exception:
+            return self._handle_recommendation_tool_error(
+                conversation,
+                recommendation_query,
+            )
+        logger.info("agent recommendation completed item_count=%s", len(result.items))
+
+        if not result.items:
+            no_results = self._handle_no_results(conversation, result, recommendation_query)
+            return ActionResult(
+                action=AgentAction.RECOMMEND,
+                reply_type="no_results_reply",
+                recommendation_query=recommendation_query,
+                items=[],
+                no_results=no_results,
+            )
+
+        self._save_successful_recommendation(conversation, result)
+        return ActionResult(
+            action=AgentAction.RECOMMEND,
+            reply_type="recommendation_reply",
+            recommendation_query=recommendation_query,
+            items=result.items,
+        )
+
+    def _execute_explain(
         self,
-        state: ConversationState,
+        conversation: ConversationState,
+        target_item_index: int | None,
+    ) -> ActionResult:
+        if not conversation.last_items:
+            return ActionResult(
+                action=AgentAction.CLARIFY,
+                reply_type="clarify_reply",
+                items=[],
+                clarifying_question="我还没有上一轮推荐结果，可以先告诉我品类、预算和偏好。",
+            )
+
+        selected_index = target_item_index or conversation.target_item_index or 1
+        zero_based_index = selected_index - 1
+        if zero_based_index < 0 or zero_based_index >= len(conversation.last_items):
+            return ActionResult(
+                action=AgentAction.CLARIFY,
+                reply_type="clarify_reply",
+                items=conversation.last_items,
+                clarifying_question="你想了解第几款商品？可以告诉我对应序号。",
+            )
+
+        conversation.target_item_index = selected_index
+        return ActionResult(
+            action=AgentAction.EXPLAIN,
+            reply_type="explain_reply",
+            items=conversation.last_items,
+            target_item_index=selected_index,
+        )
+
+    def _merge_preferences(
+        self,
+        conversation: ConversationState,
+        updates: dict[str, Any],
+    ) -> None:
+        for key, value in updates.items():
+            if value is None:
+                continue
+            if isinstance(value, list):
+                current = conversation.preferences.get(key, [])
+                if not isinstance(current, list):
+                    current = []
+                conversation.preferences[key] = self._merge_unique(current, value)
+            else:
+                conversation.preferences[key] = value
+
+        excluded = conversation.preferences.get("excluded_brands")
+        if isinstance(excluded, list):
+            conversation.excluded_brands = self._merge_unique(
+                conversation.excluded_brands,
+                excluded,
+            )
+
+    def _merge_unique(self, current: list[Any], updates: list[Any]) -> list[Any]:
+        merged: list[Any] = []
+        for item in [*current, *updates]:
+            if item not in merged:
+                merged.append(item)
+        return merged
+
+    def _build_recommendation_query(self, conversation: ConversationState) -> str:
+        return build_recommendation_query(conversation)
+
+    def _save_successful_recommendation(
+        self,
+        conversation: ConversationState,
         result: RecommendResponse,
     ) -> None:
-        """保存推荐结果和结构化偏好，供后续追问或调整使用。"""
-        state.last_query = result.query
-        state.last_filters = result.filters
-        state.last_items = result.items
-        state.preferences.update(result.filters.model_dump(exclude_none=True))
+        conversation.last_query = result.query
+        conversation.last_filters = result.filters
+        conversation.last_items = result.items
+        conversation.last_result_status = "success"
+        conversation.last_no_results_need = None
+        conversation.last_no_results_relax_options = []
+        conversation.preferences.update(result.filters.model_dump(exclude_none=True))
+
+    def _handle_no_results(
+        self,
+        conversation: ConversationState,
+        result: RecommendResponse,
+        recommendation_query: str,
+    ) -> NoResultsSuggestion:
+        conversation.last_query = recommendation_query
+        conversation.last_filters = result.filters
+        conversation.last_result_status = "no_results"
+        conversation.last_no_results_need = recommendation_query
+
+        suggestion = NoResultsSuggestion(
+            purchase_need=recommendation_query,
+            blocking_constraints=self._detect_blocking_constraints(conversation, result),
+            relax_options=self._build_relax_options(conversation, result),
+        )
+        conversation.last_no_results_relax_options = suggestion.relax_options
+        return suggestion
+
+    def _handle_recommendation_tool_error(
+        self,
+        conversation: ConversationState,
+        recommendation_query: str,
+    ) -> ActionResult:
+        """推荐工具失败时保留上一轮结果，只记录本轮可恢复错误。"""
+        logger.exception("agent recommendation tool failed")
+        conversation.last_query = recommendation_query
+        conversation.last_result_status = "tool_error"
+        return ActionResult(
+            action=AgentAction.RECOMMEND,
+            reply_type="tool_error_reply",
+            recommendation_query=recommendation_query,
+            items=[],
+            tool_error="recommendation_failed",
+        )
+
+    def _detect_blocking_constraints(
+        self,
+        conversation: ConversationState,
+        result: RecommendResponse,
+    ) -> list[str]:
+        constraints: list[str] = []
+        budget = conversation.preferences.get("budget")
+        if budget:
+            constraints.append(str(budget))
+        elif result.filters.max_price is not None:
+            constraints.append(f"预算{result.filters.max_price}以内")
+
+        category = conversation.preferences.get("category") or result.filters.category
+        if category:
+            constraints.append(str(category))
+
+        focus = conversation.preferences.get("focus")
+        if isinstance(focus, list):
+            constraints.extend(str(item) for item in focus[:3])
+        elif focus:
+            constraints.append(str(focus))
+
+        return self._merge_unique([], constraints)
+
+    def _build_relax_options(
+        self,
+        conversation: ConversationState,
+        result: RecommendResponse,
+    ) -> list[str]:
+        options: list[str] = []
+        if conversation.preferences.get("budget") or result.filters.max_price is not None:
+            options.append("提高预算或放宽价格上限")
+        if result.filters.brand or conversation.excluded_brands:
+            options.append("放宽品牌限制")
+
+        category = conversation.preferences.get("category") or result.filters.category
+        if category:
+            options.append("考虑相近或更宽的品类")
+
+        focus = conversation.preferences.get("focus")
+        if isinstance(focus, list) and len(focus) > 1:
+            options.append("只保留最重要的一个功能重点")
+
+        if not options:
+            options = ["放宽预算", "放宽品牌或品类", "告诉我哪个条件最重要"]
+        return options[:3]
+
+    def _build_explain_reply(self, action_result: ActionResult) -> str:
+        index = action_result.target_item_index or 1
+        item = action_result.items[index - 1]
+        return f"因为{item.evidence}，所以我优先推荐 {item.title}。"
+
+    def _build_no_results_reply(
+        self,
+        suggestion: NoResultsSuggestion | None,
+    ) -> str:
+        if suggestion is None:
+            return "我暂时没有找到完全匹配的商品。你可以放宽预算、品牌或品类条件。"
+
+        options = "、".join(suggestion.relax_options)
+        blockers = "、".join(suggestion.blocking_constraints)
+        if blockers:
+            return (
+                f"我暂时没有找到完全满足“{suggestion.purchase_need}”的商品。"
+                f"主要限制可能是{blockers}。你可以选择{options}。"
+            )
+        return (
+            f"我暂时没有找到完全满足“{suggestion.purchase_need}”的商品。"
+            f"你可以选择{options}。"
+        )

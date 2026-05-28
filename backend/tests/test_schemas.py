@@ -68,6 +68,7 @@ def test_chat_request_and_response_keep_session_shape():
 def test_app_config_has_safe_defaults():
     config = AppConfig()
 
+    assert config.agent_runner == "langgraph"
     assert config.retriever_mode == "vector"
     assert config.default_top_k == 3
     assert config.llm.enabled is False
@@ -98,3 +99,17 @@ def test_llm_config_available_only_when_enabled_with_api_key():
     assert disabled.is_available is False
     assert missing_key.is_available is False
     assert available.is_available is True
+
+
+def test_config_docstrings_do_not_advertise_vector_keyword_fallback():
+    from core import config as config_module
+
+    assert "回退到本地关键词检索" not in (config_module.__doc__ or "")
+
+
+def test_removed_unused_schema_models_are_not_available():
+    import schemas.chat as chat_schema
+    import schemas.product as product_schema
+
+    assert not hasattr(chat_schema, "ConversationStateSnapshot")
+    assert not hasattr(product_schema, "RetrievedProduct")

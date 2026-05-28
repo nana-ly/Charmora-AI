@@ -166,6 +166,35 @@ def test_run_chat_round_falls_back_to_rest_when_stream_fails(monkeypatch):
     assert "REST OK" in out.getvalue()
 
 
+def test_run_chat_round_falls_back_to_rest_when_stream_times_out(monkeypatch):
+    cli = load_cli_module()
+    out = io.StringIO()
+    calls = []
+
+    def fail_stream_round(config, message, output):
+        raise TimeoutError("timed out")
+
+    def fake_rest_round(config, message, output):
+        calls.append((config.session_id, message))
+        output.write("REST OK\n")
+
+    monkeypatch.setattr(cli, "stream_chat_round", fail_stream_round)
+    monkeypatch.setattr(cli, "rest_chat_round", fake_rest_round)
+
+    config = cli.CliConfig(
+        base_url="http://127.0.0.1:8000",
+        mode="stream",
+        session_id="session-1",
+        timeout=1.0,
+    )
+
+    cli.run_chat_round(config, "hello", out)
+
+    assert calls == [("session-1", "hello")]
+    assert "stream failed: timed out" in out.getvalue()
+    assert "REST OK" in out.getvalue()
+
+
 def test_run_chat_round_rest_mode_skips_stream(monkeypatch):
     cli = load_cli_module()
     out = io.StringIO()

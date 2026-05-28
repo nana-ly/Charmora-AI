@@ -56,7 +56,7 @@ LLM_MODEL=gpt-4o-mini
 LLM_TIMEOUT_SECONDS=8
 ```
 
-`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`DEFAULT_TOP_K` 控制推荐默认返回数量。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。
+`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`DEFAULT_TOP_K` 控制推荐默认返回数量。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。
 
 ## 日志级别
 
@@ -85,7 +85,35 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 - 推荐链路异常时，异常向上抛出，由测试或 API 层暴露错误。
 - `RETRIEVER_MODE=vector` 只使用向量检索；`RETRIEVER_MODE=keyword` 才使用关键词检索。
 
-允许保留的可用性处理包括：LLM 推荐理由使用模板理由、LLM 意图解析使用当前用户文本、`/chat/stream` 在流开始后的异常转换为 SSE `error` 事件。
+允许保留的可用性处理包括：LLM 推荐理由使用模板理由、Agent 理解层对不可信 LLM 输出做保守兜底、`/chat` 推荐工具异常返回 `tool_error`、`/chat/stream` 在流开始后的未处理异常转换为 SSE `error` 事件。
+
+## Agent 多轮行为
+
+`/chat` 和 `/chat/stream` 使用 LangGraph Runner，LLM 理解是主路径，规则只作为安全护栏：
+
+- 明显完整的购买请求在 LLM 不可用、输出缺字段、JSON 无法解析或校验失败时，会通过保守 fallback 转成 `recommend`。
+- 用户切换购物目标时，当前购买上下文会先归档，再清空活跃推荐状态，避免新旧品类偏好混在一起。
+- 用户疑似回到旧品类时，后端先询问是否恢复之前需求；确认后恢复归档上下文，拒绝后按新约束推荐。
+- 推荐工具异常会返回稳定 `tool_error` 对话响应：`items=[]`、`state.result_status="tool_error"`、`state.tool_error="recommendation_failed"`。这不会覆盖上一轮成功商品，也不会伪造商品。
+- 无结果或工具错误之后，用户仍可追问上一轮成功推荐的解释。
+
+## Shopping Agent Understanding Fallback
+
+The `/chat` and `/chat/stream` contracts stay unchanged. The backend understanding flow is:
+
+1. Ask the LLM for one JSON object.
+2. Normalize safe schema issues before Pydantic validation, including `target_item_index <= 0` to `None` and non-object `preference_updates` to `{}`.
+3. If the LLM output is invalid, empty for an active context, or asks for clarification while a purchase context exists, use deterministic fallback rules.
+4. Short price feedback such as `太贵了` or `便宜点` with an active purchase context becomes `price_direction=lower` and `avoid_current_price_band=True`.
+5. If the backend still cannot infer the update, it uses context-aware clarification instead of asking for a new category.
+
+Local verification:
+
+```powershell
+cd backend
+uv run pytest tests/test_agent.py -v
+uv run ruff check .
+```
 
 ## 后端链路
 
@@ -124,9 +152,18 @@ backend/
 
 ## 测试与检查
 
-在仓库根目录运行：
+在后端目录运行：
 
 ```powershell
-python -m pytest backend/tests -q
-python -m ruff check backend
+cd backend
+uv run pytest tests -q
+uv run ruff check .
+```
+
+Agent resilience 相关的确定性测试不需要真实 LLM 凭证。常用定向命令：
+
+```powershell
+cd backend
+uv run pytest tests/test_agent.py tests/test_main.py -q
+uv run pytest tests/test_main.py::test_chat_tool_error_keeps_response_shape tests/test_main.py::test_chat_stream_tool_error_returns_success_events -q
 ```

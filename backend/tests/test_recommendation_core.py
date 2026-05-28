@@ -35,7 +35,7 @@ def test_recommendation_core_keeps_pipeline_behavior():
     assert response["items"][0]["reason"]
 
 
-def test_recommendation_core_keeps_candidate_relaxation_and_card_builder():
+def test_recommendation_core_keeps_strict_candidate_filtering_and_card_builder():
     product_source = [
         {
             "product_id": "p_1",
@@ -56,12 +56,12 @@ def test_recommendation_core_keeps_candidate_relaxation_and_card_builder():
     card = build_response_item(
         "预算6000以内的电脑",
         {
-            "product": candidates[0],
+            "product": product_source[0],
             "evidence": "命中关键词：电脑",
         },
     )
 
-    assert candidates == product_source
+    assert candidates == []
     assert card["price"] == 4999.0
     assert card["evidence"] == "命中关键词：电脑"
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import sys
 import uuid
 from collections.abc import Iterable, Iterator
@@ -16,6 +17,15 @@ EXIT_COMMANDS = {"exit", "quit", "q"}
 
 class ChatCliError(RuntimeError):
     """Raised when a chat request cannot be completed."""
+
+
+STREAM_READ_ERRORS = (
+    TimeoutError,
+    OSError,
+    error.URLError,
+    socket.timeout,
+)
+RECOVERABLE_STREAM_ERRORS = (ChatCliError, *STREAM_READ_ERRORS)
 
 
 @dataclass(frozen=True)
@@ -217,11 +227,14 @@ def rest_chat_round(config: CliConfig, message: str, output: TextIO) -> None:
 
 def stream_chat_round(config: CliConfig, message: str, output: TextIO) -> None:
     payload = build_chat_payload(config.session_id, message)
-    with open_sse_stream(config.base_url, payload, config.timeout) as response:
-        decoded_lines = (
-            raw_line.decode("utf-8", errors="replace") for raw_line in response
-        )
-        saw_error = render_sse_events(iter_sse_events(decoded_lines), output)
+    try:
+        with open_sse_stream(config.base_url, payload, config.timeout) as response:
+            decoded_lines = (
+                raw_line.decode("utf-8", errors="replace") for raw_line in response
+            )
+            saw_error = render_sse_events(iter_sse_events(decoded_lines), output)
+    except STREAM_READ_ERRORS as exc:
+        raise ChatCliError(str(exc)) from exc
     if saw_error:
         raise ChatCliError("stream returned error event")
 
@@ -233,7 +246,7 @@ def run_chat_round(config: CliConfig, message: str, output: TextIO) -> None:
 
     try:
         stream_chat_round(config, message, output)
-    except ChatCliError as exc:
+    except RECOVERABLE_STREAM_ERRORS as exc:
         output.write(f"\n[stream failed: {exc}; fallback to REST /chat]\n")
         rest_chat_round(config, message, output)
 

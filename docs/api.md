@@ -152,14 +152,27 @@ Response:
 {
   "session_id": "demo-session",
   "reply": "我根据你的需求筛选了这几款商品，可以先看第一款的匹配理由。",
-  "items": [],
+  "items": [
+    {
+      "product_id": "p_digital_001",
+      "title": "Apple iPhone 17 Pro",
+      "brand": "Apple",
+      "price": 8999,
+      "reason": "这款商品与需求匹配，命中拍照相关证据。",
+      "evidence": "命中关键词：手机、拍照。"
+    }
+  ],
   "state": {
     "intent": "recommend",
+    "action": "recommend",
+    "confidence": 0.9,
+    "purchase_need": "预算9000以内的拍照手机",
     "preferences": {
       "category": "数码电子",
       "max_price": 9000,
       "keywords": ["手机", "拍照"]
-    }
+    },
+    "result_status": "success"
   }
 }
 ```
@@ -173,6 +186,40 @@ explain
 clarify
 ```
 
+`state.action` 当前取值：
+
+```text
+recommend
+explain
+clarify
+```
+
+`state.result_status` 只描述本轮推荐执行结果，当前取值：
+
+```text
+success
+no_results
+tool_error
+```
+
+无结果响应仍保持 `items=[]`，并可能在 `state.relax_options` 中返回可放宽的条件。推荐工具异常会返回稳定对话响应，而不是伪造商品：
+
+```json
+{
+  "session_id": "demo-session",
+  "reply": "推荐服务暂时不可用，可以稍后重试或放宽条件。",
+  "items": [],
+  "state": {
+    "intent": "recommend",
+    "action": "recommend",
+    "result_status": "tool_error",
+    "tool_error": "recommendation_failed"
+  }
+}
+```
+
+Agent 会保留上一轮成功推荐商品，所以无结果或工具错误之后，用户仍可以追问“为什么第一款适合我”来解释上一轮成功结果。
+
 ## Chat Stream
 
 `POST /chat/stream` 复用 `/chat` 请求体，用 SSE 返回事件。
@@ -182,6 +229,8 @@ clarify
 ```text
 start -> delta -> items -> state -> done
 ```
+
+可恢复的推荐工具错误仍使用正常事件顺序，并在 `state` 事件中包含 `result_status="tool_error"` 和 `tool_error="recommendation_failed"`；这类错误不会发送 `event: error`。
 
 进入流式处理后的业务异常事件顺序：
 

@@ -170,3 +170,88 @@ def test_recommend_products_uses_default_llm_reason_service(monkeypatch):
     assert service.calls[0]["query"] == "预算9000以内的拍照手机"
     assert service.calls[0]["fallback_reason"]
 
+
+def test_create_llm_returns_invoke_compatible_client(monkeypatch):
+    from llm import client as llm_client
+
+    captured = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+
+            class Message:
+                content = "完整购买意图"
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, api_key, base_url, timeout):
+            captured["api_key"] = api_key
+            captured["base_url"] = base_url
+            captured["timeout"] = timeout
+            self.chat = FakeChat()
+
+    monkeypatch.setattr(llm_client, "OpenAI", FakeOpenAI, raising=False)
+
+    model = llm_client.create_llm(
+        LLMConfig(
+            enabled=True,
+            api_key="test-key",
+            base_url="https://example.test/v1",
+            model="test-model",
+            timeout_seconds=3,
+        )
+    )
+
+    response = model.invoke(
+        [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "user prompt"},
+        ]
+    )
+
+    assert response.content == "完整购买意图"
+    assert captured["api_key"] == "test-key"
+    assert captured["base_url"] == "https://example.test/v1"
+    assert captured["timeout"] == 3
+    assert captured["model"] == "test-model"
+    assert captured["messages"][0]["role"] == "system"
+    assert captured["temperature"] == 0.2
+
+
+def test_create_llm_is_exported_from_llm_package():
+    from llm import create_llm
+
+    assert callable(create_llm)
+
+
+def test_llm_reason_service_reuses_shared_template(monkeypatch):
+    import llm.reason_service as reason_service_module
+
+    monkeypatch.setattr(
+        reason_service_module,
+        "template_reason",
+        lambda query, product, evidence: "共享模板理由",
+        raising=False,
+    )
+
+    service = LLMReasonService(config=LLMConfig(enabled=False))
+
+    reason = service.generate(
+        query="预算9000以内的拍照手机",
+        product={"title": "拍照旗舰手机"},
+        evidence="命中关键词：拍照",
+    )
+
+    assert reason == "共享模板理由"
+

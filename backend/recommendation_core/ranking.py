@@ -42,24 +42,6 @@ def choose_candidates(
     products: list[dict[str, Any]],
     filters: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """选择候选商品；无结果时按品牌、预算、品类、全库的顺序逐步兜底。"""
-    candidates = structured_filter(products, filters)
-    if candidates:
-        return candidates
-
-    # 兜底 1：先去掉品牌限制，保留品类和预算，避免品牌偏好过窄导致空结果。
-    relaxed_filters = dict(filters)
-    relaxed_filters["brand"] = None
-    candidates = structured_filter(products, relaxed_filters)
-    if candidates:
-        return candidates
-
-    # 兜底 2：再去掉预算限制，保留品类，让演示优先展示相关商品。
-    relaxed_filters["max_price"] = None
-    candidates = structured_filter(products, relaxed_filters)
-    if candidates:
-        return candidates
-
-    # 兜底 3：如果品类下仍无商品，则退回全库检索，最后由检索层再排序。
-    return products
+    """选择候选商品；无结果时返回空列表，不放宽用户给出的约束。"""
+    return structured_filter(products, filters)
 

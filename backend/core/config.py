@@ -1,6 +1,6 @@
 """应用配置定义。
 
-当前配置默认走 RAG 向量检索，向量检索不可用时推荐链路会回退到本地关键词检索。
+当前配置默认走 RAG 向量检索；如果向量检索不可用，应暴露错误而不是静默切换检索路径。
 LLM 只有在显式开启且提供密钥时才可用。
 """
 
@@ -20,8 +20,8 @@ class LLMConfig:
 
     enabled: bool = False
     api_key: str = ""
-    base_url: str = "https://api.openai.com/v1"
-    model: str = "gpt-4o-mini"
+    base_url: str = "https://ark.cn-beijing.volces.com/api/v3/"
+    model: str = "p-20260514111645-lmgt2"
     timeout_seconds: float = 8.0
 
     @property
@@ -48,9 +48,10 @@ class AppConfig:
     retriever_mode 用来在关键词检索和向量检索之间切换；default_top_k 控制默认返回数量。
     """
 
-    agent_runner: str = "simple"
+    agent_runner: str = "langgraph"
     retriever_mode: str = "vector"
     default_top_k: int = 3
+    log_level: str = "INFO"
     llm: LLMConfig = field(default_factory=LLMConfig)
     rag: RAGConfig = field(default_factory=RAGConfig)
 
@@ -62,9 +63,10 @@ def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] 
         load_dotenv(env_file, override=False)
 
     return AppConfig(
-        agent_runner=os.getenv("AGENT_RUNNER", "simple"),
+        agent_runner=os.getenv("AGENT_RUNNER", "langgraph"),
         retriever_mode=os.getenv("RETRIEVER_MODE", "vector"),
         default_top_k=int(os.getenv("DEFAULT_TOP_K", "3")),
+        log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         llm=LLMConfig(
             enabled=os.getenv("LLM_ENABLED", "false").lower() == "true",
             api_key=os.getenv("LLM_API_KEY", ""),

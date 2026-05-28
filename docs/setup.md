@@ -31,19 +31,13 @@ uv run pytest
 uv run ruff check .
 ```
 
-Runner 切换：
-
-```env
-AGENT_RUNNER=simple
-```
-
-`simple` 是默认稳定模式；需要验证 LangGraph 首版 Agent 时，可改为：
+Agent Runner 配置：
 
 ```env
 AGENT_RUNNER=langgraph
 ```
 
-两种模式下 `/chat` 请求和响应字段保持兼容。可以用下面的命令做联调前检查：
+`langgraph` 是默认且唯一支持的模式。可以用下面的命令做联调前检查：
 
 ```powershell
 Invoke-RestMethod `

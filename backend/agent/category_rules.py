@@ -1,0 +1,141 @@
+"""LLM 理解层周围的小型确定性规则。"""
+
+from __future__ import annotations
+
+import re
+
+from pydantic import BaseModel
+
+
+class TargetCategoryMatch(BaseModel):
+    target_category: str
+    catalog_category: str | None = None
+    matched_text: str
+
+
+TARGET_CATEGORY_ALIASES: dict[str, tuple[str, str]] = {
+    "手机": ("手机", "数码电子"),
+    "耳机": ("耳机", "数码电子"),
+    "电脑": ("电脑", "数码电子"),
+    "笔记本": ("电脑", "数码电子"),
+    "平板": ("平板", "数码电子"),
+    "咖啡": ("咖啡", "食品生活"),
+    "饮品": ("饮品", "食品生活"),
+    "防晒": ("防晒", "美妆护肤"),
+    "面霜": ("面霜", "美妆护肤"),
+    "护肤": ("护肤", "美妆护肤"),
+    "T恤": ("T恤", "服饰运动"),
+    "外套": ("外套", "服饰运动"),
+}
+
+PURCHASE_SIGNALS = (
+    "想买",
+    "要买",
+    "买一台",
+    "买一个",
+    "买一只",
+    "推荐",
+    "看看",
+    "预算",
+    "以内",
+    "不超过",
+    "主要",
+    "适合",
+)
+
+FOCUS_TERMS = (
+    "拍照",
+    "续航",
+    "降噪",
+    "办公",
+    "游戏",
+    "通勤",
+    "学生",
+    "敏感肌",
+    "保湿",
+    "抗初老",
+    "低糖",
+    "冷萃",
+    "速干",
+    "凉快",
+)
+
+BRAND_TERMS = ("华为", "小米", "苹果", "荣耀", "OPPO", "vivo", "三星")
+RESTORE_CONTEXT_TERMS = ("之前", "恢复", "按之前", "就之前")
+RESTORE_ACTION_TERMS = ("恢复之前", "按之前", "就之前")
+CONFIRMATION_PREFIXES = ("对", "是的", "可以")
+SHORT_CONFIRMATIONS = ("对", "是", "是的", "可以", "嗯", "嗯嗯", "好", "好的")
+REJECTION_TERMS = ("不是", "不用", "不要之前", "不用之前", "算了", "重新")
+
+
+def detect_target_category(message: str) -> TargetCategoryMatch | None:
+    for alias, (target_category, catalog_category) in TARGET_CATEGORY_ALIASES.items():
+        if alias in message:
+            return TargetCategoryMatch(
+                target_category=target_category,
+                catalog_category=catalog_category,
+                matched_text=alias,
+            )
+    return None
+
+
+def catalog_category_for(target_category: str) -> str | None:
+    for canonical, catalog_category in TARGET_CATEGORY_ALIASES.values():
+        if canonical == target_category:
+            return catalog_category
+    return None
+
+
+def has_purchase_signal(message: str) -> bool:
+    return any(term in message for term in PURCHASE_SIGNALS)
+
+
+def extract_preference_hints(message: str) -> dict[str, object]:
+    hints: dict[str, object] = {}
+
+    budget_match = re.search(
+        r"(?:预算)?\s*(\d{3,6})\s*(?:元)?\s*(?:以内|以下|不超过)?",
+        message,
+    )
+    if budget_match and any(term in message for term in ("预算", "以内", "以下", "不超过")):
+        hints["budget"] = int(budget_match.group(1))
+
+    for brand in BRAND_TERMS:
+        if brand in message and f"不要{brand}" not in message and f"不买{brand}" not in message:
+            hints["brand"] = brand
+            break
+
+    focus = [term for term in FOCUS_TERMS if term in message]
+    if focus:
+        hints["focus"] = focus
+
+    excluded = [
+        brand
+        for brand in BRAND_TERMS
+        if f"不要{brand}" in message or f"不买{brand}" in message
+    ]
+    if excluded:
+        hints["excluded_brands"] = excluded
+
+    return hints
+
+
+def is_restore_confirmation(message: str) -> bool:
+    if is_restore_rejection(message):
+        return False
+
+    text = message.strip()
+    if text in SHORT_CONFIRMATIONS:
+        return True
+
+    if not any(term in text for term in RESTORE_CONTEXT_TERMS):
+        return False
+
+    if any(term in text for term in RESTORE_ACTION_TERMS):
+        return True
+
+    return any(text.startswith(prefix) for prefix in CONFIRMATION_PREFIXES)
+
+
+def is_restore_rejection(message: str) -> bool:
+    return any(term in message for term in REJECTION_TERMS)
