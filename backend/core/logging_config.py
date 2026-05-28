@@ -2,7 +2,7 @@
 
 import logging
 
-_LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+_LOG_FORMAT = "%(asctime)s | %(levelname)-5s | %(name)s | %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 

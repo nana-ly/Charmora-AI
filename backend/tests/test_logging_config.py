@@ -23,3 +23,21 @@ def test_configure_logging_does_not_duplicate_handlers():
     second_count = len(logging.getLogger().handlers)
 
     assert second_count == first_count
+
+
+def test_configure_logging_uses_spaced_console_format():
+    configure_logging("INFO")
+    formatter = logging.getLogger().handlers[0].formatter
+    record = logging.LogRecord(
+        name="api.chat",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="chat request received",
+        args=(),
+        exc_info=None,
+    )
+
+    rendered = formatter.format(record)
+
+    assert " | INFO  | api.chat | chat request received" in rendered
