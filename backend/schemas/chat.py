@@ -21,13 +21,6 @@ class ChatMessage(BaseModel):
     content: str
 
 
-class ConversationStateSnapshot(BaseModel):
-    """对话状态快照，便于接口层返回可观察的状态摘要。"""
-
-    intent: str | None = None
-    preferences: dict[str, Any] = Field(default_factory=dict)
-
-
 class ChatResponse(BaseModel):
     """多轮对话响应体。"""
 

@@ -1,76 +1,23 @@
 # ShopGuide RAG API 接口契约
 
-本文档用于固定 ShopGuide RAG 的接口边界、字段契约和模块依赖关系。后续可以替换商品数据来源、检索实现或 Agent 编排方式，但不要随意修改客户端已依赖的字段名。
+本文档固定 ShopGuide RAG 的 HTTP 接口、字段边界和错误语义。客户端可以依赖这里列出的字段；后端可以新增可选字段，但不应删除或改名既有字段。
 
-## 本地开发地址
+## 本地地址
 
 ```text
 http://127.0.0.1:8000
 ```
 
----
+## 接口清单
 
-## 模块边界
-
-### 客户端
-
-客户端负责页面展示和用户交互，不负责后端推荐逻辑。
-
-```text
-核心调用：
+```http
+GET  /
+GET  /health
 POST /recommend
+POST /rag/search
 POST /chat
-
-稳定读取：
-items[].product_id
-items[].title
-items[].brand
-items[].price
-items[].reason
-items[].evidence
+POST /chat/stream
 ```
-
-### 推荐后端
-
-推荐后端负责把请求、条件解析、商品候选集、检索结果和推荐理由串成稳定接口。
-
-```text
-输入：
-自然语言购物需求
-
-处理：
-1. 解析 query 或 message，得到 filters 和对话状态
-2. 基于 filters 筛选候选商品
-3. 调用 retrieval 检索层
-4. 可选调用 LLM 理由服务
-5. 组装商品卡片字段
-
-输出：
-稳定的 JSON 响应
-```
-
-### 检索与商品数据模块
-
-检索与商品数据模块负责提供商品列表和召回能力，不负责客户端字段组装。
-
-```python
-def search(
-    query: str,
-    candidates: list[dict] | None = None,
-    top_k: int = 3,
-) -> list[RetrievalResult]:
-    """根据用户需求和候选商品，返回 Top K 检索结果。"""
-```
-
-`RetrievalResult` 至少应包含：
-
-```text
-product：原始商品字典
-evidence：用于解释匹配原因的中文依据
-score：检索或排序分数
-```
-
----
 
 ## Health
 
@@ -85,8 +32,6 @@ Response:
   "status": "ok"
 }
 ```
-
----
 
 ## Root
 
@@ -103,20 +48,11 @@ Response:
 }
 ```
 
----
-
 ## Recommend
 
-### 接口定位
+`POST /recommend` 执行单轮商品推荐。
 
-`POST /recommend` 是核心推荐接口。当前已经组装真实推荐链路，并保留空结果和异常兜底；后续替换真实 RAG 检索时不改变客户端依赖字段。
-
-### 请求
-
-```http
-POST /recommend
-Content-Type: application/json
-```
+Request:
 
 ```json
 {
@@ -124,13 +60,7 @@ Content-Type: application/json
 }
 ```
 
-### 请求字段说明
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `query` | `string` | 是 | 用户输入的自然语言购物需求，例如预算、品类、使用场景、偏好。 |
-
-### 响应
+Response:
 
 ```json
 {
@@ -147,45 +77,67 @@ Content-Type: application/json
       "title": "Apple iPhone 17 Pro",
       "brand": "Apple",
       "price": 8999,
-      "reason": "这款手机适合预算9000以内，并且重视拍照和剪视频体验的用户。",
+      "reason": "这款商品与需求匹配，命中拍照和视频相关证据。",
       "evidence": "临时匹配：命中 手机、拍照、剪视频；来自结构化筛选结果。"
     }
   ]
 }
 ```
 
-### 响应字段说明
+字段说明：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `query` | `string` | 原样返回用户输入，方便调试和展示。 |
-| `filters.category` | `string \| null` | 后端解析出的商品品类，例如 `数码电子`、`美妆护肤`。 |
+| `query` | `string` | 原样返回用户输入，便于调试和展示。 |
+| `filters.category` | `string \| null` | 后端解析出的商品品类。 |
 | `filters.max_price` | `number \| null` | 后端解析出的最高预算。 |
 | `filters.brand` | `string \| null` | 后端解析出的品牌偏好。 |
 | `filters.keywords` | `string[]` | 后端从 query 中命中的关键词。 |
-| `items` | `array` | 推荐商品列表，目标数量为 3 个。 |
+| `items` | `array` | 推荐商品列表；没有匹配时返回空数组。 |
 | `items[].product_id` | `string` | 商品唯一 ID。 |
 | `items[].title` | `string` | 商品名称。 |
 | `items[].brand` | `string` | 商品品牌。 |
 | `items[].price` | `number` | 商品价格。 |
-| `items[].reason` | `string` | 给用户看的中文推荐理由。 |
-| `items[].evidence` | `string` | 给用户看的中文匹配依据。 |
-| `error` | `string` | 可选字段。仅当推荐链路异常时返回，客户端可以忽略该字段并继续展示兜底商品。 |
+| `items[].reason` | `string` | 中文推荐理由。 |
+| `items[].evidence` | `string` | 中文匹配依据。 |
 
----
+推荐链路不会为无结果或异常伪造商品。检索结果为空时 `items` 是 `[]`；推荐链路异常时异常向上暴露。
+
+## RAG Search
+
+`POST /rag/search` 用于本地调试向量召回质量。
+
+Request:
+
+```json
+{
+  "query": "适合熬夜后修护的抗初老精华",
+  "top_k": 5
+}
+```
+
+Response:
+
+```json
+{
+  "query": "适合熬夜后修护的抗初老精华",
+  "items": [
+    {
+      "product_id": "p_beauty_001",
+      "title": "修护精华",
+      "brand": "测试品牌",
+      "score": 0.82,
+      "evidence": "向量召回：相似度 0.82 ..."
+    }
+  ]
+}
+```
 
 ## Chat
 
-### 接口定位
+`POST /chat` 执行一轮多轮导购对话。
 
-`POST /chat` 是多轮导购接口。它在 `/recommend` 的基础上增加 `session_id`、会话状态和意图处理，用于支持追问、偏好调整和推荐解释。
-
-### 请求
-
-```http
-POST /chat
-Content-Type: application/json
-```
+Request:
 
 ```json
 {
@@ -194,14 +146,7 @@ Content-Type: application/json
 }
 ```
 
-### 请求字段说明
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `session_id` | `string` | 是 | 会话 ID，同一个用户连续对话应保持一致。 |
-| `message` | `string` | 是 | 用户当前轮输入。 |
-
-### 响应
+Response:
 
 ```json
 {
@@ -213,32 +158,26 @@ Content-Type: application/json
       "title": "Apple iPhone 17 Pro",
       "brand": "Apple",
       "price": 8999,
-      "reason": "Apple iPhone 17 Pro 与你的需求「预算9000以内的拍照手机」匹配，临时匹配：命中 手机、拍照；来自结构化筛选结果。",
-      "evidence": "临时匹配：命中 手机、拍照；来自结构化筛选结果。"
+      "reason": "这款商品与需求匹配，命中拍照相关证据。",
+      "evidence": "命中关键词：手机、拍照。"
     }
   ],
   "state": {
     "intent": "recommend",
+    "action": "recommend",
+    "confidence": 0.9,
+    "purchase_need": "预算9000以内的拍照手机",
     "preferences": {
       "category": "数码电子",
       "max_price": 9000,
       "keywords": ["手机", "拍照"]
-    }
+    },
+    "result_status": "success"
   }
 }
 ```
 
-### 响应字段说明
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `session_id` | `string` | 原样返回会话 ID。 |
-| `reply` | `string` | 给用户展示的对话回复。 |
-| `items` | `array` | 当前轮推荐商品列表；信息不足时可能为空。 |
-| `state.intent` | `string` | 当前轮意图，取值见下方说明。 |
-| `state.preferences` | `object` | 当前会话中沉淀的偏好摘要。 |
-
-当前支持的 `state.intent`：
+`state.intent` 当前取值：
 
 ```text
 recommend
@@ -247,123 +186,70 @@ explain
 clarify
 ```
 
----
-
-## 稳定字段
-
-以下商品字段名固定。后续可以增加字段，但不要改名或删除字段。
+`state.action` 当前取值：
 
 ```text
-items[].product_id
-items[].title
-items[].brand
-items[].price
-items[].reason
-items[].evidence
+recommend
+explain
+clarify
 ```
 
----
-
-## 后端内部推荐链路
+`state.result_status` 只描述本轮推荐执行结果，当前取值：
 
 ```text
-query
-  ↓
-extract_filters(query)
-  ↓
-choose_candidates(products, filters)
-  ↓
-KeywordRetriever.search(query, candidates, top_k=3)
-  ↓
-build_response_item(query, retrieved_item)
-  ↓
-return JSON
+success
+no_results
+tool_error
 ```
 
----
-
-## 后端内部 Agent 链路
-
-```text
-session_id + message
-  ↓
-InMemoryConversationStore
-  ↓
-AgentPolicy.detect_intent(message)
-  ↓
-RecommendationTool.run(...)
-  ↓
-更新 preferences、last_filters、last_items
-  ↓
-return ChatResponse
-```
-
----
-
-## 兜底策略
-
-推荐候选为空时：
-
-```text
-1. 完整条件筛选：品类 + 预算 + 品牌
-2. 去掉品牌限制
-3. 去掉预算限制，只保留品类
-4. 全库检索
-5. 检索为空或异常时返回 fallback_items
-```
-
-兜底商品仍然保持稳定字段：
+无结果响应仍保持 `items=[]`，并可能在 `state.relax_options` 中返回可放宽的条件。推荐工具异常会返回稳定对话响应，而不是伪造商品：
 
 ```json
 {
-  "product_id": "fallback_001",
-  "title": "通用推荐商品 1",
-  "brand": "系统推荐",
-  "price": 0,
-  "reason": "当前根据「用户需求」返回兜底推荐，真实检索结果暂不可用。",
-  "evidence": "后端兜底逻辑触发。"
+  "session_id": "demo-session",
+  "reply": "推荐服务暂时不可用，可以稍后重试或放宽条件。",
+  "items": [],
+  "state": {
+    "intent": "recommend",
+    "action": "recommend",
+    "result_status": "tool_error",
+    "tool_error": "recommendation_failed"
+  }
 }
 ```
 
----
+Agent 会保留上一轮成功推荐商品，所以无结果或工具错误之后，用户仍可以追问“为什么第一款适合我”来解释上一轮成功结果。
 
-## 演示问题
+## Chat Stream
 
-单轮推荐：
+`POST /chat/stream` 复用 `/chat` 请求体，用 SSE 返回事件。
 
-```text
-预算9000以内，想买拍照和剪视频好的手机
-敏感肌能用的抗初老精华
-夏天通勤穿的凉快 T 恤
-新手想买精品速溶咖啡
-```
-
-多轮对话：
+正常事件顺序：
 
 ```text
-预算9000以内的拍照手机
-再便宜一点
-为什么推荐第一款
+start -> delta -> items -> state -> done
 ```
 
----
+可恢复的推荐工具错误仍使用正常事件顺序，并在 `state` 事件中包含 `result_status="tool_error"` 和 `tool_error="recommendation_failed"`；这类错误不会发送 `event: error`。
 
-## 当前接口清单
+进入流式处理后的业务异常事件顺序：
 
-```http
-GET  /
-GET  /health
-POST /recommend
-POST /chat
+```text
+start -> error -> done
 ```
 
-## 后续可扩展接口
+请求体验证失败仍由 FastAPI 返回 `422`，不会进入 SSE 流。
 
-```http
-POST /chat/stream
-POST /images/upload
-GET  /products/{product_id}
-POST /knowledge/documents/upload
-POST /knowledge/index
-POST /feedback
+## 后端推荐链路
+
+```text
+api.recommend
+  -> services.recommendation_service.run_recommendation
+  -> services.retriever_factory.select_retriever
+  -> recommendation_core.pipeline.recommend_products
+  -> Retriever.search
+  -> recommendation_core.response_builder.build_response_item
+  -> return {"query", "filters", "items"}
 ```
+
+`choose_candidates()` 严格使用结构化条件。`RETRIEVER_MODE=vector` 使用向量检索并暴露向量错误；`RETRIEVER_MODE=keyword` 使用关键词检索。

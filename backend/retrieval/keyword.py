@@ -9,6 +9,20 @@ from typing import Any
 from retrieval.base import RetrievalResult, Retriever
 
 
+FIELD_WEIGHTS = {
+    "title": 3,
+    "sub_category": 3,
+    "brand": 2,
+    "category": 1,
+    "description": 1,
+}
+
+TERM_SYNONYMS = {
+    "拍照": ["拍照", "摄影", "影像", "人像", "相机", "超感光"],
+    "剪视频": ["剪视频", "视频", "Vlog", "vlog", "创作", "剪辑"],
+}
+
+
 def build_searchable_text(product: dict[str, Any]) -> str:
     """拼接商品可检索文本，供关键词检索做命中匹配。"""
     return " ".join(
@@ -20,6 +34,49 @@ def build_searchable_text(product: dict[str, Any]) -> str:
             str(product.get("rag_knowledge", {}).get("marketing_description", "")),
         ]
     )
+
+
+def _score_product(product: dict[str, Any], query_terms: list[str]) -> int:
+    """计算关键词相关性分数，避免低价但品类不符的商品排在前面。"""
+    title = str(product.get("title", ""))
+    brand = str(product.get("brand", ""))
+    category = str(product.get("category", ""))
+    sub_category = str(product.get("sub_category", ""))
+    description = str(product.get("rag_knowledge", {}).get("marketing_description", ""))
+
+    score = 0
+    for term in query_terms:
+        if not term:
+            continue
+        match_terms = TERM_SYNONYMS.get(term, [term])
+        if any(match_term in title for match_term in match_terms):
+            score += FIELD_WEIGHTS["title"]
+        if any(match_term in sub_category for match_term in match_terms):
+            score += FIELD_WEIGHTS["sub_category"]
+        if any(match_term in brand for match_term in match_terms):
+            score += FIELD_WEIGHTS["brand"]
+        if any(match_term in category for match_term in match_terms):
+            score += FIELD_WEIGHTS["category"]
+        if any(match_term in description for match_term in match_terms):
+            score += FIELD_WEIGHTS["description"]
+
+    if "手机" in query_terms and sub_category == "智能手机":
+        score += 3
+
+    return score
+
+
+def _matched_query_terms(product: dict[str, Any], query_terms: list[str]) -> list[str]:
+    """返回命中的原始查询词；同义词命中时也展示用户说过的词。"""
+    searchable_text = build_searchable_text(product)
+    matched_terms: list[str] = []
+    for term in query_terms:
+        if not term:
+            continue
+        match_terms = TERM_SYNONYMS.get(term, [term])
+        if any(match_term in searchable_text for match_term in match_terms):
+            matched_terms.append(term)
+    return matched_terms
 
 
 class KeywordRetriever(Retriever):
@@ -40,43 +97,23 @@ class KeywordRetriever(Retriever):
         source = products if candidates is None else candidates
         query_terms = extract_filters(query)["keywords"]
 
-        def score_product(product: dict[str, Any]) -> int:
-            searchable_text = build_searchable_text(product)
-            return sum(1 for term in query_terms if term and term in searchable_text)
-
         ranked_products = sorted(
             source,
-            key=lambda product: (score_product(product), -get_product_price(product)),
+            key=lambda product: (_score_product(product, query_terms), -get_product_price(product)),
             reverse=True,
         )
 
         results: list[RetrievalResult] = []
         for product in ranked_products[:top_k]:
-            searchable_text = build_searchable_text(product)
-            matched_terms = [
-                term
-                for term in query_terms
-                if term and term in searchable_text
-            ]
+            matched_terms = _matched_query_terms(product, query_terms)
             evidence_terms = "、".join(matched_terms) if matched_terms else "结构化筛选"
             results.append(
                 RetrievalResult(
                     product=product,
                     evidence=f"临时匹配：命中 {evidence_terms}；来自结构化筛选结果。",
-                    score=float(score_product(product)),
+                    score=float(_score_product(product, query_terms)),
                 )
             )
 
         return results
 
-
-def retrieve(
-    query: str,
-    candidates: list[dict[str, Any]] | None = None,
-    top_k: int = 3,
-) -> list[dict[str, Any]]:
-    """兼容旧链路的检索函数，返回原有字典结构。"""
-    return [
-        result.to_legacy_item()
-        for result in KeywordRetriever().search(query, candidates=candidates, top_k=top_k)
-    ]

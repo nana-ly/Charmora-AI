@@ -5,7 +5,7 @@
 """
 
 from retrieval.base import RetrievalResult, Retriever
-from retrieval.keyword import KeywordRetriever, build_searchable_text, retrieve
+from retrieval.keyword import KeywordRetriever, build_searchable_text
 from retrieval.vector import VectorRetriever
 
 __all__ = [
@@ -14,6 +14,5 @@ __all__ = [
     "Retriever",
     "VectorRetriever",
     "build_searchable_text",
-    "retrieve",
 ]
 

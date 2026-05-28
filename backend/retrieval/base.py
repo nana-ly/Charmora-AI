@@ -16,13 +16,6 @@ class RetrievalResult:
     evidence: str
     score: float = 0.0
 
-    def to_legacy_item(self) -> dict[str, Any]:
-        """转换成旧推荐链路使用的字典结构，保持接口兼容。"""
-        return {
-            "product": self.product,
-            "evidence": self.evidence,
-        }
-
 
 class Retriever(ABC):
     """检索器抽象基类。"""

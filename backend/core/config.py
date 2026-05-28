@@ -1,7 +1,7 @@
 """应用配置定义。
 
-当前配置保持轻量：默认走本地关键词检索，LLM 只有在显式开启且提供密钥时才可用。
-这样可以保证最小闭环离线可运行，同时为后续真实大模型接入预留稳定入口。
+当前配置默认走 RAG 向量检索；如果向量检索不可用，应暴露错误而不是静默切换检索路径。
+LLM 只有在显式开启且提供密钥时才可用。
 """
 
 from dataclasses import dataclass, field
@@ -20,8 +20,8 @@ class LLMConfig:
 
     enabled: bool = False
     api_key: str = ""
-    base_url: str = "https://api.openai.com/v1"
-    model: str = "gpt-4o-mini"
+    base_url: str = "https://ark.cn-beijing.volces.com/api/v3/"
+    model: str = "p-20260514111645-lmgt2"
     timeout_seconds: float = 8.0
 
     @property
@@ -31,15 +31,29 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class RAGConfig:
+    """商品 RAG 检索配置。"""
+
+    embedding_url: str = ""
+    embedding_api: str = ""
+    embedding_model: str = "text-embedding-v4"
+    embedding_dimensions: int = 1024
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """后端应用级配置。
 
-    retriever_mode 用来在关键词检索和未来向量检索之间切换；default_top_k 控制默认返回数量。
+    agent_runner 控制 /chat 使用规则版 Runner 还是 LangGraph Runner；
+    retriever_mode 用来在关键词检索和向量检索之间切换；default_top_k 控制默认返回数量。
     """
 
-    retriever_mode: str = "keyword"
+    agent_runner: str = "langgraph"
+    retriever_mode: str = "vector"
     default_top_k: int = 3
+    log_level: str = "INFO"
     llm: LLMConfig = field(default_factory=LLMConfig)
+    rag: RAGConfig = field(default_factory=RAGConfig)
 
 
 def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] / ".env") -> AppConfig:
@@ -49,8 +63,10 @@ def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] 
         load_dotenv(env_file, override=False)
 
     return AppConfig(
-        retriever_mode=os.getenv("RETRIEVER_MODE", "keyword"),
+        agent_runner=os.getenv("AGENT_RUNNER", "langgraph"),
+        retriever_mode=os.getenv("RETRIEVER_MODE", "vector"),
         default_top_k=int(os.getenv("DEFAULT_TOP_K", "3")),
+        log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         llm=LLMConfig(
             enabled=os.getenv("LLM_ENABLED", "false").lower() == "true",
             api_key=os.getenv("LLM_API_KEY", ""),
@@ -58,4 +74,21 @@ def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] 
             model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
             timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "8")),
         ),
+        rag=RAGConfig(
+            embedding_url=os.getenv("embedding_url", ""),
+            embedding_api=os.getenv("embedding_api", ""),
+            embedding_model=os.getenv("embedding_model", "text-embedding-v4"),
+            embedding_dimensions=_read_embedding_dimensions(),
+        ),
     )
+
+
+def _read_embedding_dimensions() -> int:
+    """读取 embedding 维度，兼容早期文档中的拼写。"""
+    value = (
+        os.getenv("embedding_dimensions")
+        or os.getenv("dimention")
+        or os.getenv("dimentions")
+        or "1024"
+    )
+    return int(value)

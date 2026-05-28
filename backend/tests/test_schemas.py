@@ -1,4 +1,4 @@
-from core.config import AppConfig, LLMConfig
+from core.config import AppConfig, LLMConfig, RAGConfig
 from schemas.chat import ChatRequest, ChatResponse
 from schemas.product import ProductCard
 from schemas.recommend import RecommendFilters, RecommendRequest, RecommendResponse
@@ -68,10 +68,27 @@ def test_chat_request_and_response_keep_session_shape():
 def test_app_config_has_safe_defaults():
     config = AppConfig()
 
-    assert config.retriever_mode == "keyword"
+    assert config.agent_runner == "langgraph"
+    assert config.retriever_mode == "vector"
     assert config.default_top_k == 3
     assert config.llm.enabled is False
     assert config.llm.is_available is False
+    assert config.rag.embedding_model == "text-embedding-v4"
+    assert config.rag.embedding_dimensions == 1024
+
+
+def test_rag_config_keeps_embedding_settings():
+    config = RAGConfig(
+        embedding_url="https://example.test/v1",
+        embedding_api="test-key",
+        embedding_model="test-embedding",
+        embedding_dimensions=512,
+    )
+
+    assert config.embedding_url == "https://example.test/v1"
+    assert config.embedding_api == "test-key"
+    assert config.embedding_model == "test-embedding"
+    assert config.embedding_dimensions == 512
 
 
 def test_llm_config_available_only_when_enabled_with_api_key():
@@ -82,3 +99,17 @@ def test_llm_config_available_only_when_enabled_with_api_key():
     assert disabled.is_available is False
     assert missing_key.is_available is False
     assert available.is_available is True
+
+
+def test_config_docstrings_do_not_advertise_vector_keyword_fallback():
+    from core import config as config_module
+
+    assert "回退到本地关键词检索" not in (config_module.__doc__ or "")
+
+
+def test_removed_unused_schema_models_are_not_available():
+    import schemas.chat as chat_schema
+    import schemas.product as product_schema
+
+    assert not hasattr(chat_schema, "ConversationStateSnapshot")
+    assert not hasattr(product_schema, "RetrievedProduct")

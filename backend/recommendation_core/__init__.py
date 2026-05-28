@@ -5,7 +5,6 @@
 """
 
 from recommendation_core.data import DATASET_DIR, load_products, products
-from recommendation_core.fallback import fallback_items
 from recommendation_core.filters import CATEGORY_RULES, EMPTY_FILTERS, extract_filters
 from recommendation_core.pipeline import recommend_products
 from recommendation_core.ranking import (
@@ -14,7 +13,7 @@ from recommendation_core.ranking import (
     structured_filter,
 )
 from recommendation_core.response_builder import build_response_item
-from retrieval.keyword import build_searchable_text, retrieve
+from retrieval.keyword import build_searchable_text
 
 __all__ = [
     "CATEGORY_RULES",
@@ -24,11 +23,9 @@ __all__ = [
     "build_searchable_text",
     "choose_candidates",
     "extract_filters",
-    "fallback_items",
     "get_product_price",
     "load_products",
     "products",
     "recommend_products",
-    "retrieve",
     "structured_filter",
 ]
