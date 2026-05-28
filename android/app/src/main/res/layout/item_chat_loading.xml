@@ -1,21 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:paddingTop="4dp"
-    android:paddingBottom="4dp">
+    android:orientation="horizontal"
+    android:paddingStart="12dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
+    android:gravity="center_vertical">
 
-    <TextView
-        android:id="@+id/tvLoadingMessage"
+    <!-- AI 气泡背景框 -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="start"
-        android:layout_marginEnd="56dp"
         android:background="@drawable/bg_bubble_assistant"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="10dp"
-        android:text="正在思考..."
-        android:textColor="@color/chat_hint"
-        android:textSize="15sp" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="12dp">
 
-</FrameLayout>
+        <!-- 跳动圆点1 -->
+        <View
+            android:id="@+id/dot1"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/bg_dot" />
+
+        <!-- 跳动圆点2 -->
+        <View
+            android:id="@+id/dot2"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/bg_dot" />
+
+        <!-- 跳动圆点3 -->
+        <View
+            android:id="@+id/dot3"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/bg_dot" />
+    </LinearLayout>
+
+</LinearLayout>

@@ -4,6 +4,9 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -34,6 +37,7 @@ import com.client.shopguide.model.CompareMock;
 import com.client.shopguide.model.Product;
 import com.client.shopguide.model.RecommendResponse;
 import com.client.shopguide.network.ChatSseClient;
+import com.client.shopguide.voice.BaiduAsrClient;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 
@@ -82,6 +86,9 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout llFunctionPanel;
     private boolean isPanelVisible = false;
 
+    // 语音识别
+    private boolean isListening = false;
+
     // 拍照相关
     private Uri currentPhotoUri;
 
@@ -109,7 +116,6 @@ public class MainActivity extends AppCompatActivity {
             registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), permissions -> {
                 boolean cameraGranted = Boolean.TRUE.equals(permissions.get(Manifest.permission.CAMERA));
                 boolean storageGranted;
-                // Android 13+ 使用 READ_MEDIA_IMAGES
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                     storageGranted = Boolean.TRUE.equals(permissions.get(Manifest.permission.READ_MEDIA_IMAGES));
                 } else {
@@ -188,16 +194,117 @@ public class MainActivity extends AppCompatActivity {
         // 发送按钮
         btnSend.setOnClickListener(v -> sendCurrentMessage());
 
-        // 麦克风按钮
-        btnMic.setOnClickListener(v -> {
-            Toast.makeText(MainActivity.this, "语音输入开发中", Toast.LENGTH_SHORT).show();
-        });
+        // 麦克风按钮 → 语音识别
+        btnMic.setOnClickListener(v -> startVoiceInput());
 
         // 加号按钮 → 展开/收起内嵌功能面板
         btnPlus.setOnClickListener(v -> toggleFunctionPanel());
 
         setupExampleChips();
         setupFunctionPanel();
+    }
+
+    // ========== 百度语音识别 ==========
+
+    private void startVoiceInput() {
+        if (isListening) return;
+        if (isSending) return;
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 100);
+            return;
+        }
+
+        isListening = true;
+        Toast.makeText(this, "正在聆听...", Toast.LENGTH_SHORT).show();
+
+        // 后台线程执行录音 + 百度识别
+        new Thread(() -> {
+            String result = null;
+            boolean hasVoice = true;
+            try {
+                result = recordAndRecognize();
+            } catch (Exception e) {
+                e.printStackTrace();
+                hasVoice = false;
+            }
+            String finalResult = result;
+            boolean finalHasVoice = hasVoice;
+
+            mainHandler.post(() -> {
+                isListening = false;
+                if (finalResult != null && !finalResult.isEmpty()) {
+                    etMessage.setText(finalResult);
+                    etMessage.setSelection(finalResult.length());
+                } else if (!finalHasVoice) {
+                    Toast.makeText(this, "未检测到说话声，请重试", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(this, "未识别到语音，请重试", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }).start();
+    }
+
+    /**
+     * 录音（16kHz PCM）+ VAD 检测 → 百度 ASR 接口识别
+     * 只有检测到人声才提交识别，静音/噪音直接跳过
+     */
+    private String recordAndRecognize() throws Exception {
+        int sampleRate = 16000;
+        int bufferSize = AudioRecord.getMinBufferSize(sampleRate,
+                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+
+        AudioRecord audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC,
+                sampleRate, AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT, bufferSize * 2);
+
+        audioRecord.startRecording();
+
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[bufferSize];
+        long startTime = System.currentTimeMillis();
+
+        // VAD 统计：统计有多少帧有声音能量
+        int totalFrames = 0;
+        int voiceFrames = 0;
+        final int VAD_THRESHOLD = 600; // RMS 阈值，低于此值视为静音/噪音
+
+        // 录制最长 3 秒，同时做 VAD 检测
+        while (System.currentTimeMillis() - startTime < 3000) {
+            int read = audioRecord.read(buffer, 0, buffer.length);
+            if (read > 0) {
+                baos.write(buffer, 0, read);
+                totalFrames++;
+                if (calcRms(buffer, read) > VAD_THRESHOLD) {
+                    voiceFrames++;
+                }
+            }
+        }
+
+        audioRecord.stop();
+        audioRecord.release();
+
+        // 如果超过一半的帧都是静音，认为无有效语音
+        if (totalFrames == 0 || voiceFrames < totalFrames * 0.3) {
+            throw new Exception("VAD_SILENCE"); // 未检测到说话声
+        }
+
+        byte[] pcmData = baos.toByteArray();
+        if (pcmData.length == 0) return null;
+
+        return BaiduAsrClient.recognize(pcmData, pcmData.length);
+    }
+
+    /** 计算 PCM 16bit 数据的 RMS（均方根能量） */
+    private double calcRms(byte[] data, int length) {
+        long sum = 0;
+        int samples = length / 2;
+        for (int i = 0; i < length - 1; i += 2) {
+            // 小端序：低字节 + 高字节
+            short sample = (short) ((data[i] & 0xFF) | (data[i + 1] << 8));
+            sum += sample * sample;
+        }
+        return samples > 0 ? Math.sqrt((double) sum / samples) : 0;
     }
 
     // ========== 功能面板（微信式滑入/滑出） ==========

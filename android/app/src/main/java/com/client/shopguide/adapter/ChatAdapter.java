@@ -1,5 +1,7 @@
 package com.client.shopguide.adapter;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -89,11 +91,20 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 bindCompare((CompareViewHolder) holder, message.getCompareResponse());
                 break;
             case ChatUiMessage.TYPE_LOADING:
-                ((LoadingViewHolder) holder).tvLoadingMessage.setText(message.getContent());
+                bindLoading((LoadingViewHolder) holder);
                 break;
             default:
                 break;
         }
+    }
+
+    @Override
+    public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
+        // 回收时停止动画，避免 ViewHolder 复用后残留动画回调
+        if (holder instanceof LoadingViewHolder) {
+            ((LoadingViewHolder) holder).stopAnimation();
+        }
+        super.onViewRecycled(holder);
     }
 
     private void bindProduct(ProductViewHolder holder, Product product) {
@@ -129,13 +140,102 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
     }
 
+    // ========== Loading 动画：Handler 手动轮播，保证 1→2→3 顺序 ==========
+
+    private void bindLoading(LoadingViewHolder holder) {
+        holder.stopAnimation();
+        holder.startAnimation();
+    }
+
     static class LoadingViewHolder extends RecyclerView.ViewHolder {
-        TextView tvLoadingMessage;
+        View dot1, dot2, dot3;
+        private final Handler handler = new Handler(Looper.getMainLooper());
+        private int currentDot = 0;
+        private boolean running = false;
+
+        private final Runnable cycleRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!running) return;
+                // 三级渐进波浪：距 currentDot 越近越亮
+                animateDotByDistance(0);
+                animateDotByDistance(1);
+                animateDotByDistance(2);
+                currentDot = (currentDot + 1) % 3;
+                handler.postDelayed(this, 350);
+            }
+        };
+
         LoadingViewHolder(@NonNull View itemView) {
             super(itemView);
-            tvLoadingMessage = itemView.findViewById(R.id.tvLoadingMessage);
+            dot1 = itemView.findViewById(R.id.dot1);
+            dot2 = itemView.findViewById(R.id.dot2);
+            dot3 = itemView.findViewById(R.id.dot3);
+
+            // 初始全部 dim
+            setDotStatic(dot1, 0.3f, 0.68f);
+            setDotStatic(dot2, 0.3f, 0.68f);
+            setDotStatic(dot3, 0.3f, 0.68f);
+        }
+
+        void startAnimation() {
+            if (running) return;
+            running = true;
+            currentDot = 0;
+            cycleRunnable.run();
+        }
+
+        void stopAnimation() {
+            running = false;
+            handler.removeCallbacks(cycleRunnable);
+            resetDots();
+        }
+
+        /** 计算 dot index 距当前高亮位置的"年龄"，0=当前, 1=上一个, 2=最远 */
+        private int distance(int index) {
+            return (index - currentDot + 3) % 3;
+        }
+
+        /** 根据距离设置三级亮度 + 缩放，200ms 平滑过渡 */
+        private void animateDotByDistance(int index) {
+            View dot = (index == 0) ? dot1 : (index == 1) ? dot2 : dot3;
+            if (dot == null) return;
+            dot.animate().cancel();
+            int dist = distance(index);
+            switch (dist) {
+                case 0: // 当前 → 最亮最大
+                    dot.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
+                            .setDuration(200).start();
+                    break;
+                case 1: // 上一个 → 半亮
+                    dot.animate().alpha(0.5f).scaleX(0.82f).scaleY(0.82f)
+                            .setDuration(200).start();
+                    break;
+                case 2: // 最远 → 暗淡但仍可见
+                    dot.animate().alpha(0.28f).scaleX(0.68f).scaleY(0.68f)
+                            .setDuration(200).start();
+                    break;
+            }
+        }
+
+        private void setDotStatic(View dot, float alpha, float scale) {
+            if (dot == null) return;
+            dot.setAlpha(alpha);
+            dot.setScaleX(scale);
+            dot.setScaleY(scale);
+        }
+
+        private void resetDots() {
+            dot1.animate().cancel();
+            dot2.animate().cancel();
+            dot3.animate().cancel();
+            setDotStatic(dot1, 0.3f, 0.68f);
+            setDotStatic(dot2, 0.3f, 0.68f);
+            setDotStatic(dot3, 0.3f, 0.68f);
         }
     }
+
+    // ========== 对比卡片 ==========
 
     private void bindCompare(CompareViewHolder holder, CompareResponse data) {
         if (data == null) return;
