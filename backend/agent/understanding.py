@@ -40,6 +40,7 @@ class UserUnderstanding(BaseModel):
     confidence: float = Field(ge=0, le=1)
     purchase_need: str | None = None
     preference_updates: dict[str, Any] = Field(default_factory=dict)
+    negative_updates: dict[str, Any] = Field(default_factory=dict)
     target_item_index: int | None = Field(default=None, ge=1)
     clarifying_question: str | None = None
     reset_context: bool = False
@@ -50,6 +51,7 @@ DEFAULT_UNDERSTANDING_FIELDS: dict[str, Any] = {
     "confidence": 0.5,
     "purchase_need": None,
     "preference_updates": {},
+    "negative_updates": {},
     "target_item_index": None,
     "clarifying_question": None,
     "reset_context": False,
@@ -77,12 +79,21 @@ def normalize_understanding_payload(payload: Any) -> dict[str, Any]:
     if unknown_fields:
         logger.debug("understanding ignored_unknown_fields=%s", unknown_fields)
 
-    normalized = {**DEFAULT_UNDERSTANDING_FIELDS, "preference_updates": {}, **payload}
+    normalized = {
+        **DEFAULT_UNDERSTANDING_FIELDS,
+        "preference_updates": {},
+        "negative_updates": {},
+        **payload,
+    }
     invalid_fields: list[str] = []
 
     if not isinstance(normalized.get("preference_updates"), dict):
         normalized["preference_updates"] = {}
         invalid_fields.append("preference_updates")
+
+    if not isinstance(normalized.get("negative_updates"), dict):
+        normalized["negative_updates"] = {}
+        invalid_fields.append("negative_updates")
 
     target_item_index = normalized.get("target_item_index")
     if target_item_index is not None:
@@ -256,6 +267,8 @@ class LLMUserUnderstandingService:
             return False
         if understanding.preference_updates:
             return False
+        if understanding.negative_updates:
+            return False
         return self._has_active_purchase_context(conversation)
 
     def _needs_purchase_need(
@@ -318,7 +331,9 @@ class LLMUserUnderstandingService:
             "target_category means the concrete shopping target, for example 手机 or 咖啡.\n"
             "Use reset_context=true only when the user starts a different shopping target.\n"
             "Use restore_context_category only when the user may be returning to an archived target and needs confirmation.\n"
-            "Always include confidence, purchase_need, preference_updates, target_item_index, clarifying_question, "
+            "Negative feedback such as 不要苹果, 不考虑华为, 排除第2款 belongs in negative_updates, "
+            "not in preference_updates brand/preferred_brands.\n"
+            "Always include confidence, purchase_need, preference_updates, negative_updates, target_item_index, clarifying_question, "
             "reset_context, restore_context_category.\n"
             "Example complete request: 用户=我想买一台华为手机，预算6000以内，主要拍照和续航; "
             "return intent=recommend, target_category=手机, category=数码电子.\n"
@@ -326,6 +341,7 @@ class LLMUserUnderstandingService:
             "return intent=update_preference, purchase_need=null, "
             "preference_updates must be a JSON object such as "
             "{\"price_direction\":\"lower\",\"avoid_current_price_band\":true}, "
+            "negative_updates must be a JSON object, "
             "target_item_index must be null.\n"
             "Example ambiguous restore: 用户=还是看手机吧; "
             "return intent=clarify, restore_context_category=手机, clarifying_question=是否恢复之前的手机需求."

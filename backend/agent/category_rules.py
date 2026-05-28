@@ -101,7 +101,7 @@ def extract_preference_hints(message: str) -> dict[str, object]:
         hints["budget"] = int(budget_match.group(1))
 
     for brand in BRAND_TERMS:
-        if brand in message and f"不要{brand}" not in message and f"不买{brand}" not in message:
+        if brand in message and not _is_negative_brand_mention(message, brand):
             hints["brand"] = brand
             break
 
@@ -109,15 +109,20 @@ def extract_preference_hints(message: str) -> dict[str, object]:
     if focus:
         hints["focus"] = focus
 
-    excluded = [
-        brand
-        for brand in BRAND_TERMS
-        if f"不要{brand}" in message or f"不买{brand}" in message
-    ]
-    if excluded:
-        hints["excluded_brands"] = excluded
-
     return hints
+
+
+def _is_negative_brand_mention(message: str, brand: str) -> bool:
+    escaped = re.escape(brand)
+    negative_before_brand = any(
+        re.search(rf"{prefix}\s*{escaped}", message)
+        for prefix in ("不要", "不买", "不考虑", "排除")
+    )
+    brand_before_negative = re.search(
+        rf"{escaped}\s*(?:(?:也)?\s*(?:可以|行)\s*)?(?:也)?\s*(?:不要|不买|不考虑|排除)",
+        message,
+    )
+    return bool(negative_before_brand or brand_before_negative)
 
 
 def is_restore_confirmation(message: str) -> bool:

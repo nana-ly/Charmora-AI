@@ -11,6 +11,7 @@ from agent.category_rules import (
     has_purchase_signal,
 )
 from agent.memory import ConversationState
+from agent.negative_feedback_rules import extract_negative_updates
 from agent.understanding import UserIntent, UserUnderstanding
 
 logger = logging.getLogger(__name__)
@@ -88,20 +89,12 @@ def _contextual_price_feedback(
     )
 
 
-def fallback_understanding(
+def _purchase_request_understanding(
     *,
     message: str,
-    conversation: ConversationState,
     reason: str,
+    negative_updates: dict[str, object] | None = None,
 ) -> UserUnderstanding | None:
-    contextual = _contextual_price_feedback(
-        message=message,
-        conversation=conversation,
-        reason=reason,
-    )
-    if contextual is not None:
-        return contextual
-
     target = detect_target_category(message)
     if target is None or not has_purchase_signal(message):
         return None
@@ -115,9 +108,8 @@ def fallback_understanding(
             "focus",
             "usage",
             "preferred_brands",
-            "excluded_brands",
         )
-    )
+    ) or bool(negative_updates)
     if not has_constraint:
         return None
 
@@ -139,4 +131,46 @@ def fallback_understanding(
         preference_updates={
             key: value for key, value in updates.items() if value is not None
         },
+        negative_updates=negative_updates or {},
     )
+
+
+def fallback_understanding(
+    *,
+    message: str,
+    conversation: ConversationState,
+    reason: str,
+) -> UserUnderstanding | None:
+    negative_updates = extract_negative_updates(message)
+
+    purchase_request = _purchase_request_understanding(
+        message=message,
+        reason=reason,
+        negative_updates=negative_updates,
+    )
+    if purchase_request is not None:
+        return purchase_request
+
+    if negative_updates:
+        logger.info(
+            "understanding source=fallback reason=%s intent=update_preference negative_updates=%s",
+            reason,
+            sorted(negative_updates),
+        )
+        return UserUnderstanding(
+            intent=UserIntent.UPDATE_PREFERENCE,
+            confidence=0.65,
+            purchase_need=conversation.purchase_need,
+            preference_updates={},
+            negative_updates=negative_updates,
+        )
+
+    contextual = _contextual_price_feedback(
+        message=message,
+        conversation=conversation,
+        reason=reason,
+    )
+    if contextual is not None:
+        return contextual
+
+    return None
