@@ -306,6 +306,35 @@ def test_chat_keeps_response_contract_with_langgraph_runner(monkeypatch):
     } <= payload["items"][0].keys()
 
 
+def test_chat_response_exposes_canonical_target_key(monkeypatch):
+    inject_recommend_chat_runner(
+        monkeypatch,
+        understanding_service=FakeUnderstandingService(
+            UserUnderstanding(
+                intent=UserIntent.RECOMMEND,
+                confidence=0.9,
+                purchase_need="推荐手机",
+                preference_updates={
+                    "target_category": "手机",
+                    "category": "数码电子",
+                    "canonical_target_key": "phone",
+                    "is_broad_category_request": True,
+                },
+            )
+        ),
+    )
+
+    response = client.post(
+        "/chat",
+        json={"session_id": "api-canonical", "message": "推荐手机"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"]["preferences"]["canonical_target_key"] == "phone"
+    assert body["state"]["preferences"]["is_broad_category_request"] is True
+
+
 def test_chat_response_includes_negative_feedback_state(monkeypatch):
     store = InMemoryConversationStore()
     apple_item = ProductCard(

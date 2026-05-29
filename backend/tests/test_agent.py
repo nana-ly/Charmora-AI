@@ -1692,7 +1692,7 @@ def test_langgraph_runner_uses_deterministic_query_builder():
     assert "预算3000以内" in captured_queries[0]
 
 
-def test_langgraph_runner_requests_restore_instead_of_overwriting_active_context():
+def test_restore_signal_with_broad_target_does_not_directly_recommend_archived_context():
     from agent.graph.runner import LangGraphAgentRunner
     from agent.memory import PurchaseContext
     from agent.understanding import UserIntent
@@ -1730,6 +1730,12 @@ def test_langgraph_runner_requests_restore_instead_of_overwriting_active_context
 
     assert response.state["intent"] == "clarify"
     assert response.state["action"] == "clarify"
+    assert response.state["pending_restore_category"] == "phone"
+    assert (
+        response.state["pending_restore_display_target"]
+        == saved.pending_restore_display_target
+    )
+    assert response.state["pending_restore_display_target"] != "phone"
     assert "恢复之前的手机需求" in response.reply
     assert saved.purchase_need == "办公室喝的咖啡"
     assert saved.preferences["target_category"] == "咖啡"
@@ -3313,6 +3319,92 @@ def test_confirm_restore_clears_pending_fields_when_archive_missing():
     assert understanding.intent.value == "clarify"
     assert state.pending_restore_category is None
     assert state.pending_restore_display_target is None
+
+
+def test_canonical_target_key_resets_for_phone_to_headphones():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.RECOMMEND,
+                    purchase_need="推荐手机",
+                    preference_updates={
+                        "target_category": "手机",
+                        "category": "数码电子",
+                        "canonical_target_key": "phone",
+                        "is_broad_category_request": True,
+                    },
+                ),
+                make_understanding(
+                    intent=UserIntent.RECOMMEND,
+                    purchase_need="推荐耳机",
+                    preference_updates={
+                        "target_category": "耳机",
+                        "category": "数码电子",
+                        "canonical_target_key": "headphones",
+                        "is_broad_category_request": True,
+                    },
+                ),
+            ]
+        ),
+    )
+
+    runner.run("phone-to-headphones", "推荐手机")
+    runner.run("phone-to-headphones", "推荐耳机")
+    saved = store.get_or_create("phone-to-headphones")
+
+    assert saved.preferences["canonical_target_key"] == "headphones"
+    assert any(
+        ctx.canonical_target_key == "phone" for ctx in saved.previous_purchase_contexts
+    )
+
+
+def test_canonical_target_key_alias_does_not_reset_for_skin_care():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.RECOMMEND,
+                    purchase_need="推荐护肤",
+                    preference_updates={
+                        "target_category": "护肤",
+                        "category": "美妆护肤",
+                        "canonical_target_key": "skin_care",
+                        "is_broad_category_request": True,
+                    },
+                ),
+                make_understanding(
+                    intent=UserIntent.RECOMMEND,
+                    purchase_need="推荐护肤品",
+                    preference_updates={
+                        "target_category": "护肤品",
+                        "category": "美妆护肤",
+                        "canonical_target_key": "skin_care",
+                        "is_broad_category_request": True,
+                    },
+                ),
+            ]
+        ),
+    )
+
+    runner.run("skin-care-alias", "推荐护肤")
+    runner.run("skin-care-alias", "推荐护肤品")
+    saved = store.get_or_create("skin-care-alias")
+
+    assert saved.preferences["canonical_target_key"] == "skin_care"
+    assert saved.previous_purchase_contexts == []
 
 
 def test_mixed_broad_item_index_negative_target_switch_ignores_old_items():

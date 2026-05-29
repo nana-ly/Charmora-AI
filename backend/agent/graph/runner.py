@@ -416,6 +416,14 @@ class LangGraphAgentRunner:
             response_state["tool_error"] = action_result.tool_error
         if action_result.no_results:
             response_state["relax_options"] = action_result.no_results.relax_options
+        if conversation.pending_restore_category:
+            response_state["pending_restore_category"] = (
+                conversation.pending_restore_category
+            )
+        if conversation.pending_restore_display_target:
+            response_state["pending_restore_display_target"] = (
+                conversation.pending_restore_display_target
+            )
 
         return {
             "response": ChatResponse(
