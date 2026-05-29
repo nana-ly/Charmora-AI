@@ -8,11 +8,13 @@ from typing import Any
 
 from recommendation_core.data import products
 from recommendation_core.filters import extract_filters
+from recommendation_core.negative_filter import apply_negative_filters, passes_negative_filter
 from recommendation_core.ranking import choose_candidates
 from recommendation_core.response_builder import build_response_item
 from recommendation_core.reason import ReasonService
 from retrieval.base import Retriever
 from retrieval.keyword import KeywordRetriever
+from schemas.recommend import NegativeFilters
 
 
 def create_default_reason_service() -> ReasonService:
@@ -33,27 +35,35 @@ def recommend_products(
     top_k: int = 3,
     retriever: Retriever | None = None,
     reason_service: ReasonService | None = None,
+    negative_filters: NegativeFilters | None = None,
 ) -> dict[str, Any]:
     """组装完整推荐链路；不为无结果或异常伪造推荐商品。"""
     active_reason_service = reason_service or create_default_reason_service()
     filters = extract_filters(query)
     # None 表示使用默认商品库；空列表表示调用方明确传入了空数据源。
     selected_products = products if product_source is None else product_source
-    candidates = choose_candidates(selected_products, filters)
+    candidates = apply_negative_filters(
+        choose_candidates(selected_products, filters),
+        negative_filters,
+    )
     active_retriever = retriever or KeywordRetriever()
     retrieval_results = active_retriever.search(query, candidates=candidates, top_k=top_k)
-    items = [
-        build_response_item(
-            query,
-            {
-                "product": result.product,
-                "evidence": result.evidence,
-                "score": result.score,
-            },
-            reason_service=active_reason_service,
+    items = []
+    for result in retrieval_results:
+        # Final safety filter for retrievers that ignore candidate constraints.
+        if not passes_negative_filter(result.product, negative_filters):
+            continue
+        items.append(
+            build_response_item(
+                query,
+                {
+                    "product": result.product,
+                    "evidence": result.evidence,
+                    "score": result.score,
+                },
+                reason_service=active_reason_service,
+            )
         )
-        for result in retrieval_results
-    ]
 
     return {
         "query": query,

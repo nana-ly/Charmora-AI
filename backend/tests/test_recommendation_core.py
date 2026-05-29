@@ -3,6 +3,7 @@ from recommendation_core.filters import extract_filters
 from recommendation_core.pipeline import recommend_products
 from recommendation_core.ranking import choose_candidates
 from recommendation_core.response_builder import build_response_item
+from schemas.recommend import NegativeFilters
 
 
 def test_recommendation_core_exposes_split_modules():
@@ -33,6 +34,39 @@ def test_recommendation_core_keeps_pipeline_behavior():
     assert response["filters"]["category"] == "数码电子"
     assert response["items"][0]["product_id"] == "p_1"
     assert response["items"][0]["reason"]
+
+
+def test_recommendation_core_negative_filters_none_and_empty_are_equivalent():
+    product_source = [
+        {
+            "product_id": "p_1",
+            "title": "Apple camera phone",
+            "brand": "苹果",
+            "category": "数码电子",
+            "base_price": 5999,
+        }
+    ]
+
+    default_response = recommend_products(
+        "camera phone under 7000",
+        product_source=product_source,
+        top_k=1,
+    )
+    none_response = recommend_products(
+        "camera phone under 7000",
+        product_source=product_source,
+        top_k=1,
+        negative_filters=None,
+    )
+    empty_response = recommend_products(
+        "camera phone under 7000",
+        product_source=product_source,
+        top_k=1,
+        negative_filters=NegativeFilters(),
+    )
+
+    assert none_response == default_response
+    assert empty_response == default_response
 
 
 def test_recommendation_core_keeps_strict_candidate_filtering_and_card_builder():
