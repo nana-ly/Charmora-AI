@@ -1,17 +1,15 @@
-"""Agent 可调用工具。"""
+"""Agent callable tools."""
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 
 from recommendation_core.pipeline import recommend_products
-from schemas.recommend import RecommendFilters, RecommendResponse
+from schemas.recommend import NegativeFilters, RecommendFilters, RecommendResponse
 
 
 class RecommendationTool:
-    """推荐工具封装。
-
-    Agent 只关心工具输入输出，不直接依赖推荐链路内部模块，方便后续增加搜索、比价等工具。
-    """
+    """Small wrapper around the recommendation chain."""
 
     def __init__(
         self,
@@ -19,12 +17,30 @@ class RecommendationTool:
     ) -> None:
         self.recommend_func = recommend_func
 
-    def run(self, query: str, top_k: int = 3) -> RecommendResponse:
-        """调用推荐链路并转换成结构化响应对象。"""
-        result = self.recommend_func(query, top_k=top_k)
+    def run(
+        self,
+        query: str,
+        top_k: int = 3,
+        negative_filters: NegativeFilters | None = None,
+    ) -> RecommendResponse:
+        """Call the recommendation chain and normalize the structured response."""
+        kwargs: dict[str, Any] = {"top_k": top_k}
+        if negative_filters is not None and self._accepts_negative_filters():
+            kwargs["negative_filters"] = negative_filters
+
+        result = self.recommend_func(query, **kwargs)
         return RecommendResponse(
             query=result["query"],
             filters=RecommendFilters(**result["filters"]),
             items=result["items"],
         )
 
+    def _accepts_negative_filters(self) -> bool:
+        signature = inspect.signature(self.recommend_func)
+        return (
+            "negative_filters" in signature.parameters
+            or any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD
+                for parameter in signature.parameters.values()
+            )
+        )

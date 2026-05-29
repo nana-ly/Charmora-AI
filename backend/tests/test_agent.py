@@ -36,6 +36,7 @@ def make_understanding(
     intent,
     purchase_need=None,
     preference_updates=None,
+    negative_updates=None,
     target_item_index=None,
     clarifying_question=None,
     confidence=0.9,
@@ -49,6 +50,7 @@ def make_understanding(
         confidence=confidence,
         purchase_need=purchase_need,
         preference_updates=preference_updates or {},
+        negative_updates=negative_updates or {},
         target_item_index=target_item_index,
         clarifying_question=clarifying_question,
         reset_context=reset_context,
@@ -2060,6 +2062,230 @@ def test_langgraph_agent_runner_handles_no_results_without_overwriting_last_item
     assert state.last_items[0].title == "上一轮手机"
     assert state.last_no_results_need == "3000以内、拍照强、折叠屏手机"
     assert len(state.last_no_results_relax_options) >= 2
+
+
+def test_langgraph_runner_excludes_second_successful_item_and_reruns():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+    from schemas.recommend import RecommendFilters
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("langgraph-session-negative-item")
+    state.purchase_need = "拍照好的手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "focus": ["拍照"],
+    }
+    state.last_successful_result_id = "stable-result"
+    state.last_successful_query = "拍照好的手机"
+    state.last_successful_filters = RecommendFilters(
+        category="数码电子",
+        max_price=9000,
+        keywords=["手机", "拍照"],
+    )
+    state.last_successful_items = [
+        ProductCard(
+            product_id="p_1",
+            title="第一款拍照手机",
+            brand="BrandA",
+            price=6999,
+            reason="拍照表现好。",
+            evidence="命中关键词：拍照",
+        ),
+        ProductCard(
+            product_id="p_2",
+            title="第二款拍照手机",
+            brand="BrandB",
+            price=5999,
+            reason="适合拍照。",
+            evidence="命中关键词：拍照",
+        ),
+    ]
+    state.last_items = list(state.last_successful_items)
+    store.save(state)
+    captured: dict[str, object] = {}
+
+    def capture_recommendation(query: str, top_k: int = 3, negative_filters=None):
+        captured["query"] = query
+        captured["negative_filters"] = negative_filters
+        return {
+            "query": query,
+            "filters": {
+                "category": "数码电子",
+                "max_price": 9000,
+                "brand": None,
+                "keywords": ["手机", "拍照"],
+            },
+            "items": [
+                {
+                    "product_id": "p_3",
+                    "title": "新的拍照手机",
+                    "brand": "BrandC",
+                    "price": 6499,
+                    "reason": "避开已排除商品后仍适合拍照。",
+                    "evidence": "命中关键词：拍照",
+                }
+            ],
+        }
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=capture_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.UPDATE_PREFERENCE,
+                    negative_updates={"excluded_item_indexes": [2]},
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("langgraph-session-negative-item", "不要第2款")
+    saved = store.get_or_create("langgraph-session-negative-item")
+
+    assert saved.excluded_product_ids == ["p_2"]
+    assert captured["negative_filters"].excluded_product_ids == ["p_2"]
+    assert "不要第2款" not in captured["query"]
+    assert response.state["negative_feedback"]["applied"] is True
+    assert response.state["excluded_product_ids"] == ["p_2"]
+    assert response.state["latest_attempt_status"] == "success"
+
+
+def test_langgraph_runner_clarifies_invalid_negative_index_without_recommendation():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("langgraph-session-invalid-negative-index")
+    state.purchase_need = "拍照好的手机"
+    state.last_successful_items = [
+        ProductCard(
+            product_id="p_1",
+            title="第一款拍照手机",
+            brand="BrandA",
+            price=6999,
+            reason="拍照表现好。",
+            evidence="命中关键词：拍照",
+        )
+    ]
+    state.last_items = list(state.last_successful_items)
+    store.save(state)
+
+    def fail_recommendation(query: str, top_k: int = 3):
+        raise AssertionError("invalid negative feedback should not call recommendation")
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=fail_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.UPDATE_PREFERENCE,
+                    negative_updates={"excluded_item_indexes": [5]},
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("langgraph-session-invalid-negative-index", "不要第5款")
+
+    assert response.state["action"] == "clarify"
+    assert response.state["negative_feedback"]["needs_clarification"] is True
+    assert "上一轮只有 1 款商品" in response.reply
+
+
+def test_langgraph_runner_noop_negative_feedback_uses_reply_only():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("langgraph-session-negative-noop")
+    state.purchase_need = "拍照好的手机"
+    state.preferences = {"target_category": "手机", "category": "数码电子"}
+    state.excluded_brands = ["苹果"]
+    store.save(state)
+
+    def fail_recommendation(query: str, top_k: int = 3):
+        raise AssertionError("noop negative feedback should not call recommendation")
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=fail_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.UPDATE_PREFERENCE,
+                    negative_updates={"excluded_brands": ["苹果"]},
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("langgraph-session-negative-noop", "不要苹果")
+
+    assert response.state["action"] == "reply_only"
+    assert response.state["negative_feedback"]["noop"] is True
+    assert response.state["negative_feedback"]["noop_reason"] == "already_excluded"
+    assert response.items == []
+
+
+def test_langgraph_runner_no_results_does_not_replace_last_successful_items_or_result_id():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+    from schemas.recommend import RecommendFilters
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("langgraph-session-latest-no-results")
+    state.purchase_need = "拍照好的手机"
+    state.preferences = {"target_category": "手机", "category": "数码电子"}
+    state.last_successful_result_id = "stable-result"
+    state.last_successful_query = "拍照好的手机"
+    state.last_successful_filters = RecommendFilters(
+        category="数码电子",
+        max_price=9000,
+        keywords=["手机", "拍照"],
+    )
+    state.last_successful_items = [
+        ProductCard(
+            product_id="p_1",
+            title="第一款拍照手机",
+            brand="BrandA",
+            price=6999,
+            reason="拍照表现好。",
+            evidence="命中关键词：拍照",
+        )
+    ]
+    state.last_items = list(state.last_successful_items)
+    store.save(state)
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=empty_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.RECOMMEND,
+                    purchase_need="3000以内拍照好的折叠屏手机",
+                    preference_updates={
+                        "target_category": "手机",
+                        "category": "数码电子",
+                        "budget": 3000,
+                        "focus": ["拍照", "折叠屏"],
+                    },
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("langgraph-session-latest-no-results", "3000以内拍照好的折叠屏手机")
+    saved = store.get_or_create("langgraph-session-latest-no-results")
+
+    assert response.state["latest_attempt_status"] == "no_results"
+    assert saved.last_successful_result_id == "stable-result"
+    assert saved.last_successful_items[0].product_id == "p_1"
+    assert saved.last_items[0].product_id == "p_1"
 
 
 def test_langgraph_agent_runner_returns_tool_error_without_overwriting_last_items():

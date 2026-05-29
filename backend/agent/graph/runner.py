@@ -2,6 +2,7 @@
 
 import logging
 from typing import Any, TypedDict
+from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
@@ -14,6 +15,13 @@ from agent.context_manager import (
     resolve_pending_restore,
 )
 from agent.memory import ConversationState, InMemoryConversationStore
+from agent.negative_feedback import (
+    apply_negative_feedback,
+    build_negative_filters,
+    migrate_legacy_excluded_brands,
+)
+from agent.negative_feedback_models import NegativeFeedbackApplicationResult
+from agent.negative_feedback_rules import extract_negative_updates
 from agent.query_builder import build_recommendation_query
 from agent.tools import RecommendationTool
 from agent.understanding import (
@@ -27,6 +35,7 @@ from agent.understanding import (
     clarify_understanding,
 )
 from core.config import LLMConfig, load_app_config
+from recommendation_core.data import products as catalog_products
 from schemas.chat import ChatMessage, ChatResponse
 from schemas.product import ProductCard
 from schemas.recommend import RecommendResponse
@@ -39,6 +48,7 @@ class ShoppingAgentState(TypedDict, total=False):
     message: str
     conversation: ConversationState
     understanding: UserUnderstanding
+    negative_feedback_result: NegativeFeedbackApplicationResult
     pending_restore_command: ConversationCommand
     action: AgentAction
     action_result: ActionResult
@@ -63,7 +73,18 @@ class LangGraphAgentRunner:
         self.understanding_service = understanding_service or LLMUserUnderstandingService(
             config=self.llm_config
         )
+
         self.graph = self._build_graph()
+
+    def _build_negative_feedback_noop_reply(
+        self,
+        negative_feedback: NegativeFeedbackApplicationResult | None,
+    ) -> str:
+        if negative_feedback and negative_feedback.noop_reason == "already_excluded":
+            return "已经排除过这个条件了，我会继续按当前排除条件筛选。"
+        if negative_feedback and negative_feedback.ack_message:
+            return negative_feedback.ack_message
+        return "收到，我会继续按当前条件筛选。"
 
     def run(self, session_id: str, message: str) -> ChatResponse:
         logger.info("agent run started session_id=%s", session_id)
@@ -94,6 +115,10 @@ class LangGraphAgentRunner:
         conversation = self.store.get_or_create(state["session_id"])
         message = state["message"]
         conversation.messages.append(ChatMessage(role="user", content=message))
+
+        message_negative_updates = extract_negative_updates(message)
+        if conversation.pending_restore_category and message_negative_updates:
+            conversation.pending_restore_category = None
 
         resolution = resolve_pending_restore(conversation, message)
         if resolution.handled:
@@ -138,9 +163,15 @@ class LangGraphAgentRunner:
         if restore_command == ConversationCommand.CONFIRM_RESTORE:
             restored_understanding = confirm_restore(conversation)
             conversation.last_intent = restored_understanding.intent.value
+            negative_feedback_result = apply_negative_feedback(
+                conversation,
+                restored_understanding.negative_updates,
+                catalog_products=catalog_products,
+            )
             return {
                 "conversation": conversation,
                 "understanding": restored_understanding,
+                "negative_feedback_result": negative_feedback_result,
             }
 
         if restore_command == ConversationCommand.REJECT_RESTORE:
@@ -156,12 +187,35 @@ class LangGraphAgentRunner:
             conversation.target_item_index = understanding.target_item_index
 
         self._merge_preferences(conversation, understanding.preference_updates)
+        migrate_legacy_excluded_brands(conversation)
+        negative_feedback_result = apply_negative_feedback(
+            conversation,
+            understanding.negative_updates,
+            catalog_products=catalog_products,
+        )
         conversation.last_intent = understanding.intent.value
-        return {"conversation": conversation}
+        return {
+            "conversation": conversation,
+            "negative_feedback_result": negative_feedback_result,
+        }
 
     def _decide_next_action(self, state: ShoppingAgentState) -> dict[str, AgentAction]:
         understanding = state["understanding"]
         conversation = state["conversation"]
+        negative_feedback = state.get("negative_feedback_result")
+
+        if negative_feedback and negative_feedback.needs_clarification:
+            return {"action": AgentAction.CLARIFY}
+        if negative_feedback and negative_feedback.noop:
+            return {"action": AgentAction.REPLY_ONLY}
+        if negative_feedback and (
+            negative_feedback.applied or negative_feedback.removed
+        ):
+            if conversation.purchase_need:
+                return {"action": AgentAction.RECOMMEND}
+            return {"action": AgentAction.CLARIFY}
+        if negative_feedback and negative_feedback.detected and not conversation.purchase_need:
+            return {"action": AgentAction.CLARIFY}
 
         if understanding.intent == UserIntent.EXPLAIN:
             return {"action": AgentAction.EXPLAIN}
@@ -175,9 +229,15 @@ class LangGraphAgentRunner:
         action = state["action"]
         conversation = state["conversation"]
         understanding = state["understanding"]
+        negative_feedback = state.get("negative_feedback_result")
 
         if action == AgentAction.RECOMMEND:
-            return {"action_result": self._execute_recommendation(conversation)}
+            return {
+                "action_result": self._execute_recommendation(
+                    conversation,
+                    negative_feedback,
+                )
+            }
 
         if action == AgentAction.EXPLAIN:
             return {
@@ -187,8 +247,20 @@ class LangGraphAgentRunner:
                 )
             }
 
+        if action == AgentAction.REPLY_ONLY:
+            return {
+                "action_result": ActionResult(
+                    action=AgentAction.REPLY_ONLY,
+                    reply_type="negative_feedback_noop_reply",
+                    items=[],
+                    negative_feedback=negative_feedback,
+                )
+            }
+
         question = (
-            understanding.clarifying_question
+            negative_feedback.clarifying_question
+            if negative_feedback and negative_feedback.clarifying_question
+            else understanding.clarifying_question
             or "可以告诉我想买的品类、预算和最在意的点吗？"
         )
         return {
@@ -196,11 +268,33 @@ class LangGraphAgentRunner:
                 action=AgentAction.CLARIFY,
                 reply_type="clarify_reply",
                 clarifying_question=question,
+                negative_feedback=negative_feedback,
             )
         }
 
     def _generate_reply(self, state: ShoppingAgentState) -> dict[str, Any]:
         action_result = state["action_result"]
+
+        if action_result.reply_type == "negative_feedback_noop_reply":
+            return {
+                "reply": self._build_negative_feedback_noop_reply(
+                    action_result.negative_feedback
+                ),
+                "items": action_result.items,
+            }
+
+        if (
+            action_result.reply_type == "recommendation_reply"
+            and action_result.negative_feedback
+            and action_result.negative_feedback.ack_message
+        ):
+            return {
+                "reply": (
+                    f"{action_result.negative_feedback.ack_message}"
+                    "我根据你的需求筛选了这几款商品，可以先看第一款的匹配理由。"
+                ),
+                "items": action_result.items,
+            }
 
         if action_result.reply_type == "recommendation_reply":
             reply = "我根据你的需求筛选了这几款商品，可以先看第一款的匹配理由。"
@@ -230,7 +324,15 @@ class LangGraphAgentRunner:
             "confidence": understanding.confidence,
             "purchase_need": conversation.purchase_need,
             "preferences": conversation.preferences.copy(),
+            "excluded_product_ids": list(conversation.excluded_product_ids),
+            "excluded_brands": list(conversation.excluded_brands),
+            "latest_attempt_status": conversation.latest_attempt_status,
         }
+        negative_feedback = action_result.negative_feedback or state.get(
+            "negative_feedback_result"
+        )
+        if negative_feedback and negative_feedback.detected:
+            response_state["negative_feedback"] = negative_feedback.model_dump()
         # 只暴露本轮推荐执行状态，避免 explain 继承上一轮失败标记。
         if action_result.action == AgentAction.RECOMMEND and conversation.last_result_status:
             response_state["result_status"] = conversation.last_result_status
@@ -248,15 +350,23 @@ class LangGraphAgentRunner:
             )
         }
 
-    def _execute_recommendation(self, conversation: ConversationState) -> ActionResult:
+    def _execute_recommendation(
+        self,
+        conversation: ConversationState,
+        negative_feedback: NegativeFeedbackApplicationResult | None = None,
+    ) -> ActionResult:
         recommendation_query = self._build_recommendation_query(conversation)
         logger.debug("agent recommendation query_length=%s", len(recommendation_query))
         try:
-            result = self.recommendation_tool.run(recommendation_query)
+            result = self.recommendation_tool.run(
+                recommendation_query,
+                negative_filters=build_negative_filters(conversation),
+            )
         except Exception:
             return self._handle_recommendation_tool_error(
                 conversation,
                 recommendation_query,
+                negative_feedback,
             )
         logger.info("agent recommendation completed item_count=%s", len(result.items))
 
@@ -268,6 +378,7 @@ class LangGraphAgentRunner:
                 recommendation_query=recommendation_query,
                 items=[],
                 no_results=no_results,
+                negative_feedback=negative_feedback,
             )
 
         self._save_successful_recommendation(conversation, result)
@@ -276,6 +387,7 @@ class LangGraphAgentRunner:
             reply_type="recommendation_reply",
             recommendation_query=recommendation_query,
             items=result.items,
+            negative_feedback=negative_feedback,
         )
 
     def _execute_explain(
@@ -325,13 +437,6 @@ class LangGraphAgentRunner:
             else:
                 conversation.preferences[key] = value
 
-        excluded = conversation.preferences.get("excluded_brands")
-        if isinstance(excluded, list):
-            conversation.excluded_brands = self._merge_unique(
-                conversation.excluded_brands,
-                excluded,
-            )
-
     def _merge_unique(self, current: list[Any], updates: list[Any]) -> list[Any]:
         merged: list[Any] = []
         for item in [*current, *updates]:
@@ -350,9 +455,16 @@ class LangGraphAgentRunner:
         conversation.last_query = result.query
         conversation.last_filters = result.filters
         conversation.last_items = result.items
+        conversation.latest_attempt_status = "success"
+        conversation.latest_attempt_error = None
+        conversation.latest_no_results_relax_options = []
         conversation.last_result_status = "success"
         conversation.last_no_results_need = None
         conversation.last_no_results_relax_options = []
+        conversation.last_successful_result_id = str(uuid4())
+        conversation.last_successful_query = result.query
+        conversation.last_successful_filters = result.filters
+        conversation.last_successful_items = result.items
         conversation.preferences.update(result.filters.model_dump(exclude_none=True))
 
     def _handle_no_results(
@@ -363,6 +475,8 @@ class LangGraphAgentRunner:
     ) -> NoResultsSuggestion:
         conversation.last_query = recommendation_query
         conversation.last_filters = result.filters
+        conversation.latest_attempt_status = "no_results"
+        conversation.latest_attempt_error = None
         conversation.last_result_status = "no_results"
         conversation.last_no_results_need = recommendation_query
 
@@ -371,6 +485,7 @@ class LangGraphAgentRunner:
             blocking_constraints=self._detect_blocking_constraints(conversation, result),
             relax_options=self._build_relax_options(conversation, result),
         )
+        conversation.latest_no_results_relax_options = suggestion.relax_options
         conversation.last_no_results_relax_options = suggestion.relax_options
         return suggestion
 
@@ -378,10 +493,13 @@ class LangGraphAgentRunner:
         self,
         conversation: ConversationState,
         recommendation_query: str,
+        negative_feedback: NegativeFeedbackApplicationResult | None = None,
     ) -> ActionResult:
         """推荐工具失败时保留上一轮结果，只记录本轮可恢复错误。"""
         logger.exception("agent recommendation tool failed")
         conversation.last_query = recommendation_query
+        conversation.latest_attempt_status = "tool_error"
+        conversation.latest_attempt_error = "recommendation_failed"
         conversation.last_result_status = "tool_error"
         return ActionResult(
             action=AgentAction.RECOMMEND,
@@ -389,6 +507,7 @@ class LangGraphAgentRunner:
             recommendation_query=recommendation_query,
             items=[],
             tool_error="recommendation_failed",
+            negative_feedback=negative_feedback,
         )
 
     def _detect_blocking_constraints(

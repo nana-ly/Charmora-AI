@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field, ValidationError
 
 from agent.memory import ConversationState
+from agent.negative_feedback_models import NegativeFeedbackApplicationResult
 from core.config import LLMConfig
 from schemas.product import ProductCard
 
@@ -31,6 +32,7 @@ class AgentAction(str, Enum):
     RECOMMEND = "recommend"
     EXPLAIN = "explain"
     CLARIFY = "clarify"
+    REPLY_ONLY = "reply_only"
 
 
 class UserUnderstanding(BaseModel):
@@ -134,6 +136,7 @@ class ActionResult(BaseModel):
     no_results: NoResultsSuggestion | None = None
     target_item_index: int | None = None
     clarifying_question: str | None = None
+    negative_feedback: NegativeFeedbackApplicationResult | None = None
 
 
 class InvokeChatClient(Protocol):
