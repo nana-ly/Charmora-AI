@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import Any
 
 from agent.category_rules import BRAND_TERMS
 
 _CHINESE_INDEX_NUMBER = "一二三四五六七八九十两"
+NegativeFeedbackUpdates = dict[str, Any]
 
 
 def extract_negative_updates(message: str) -> dict[str, Any]:
@@ -52,6 +54,33 @@ def extract_negative_updates(message: str) -> dict[str, Any]:
         return {"remove_excluded_brands": [removed_brand]}
 
     return {}
+
+
+def _negative_phrase_patterns() -> Sequence[str]:
+    brand_names = "|".join(re.escape(brand) for brand in BRAND_TERMS)
+    return (
+        r"(?:不要|不买|不考虑|排除)\s*第\s*\d+\s*[个款]?",
+        r"第\s*\d+\s*[个款]?\s*(?:不要|不买|不考虑|排除)",
+        rf"(?:不要|不买|不考虑|排除)\s*(?:{brand_names})",
+        rf"(?:{brand_names})\s*(?:(?:也)?(?:可以|行)\s*)?(?:不要|不买|不考虑|排除)",
+    )
+
+
+def _remove_negative_phrases(text: str) -> str:
+    cleaned = text
+    for pattern in _negative_phrase_patterns():
+        cleaned = re.sub(pattern, "", cleaned)
+    cleaned = re.sub(r"[，,、；;]\s*[，,、；;]+", "，", cleaned)
+    cleaned = cleaned.strip(" ，,、；;\n\t")
+    return cleaned.strip()
+
+
+def clean_positive_purchase_need(
+    text: str,
+    negative_updates: NegativeFeedbackUpdates | None = None,
+) -> str:
+    del negative_updates
+    return _remove_negative_phrases(text)
 
 
 def _extract_item_index_removal(text: str) -> int | None:

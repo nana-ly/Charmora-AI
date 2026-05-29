@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from agent.memory import ConversationState
+from agent.negative_feedback_rules import clean_positive_purchase_need
 
 _NEGATIVE_BRAND_MARKERS = ("不要", "不买", "不考虑", "排除", "别要", "避开")
 _PURCHASE_NEED_SEPARATORS = ("，", ",", "。", "；", ";", "\n")
@@ -16,10 +17,15 @@ def build_recommendation_query(conversation: ConversationState) -> str:
         return ""
 
     preferences = conversation.preferences
+    purchase_need = clean_positive_purchase_need(conversation.purchase_need)
     purchase_need = _clean_negative_brand_fragments(
-        conversation.purchase_need,
+        purchase_need,
         conversation.excluded_brands,
     )
+    if not purchase_need:
+        target = preferences.get("target_category")
+        category = preferences.get("category")
+        purchase_need = str(target or category or "").strip()
     structured_price_limit = _format_price_limit(preferences)
     if structured_price_limit and structured_price_limit not in purchase_need:
         query_parts = [structured_price_limit, purchase_need]

@@ -59,6 +59,36 @@ def test_negative_rules_brand_exclusion_wins_for_ambiguous_removal_text():
     assert extract_negative_updates("苹果也可以不要") == {"excluded_brands": ["苹果"]}
 
 
+def test_extract_negative_updates_single_field_priority_for_mixed_item_index_and_brand():
+    from agent.negative_feedback_rules import extract_negative_updates
+
+    assert extract_negative_updates("推荐手机，不要第2个，不要苹果") == {
+        "excluded_item_indexes": [2]
+    }
+
+
+def test_clean_positive_purchase_need_removes_all_negative_phrases_with_single_field_updates():
+    from agent.negative_feedback_rules import (
+        clean_positive_purchase_need,
+        extract_negative_updates,
+    )
+
+    message = "推荐手机，不要第2个，不要苹果"
+    negative_updates = extract_negative_updates(message)
+
+    cleaned = clean_positive_purchase_need(message, negative_updates)
+
+    assert cleaned == "推荐手机"
+    assert "不要第2个" not in cleaned
+    assert "不要苹果" not in cleaned
+
+
+def test_clean_positive_purchase_need_allows_empty_string_for_pure_negative_text():
+    from agent.negative_feedback_rules import clean_positive_purchase_need
+
+    assert clean_positive_purchase_need("不要苹果") == ""
+
+
 def test_negative_rules_do_not_treat_price_feedback_as_brand_exclusion():
     assert extract_negative_updates("苹果手机不要这么贵") == {}
 
