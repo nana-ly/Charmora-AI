@@ -21,6 +21,7 @@ from agent.memory import ConversationState, InMemoryConversationStore
 from agent.negative_feedback import (
     apply_negative_feedback,
     build_negative_filters,
+    filter_item_index_negative_updates_for_current_target,
     migrate_legacy_excluded_brands,
 )
 from agent.negative_feedback_models import NegativeFeedbackApplicationResult
@@ -186,6 +187,24 @@ class LangGraphAgentRunner:
         conversation = state["conversation"]
         understanding = state["understanding"]
         restore_command = state.get("pending_restore_command")
+        active_key_before = active_target_key(conversation)
+        active_items_before = list(conversation.last_successful_items)
+        updates = understanding.preference_updates
+        current_target_key = updates.get("canonical_target_key")
+        if not isinstance(current_target_key, str):
+            current_target_key = None
+        if (
+            current_target_key is None
+            and set(understanding.negative_updates) == {"excluded_item_indexes"}
+        ):
+            current_target_key = active_key_before
+
+        filtered_negative_updates = filter_item_index_negative_updates_for_current_target(
+            understanding.negative_updates,
+            current_target_key,
+            active_key_before,
+            active_items_before,
+        )
 
         if restore_command == ConversationCommand.CONFIRM_RESTORE:
             restored_understanding = confirm_restore(conversation)
@@ -204,8 +223,16 @@ class LangGraphAgentRunner:
         if restore_command == ConversationCommand.REJECT_RESTORE:
             reject_restore(conversation)
 
-        if understanding.reset_context:
-            # 切换目标前先归档旧需求，避免新旧品类状态混在一起。
+        canonical_target_changed = (
+            current_target_key is not None
+            and active_key_before is not None
+            and current_target_key != active_key_before
+        )
+        effective_reset = canonical_target_changed or (
+            understanding.reset_context and current_target_key is None
+        )
+        # reset_context is legacy understanding state; canonical target changes own reset.
+        if effective_reset:
             reset_for_new_target(conversation)
 
         if understanding.purchase_need:
@@ -217,7 +244,7 @@ class LangGraphAgentRunner:
         migrate_legacy_excluded_brands(conversation)
         negative_feedback_result = apply_negative_feedback(
             conversation,
-            understanding.negative_updates,
+            filtered_negative_updates,
             catalog_products=catalog_products,
         )
         conversation.last_intent = understanding.intent.value

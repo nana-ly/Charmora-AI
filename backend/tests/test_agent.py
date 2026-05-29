@@ -3313,3 +3313,168 @@ def test_confirm_restore_clears_pending_fields_when_archive_missing():
     assert understanding.intent.value == "clarify"
     assert state.pending_restore_category is None
     assert state.pending_restore_display_target is None
+
+
+def test_mixed_broad_item_index_negative_target_switch_ignores_old_items():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("item-index-target-switch")
+    state.purchase_need = "推荐手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    state.last_successful_items = [
+        ProductCard(
+            product_id="p_phone_1",
+            title="第一款手机",
+            brand="BrandA",
+            price=1000,
+            reason="test",
+            evidence="test",
+        ),
+        ProductCard(
+            product_id="p_phone_2",
+            title="第二款手机",
+            brand="BrandB",
+            price=2000,
+            reason="test",
+            evidence="test",
+        ),
+    ]
+    state.last_items = list(state.last_successful_items)
+    store.save(state)
+    captured = {}
+
+    def capture_recommendation(query: str, top_k: int = 3, negative_filters=None):
+        captured["query"] = query
+        captured["negative_filters"] = negative_filters
+        return {
+            "query": query,
+            "filters": {"category": "数码电子", "max_price": None, "brand": None, "keywords": ["耳机"]},
+            "items": [
+                {
+                    "product_id": "p_headphones_1",
+                    "title": "测试耳机",
+                    "brand": "BrandC",
+                    "price": 499,
+                    "reason": "test",
+                    "evidence": "test",
+                }
+            ],
+        }
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=capture_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.RECOMMEND,
+                    purchase_need="推荐耳机",
+                    preference_updates={
+                        "target_category": "耳机",
+                        "category": "数码电子",
+                        "canonical_target_key": "headphones",
+                        "is_broad_category_request": True,
+                    },
+                    negative_updates={"excluded_item_indexes": [2]},
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("item-index-target-switch", "推荐耳机，不要第2个")
+    saved = store.get_or_create("item-index-target-switch")
+
+    assert "不要第2个" not in captured["query"]
+    assert captured["negative_filters"].excluded_product_ids == []
+    assert saved.excluded_product_ids == []
+    assert response.state["action"] == "recommend"
+    assert "negative_feedback" not in response.state or response.state["negative_feedback"].get("needs_clarification") is not True
+
+
+def test_pure_item_index_negative_feedback_keeps_existing_list_semantics():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("pure-item-index")
+    state.purchase_need = "推荐手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    state.last_successful_items = [
+        ProductCard(product_id="p_phone_1", title="第一款手机", brand="A", price=1, reason="r", evidence="e"),
+        ProductCard(product_id="p_phone_2", title="第二款手机", brand="B", price=2, reason="r", evidence="e"),
+    ]
+    state.last_items = list(state.last_successful_items)
+    store.save(state)
+    captured = {}
+
+    def capture_recommendation(query: str, top_k: int = 3, negative_filters=None):
+        captured["negative_filters"] = negative_filters
+        return {
+            "query": query,
+            "filters": {"category": "数码电子", "max_price": None, "brand": None, "keywords": ["手机"]},
+            "items": [
+                {"product_id": "p_phone_3", "title": "第三款手机", "brand": "C", "price": 3, "reason": "r", "evidence": "e"}
+            ],
+        }
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=capture_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [make_understanding(intent=UserIntent.UPDATE_PREFERENCE, negative_updates={"excluded_item_indexes": [2]})]
+        ),
+    )
+
+    response = runner.run("pure-item-index", "不要第2款")
+
+    assert captured["negative_filters"].excluded_product_ids == ["p_phone_2"]
+    assert response.state["excluded_product_ids"] == ["p_phone_2"]
+
+
+def test_reset_context_true_without_canonical_target_still_clears_legacy_state():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("legacy-reset-without-canonical")
+    state.purchase_need = "推荐手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+        "budget": 3000,
+    }
+    store.save(state)
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.UPDATE_PREFERENCE,
+                    purchase_need="推荐手机",
+                    preference_updates={"focus": "拍照"},
+                    reset_context=True,
+                )
+            ]
+        ),
+    )
+
+    runner.run("legacy-reset-without-canonical", "我要看一个新东西")
+    saved = store.get_or_create("legacy-reset-without-canonical")
+
+    assert saved.preferences["focus"] == "拍照"
+    assert "canonical_target_key" not in saved.preferences
+    assert "target_category" not in saved.preferences
+    assert "budget" not in saved.preferences

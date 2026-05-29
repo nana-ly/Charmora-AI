@@ -327,3 +327,38 @@ def test_migrate_legacy_excluded_brands_pops_preference_key():
 
     assert state.excluded_brands == ["苹果"]
     assert state.preferences == {"focus": ["拍照"]}
+
+
+def test_filter_item_index_negative_updates_drops_indexes_before_apply_negative_feedback():
+    from agent.negative_feedback import filter_item_index_negative_updates_for_current_target
+    from schemas.product import ProductCard
+
+    items = [
+        ProductCard(
+            product_id="p_phone_1",
+            title="手机1",
+            brand="BrandA",
+            price=1000,
+            reason="test",
+            evidence="test",
+        )
+    ]
+
+    assert filter_item_index_negative_updates_for_current_target(
+        {"excluded_item_indexes": [1]},
+        current_target_key="headphones",
+        active_target_key="phone",
+        active_last_successful_items=items,
+    ) == {}
+    assert filter_item_index_negative_updates_for_current_target(
+        {"excluded_brands": ["苹果"]},
+        current_target_key="phone",
+        active_target_key="phone",
+        active_last_successful_items=items,
+    ) == {"excluded_brands": ["苹果"]}
+    assert filter_item_index_negative_updates_for_current_target(
+        {"excluded_item_indexes": [1]},
+        current_target_key="phone",
+        active_target_key="phone",
+        active_last_successful_items=items,
+    ) == {"excluded_item_indexes": [1]}
