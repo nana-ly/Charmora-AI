@@ -135,6 +135,21 @@ def test_apply_negative_feedback_excludes_item_by_last_successful_index():
     assert result.ack_message == "已排除第 2 款，我按你的需求重新筛选。"
 
 
+def test_apply_negative_feedback_keeps_mvp_item_index_priority_for_mixed_updates():
+    state = make_phone_state()
+
+    result = apply_negative_feedback(
+        state,
+        {"excluded_item_indexes": [2], "excluded_brands": ["苹果"]},
+        catalog_products=[],
+    )
+
+    assert result.applied is True
+    assert result.target_product_ids == ["p_huawei"]
+    assert state.excluded_product_ids == ["p_huawei"]
+    assert state.excluded_brands == []
+
+
 def test_apply_negative_feedback_duplicate_item_is_noop_without_audit_mutation():
     state = make_phone_state()
     first_result = apply_negative_feedback(
