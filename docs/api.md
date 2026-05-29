@@ -202,6 +202,15 @@ no_results
 tool_error
 ```
 
+`state` 还可能包含这些可选字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `excluded_product_ids` | `string[]` | 当前购买上下文中被用户明确排除的商品 ID，例如“不要第 2 个”。 |
+| `excluded_brands` | `string[]` | 当前购买上下文中被用户明确排除的品牌，例如“不要苹果”。 |
+| `latest_attempt_status` | `"success" \| "no_results" \| "tool_error" \| null` | 最近一次推荐尝试状态，随当前购买上下文归档和恢复。 |
+| `negative_feedback` | `object` | 本轮识别到负反馈时返回的应用结果，可能包含 `applied`、`removed`、`noop`、`needs_clarification`、`changed_fields`、`target_product_ids`、`target_brands`、`noop_reason` 等字段。 |
+
 无结果响应仍保持 `items=[]`，并可能在 `state.relax_options` 中返回可放宽的条件。推荐工具异常会返回稳定对话响应，而不是伪造商品：
 
 ```json

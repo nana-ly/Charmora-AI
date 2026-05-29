@@ -94,6 +94,9 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 - 明显完整的购买请求在 LLM 不可用、输出缺字段、JSON 无法解析或校验失败时，会通过保守 fallback 转成 `recommend`。
 - 用户切换购物目标时，当前购买上下文会先归档，再清空活跃推荐状态，避免新旧品类偏好混在一起。
 - 用户疑似回到旧品类时，后端先询问是否恢复之前需求；确认后恢复归档上下文，拒绝后按新约束推荐。
+- 明确负反馈会写入当前购买上下文：`不要第 2 个` 写入 `excluded_product_ids`，`不要苹果` 写入顶层 `excluded_brands`。这些字段随购买上下文归档和恢复，不作为跨品类全局偏好。
+- 负反馈不会拼进推荐 query。Agent 会把 `ConversationState` 转成 `NegativeFilters` 传给推荐工具，推荐链路在检索前和构建商品卡片前各执行一次 product_id/brand 硬过滤。
+- `/chat.state` 会额外返回 `excluded_product_ids`、`excluded_brands`、`latest_attempt_status`，本轮识别到负反馈时返回 `negative_feedback`。
 - 推荐工具异常会返回稳定 `tool_error` 对话响应：`items=[]`、`state.result_status="tool_error"`、`state.tool_error="recommendation_failed"`。这不会覆盖上一轮成功商品，也不会伪造商品。
 - 无结果或工具错误之后，用户仍可追问上一轮成功推荐的解释。
 

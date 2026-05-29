@@ -4,12 +4,14 @@ from fastapi.testclient import TestClient
 import api.deps as api_deps
 import api.rag as api_rag
 import services.retriever_factory as retriever_factory
+from agent.memory import InMemoryConversationStore
 from agent.runner import create_agent_runner
 from agent.tools import RecommendationTool
 from agent.understanding import UserIntent, UserUnderstanding
 from core.config import AppConfig
 from main import app
 from schemas.chat import ChatResponse
+from schemas.product import ProductCard
 from services.recommendation_service import run_recommendation
 
 
@@ -42,7 +44,13 @@ class FailingVectorSearchRetriever:
 
 
 class FakeUnderstandingService:
+    def __init__(self, understanding: UserUnderstanding | None = None):
+        self.understanding = understanding
+
     def understand(self, *, message, conversation):
+        if self.understanding is not None:
+            return self.understanding
+
         return UserUnderstanding(
             intent=UserIntent.RECOMMEND,
             confidence=0.9,
@@ -55,7 +63,12 @@ class FakeUnderstandingService:
         )
 
 
-def inject_recommend_chat_runner(monkeypatch, *, recommendation_tool=None):
+def inject_recommend_chat_runner(
+    monkeypatch,
+    *,
+    recommendation_tool=None,
+    understanding_service=None,
+):
     monkeypatch.setattr(
         api_deps,
         "agent_runner",
@@ -63,7 +76,7 @@ def inject_recommend_chat_runner(monkeypatch, *, recommendation_tool=None):
             config=AppConfig(agent_runner="langgraph"),
             recommendation_tool=recommendation_tool
             or RecommendationTool(recommend_func=run_recommendation),
-            understanding_service=FakeUnderstandingService(),
+            understanding_service=understanding_service or FakeUnderstandingService(),
         ),
     )
 
@@ -293,6 +306,81 @@ def test_chat_keeps_response_contract_with_langgraph_runner(monkeypatch):
     } <= payload["items"][0].keys()
 
 
+def test_chat_response_includes_negative_feedback_state(monkeypatch):
+    store = InMemoryConversationStore()
+    apple_item = ProductCard(
+        product_id="p_apple_1",
+        title="iPhone 15",
+        brand="苹果",
+        price=5999,
+        reason="上一轮推荐",
+        evidence="seed",
+    )
+    state = store.get_or_create("api-negative-session")
+    state.purchase_need = "想买一台拍照好的手机"
+    state.preferences = {
+        "target_category": "数码电子",
+        "category": "数码电子",
+        "focus": ["拍照"],
+    }
+    state.last_successful_items = [apple_item]
+    state.last_items = [apple_item]
+
+    captured = {}
+
+    def capture_recommendation(query, top_k=3, negative_filters=None):
+        captured["negative_filters"] = negative_filters
+        return {
+            "query": query,
+            "filters": {
+                "category": "数码电子",
+                "max_price": None,
+                "brand": None,
+                "keywords": ["拍照"],
+            },
+            "items": [
+                ProductCard(
+                    product_id="p_huawei_1",
+                    title="华为 Mate 60",
+                    brand="华为",
+                    price=6999,
+                    reason="避开苹果后的推荐",
+                    evidence="test",
+                )
+            ],
+        }
+
+    monkeypatch.setattr(
+        api_deps,
+        "agent_runner",
+        create_agent_runner(
+            config=AppConfig(agent_runner="langgraph"),
+            store=store,
+            recommendation_tool=RecommendationTool(
+                recommend_func=capture_recommendation
+            ),
+            understanding_service=FakeUnderstandingService(
+                UserUnderstanding(
+                    intent=UserIntent.UPDATE_PREFERENCE,
+                    confidence=0.9,
+                    negative_updates={"excluded_brands": ["苹果"]},
+                )
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/chat",
+        json={"session_id": "api-negative-session", "message": "不要苹果"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"]["negative_feedback"]["applied"] is True
+    assert body["state"]["excluded_brands"] == ["苹果"]
+    assert captured["negative_filters"].excluded_brands == ["苹果"]
+
+
 def test_chat_tool_error_keeps_response_shape(monkeypatch):
     def fail_recommendation(query: str, top_k: int = 3):
         raise RuntimeError("boom")
@@ -381,6 +469,90 @@ def test_chat_stream_tool_error_returns_success_events(monkeypatch):
     assert "推荐服务暂时不可用" in body
     assert '"result_status": "tool_error"' in body
     assert '"tool_error": "recommendation_failed"' in body
+
+
+def test_chat_stream_negative_feedback_keeps_success_event_order(monkeypatch):
+    store = InMemoryConversationStore()
+    apple_item = ProductCard(
+        product_id="p_apple_1",
+        title="iPhone 15",
+        brand="苹果",
+        price=5999,
+        reason="上一轮推荐",
+        evidence="seed",
+    )
+    state = store.get_or_create("api-negative-stream-session")
+    state.purchase_need = "想买一台拍照好的手机"
+    state.preferences = {
+        "target_category": "数码电子",
+        "category": "数码电子",
+        "focus": ["拍照"],
+    }
+    state.last_successful_items = [apple_item]
+    state.last_items = [apple_item]
+
+    def capture_recommendation(query, top_k=3, negative_filters=None):
+        return {
+            "query": query,
+            "filters": {
+                "category": "数码电子",
+                "max_price": None,
+                "brand": None,
+                "keywords": ["拍照"],
+            },
+            "items": [
+                ProductCard(
+                    product_id="p_huawei_1",
+                    title="华为 Mate 60",
+                    brand="华为",
+                    price=6999,
+                    reason="避开苹果后的推荐",
+                    evidence="test",
+                )
+            ],
+        }
+
+    monkeypatch.setattr(
+        api_deps,
+        "agent_runner",
+        create_agent_runner(
+            config=AppConfig(agent_runner="langgraph"),
+            store=store,
+            recommendation_tool=RecommendationTool(
+                recommend_func=capture_recommendation
+            ),
+            understanding_service=FakeUnderstandingService(
+                UserUnderstanding(
+                    intent=UserIntent.UPDATE_PREFERENCE,
+                    confidence=0.9,
+                    negative_updates={"excluded_brands": ["苹果"]},
+                )
+            ),
+        ),
+    )
+
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={
+            "session_id": "api-negative-stream-session",
+            "message": "不要苹果",
+        },
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        body = response.read().decode("utf-8")
+
+    start_index = body.index("event: start")
+    delta_index = body.index("event: delta")
+    items_index = body.index("event: items")
+    state_index = body.index("event: state")
+    done_index = body.index("event: done")
+
+    assert start_index < delta_index < items_index < state_index < done_index
+    assert '"excluded_brands": ["苹果"]' in body
+    assert '"applied": true' in body
+    assert "event: error" not in body
 
 
 def test_chat_stream_returns_error_event_when_agent_fails(monkeypatch):
