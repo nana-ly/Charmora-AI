@@ -192,6 +192,7 @@ clarify
 recommend
 explain
 clarify
+reply_only
 ```
 
 `state.result_status` 只描述本轮推荐执行结果，当前取值：

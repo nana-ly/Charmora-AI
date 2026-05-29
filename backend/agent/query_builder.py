@@ -6,6 +6,9 @@ from typing import Any
 
 from agent.memory import ConversationState
 
+_NEGATIVE_BRAND_MARKERS = ("不要", "不买", "不考虑", "排除", "别要", "避开")
+_PURCHASE_NEED_SEPARATORS = ("，", ",", "。", "；", ";", "\n")
+
 
 def build_recommendation_query(conversation: ConversationState) -> str:
     """用结构化记忆补全推荐查询，避免只依赖用户原话。"""
@@ -13,11 +16,15 @@ def build_recommendation_query(conversation: ConversationState) -> str:
         return ""
 
     preferences = conversation.preferences
+    purchase_need = _clean_negative_brand_fragments(
+        conversation.purchase_need,
+        conversation.excluded_brands,
+    )
     structured_price_limit = _format_price_limit(preferences)
-    if structured_price_limit and structured_price_limit not in conversation.purchase_need:
-        query_parts = [structured_price_limit, conversation.purchase_need]
+    if structured_price_limit and structured_price_limit not in purchase_need:
+        query_parts = [structured_price_limit, purchase_need]
     else:
-        query_parts = [conversation.purchase_need]
+        query_parts = [purchase_need]
     query = _join_query(query_parts)
 
     _append_missing(query_parts, query, preferences.get("target_category"))
@@ -47,6 +54,36 @@ def build_recommendation_query(conversation: ConversationState) -> str:
         )
 
     return _join_query(query_parts)
+
+
+def _clean_negative_brand_fragments(purchase_need: str, excluded_brands: list[str]) -> str:
+    brands = [brand.strip() for brand in excluded_brands if brand.strip()]
+    if not brands:
+        return purchase_need
+
+    fragments = _split_purchase_need(purchase_need)
+    kept = [
+        fragment
+        for fragment in fragments
+        if not _is_negative_brand_fragment(fragment, brands)
+    ]
+    return _join_query(kept) if kept else purchase_need
+
+
+def _split_purchase_need(purchase_need: str) -> list[str]:
+    fragments = [purchase_need]
+    for separator in _PURCHASE_NEED_SEPARATORS:
+        next_fragments: list[str] = []
+        for fragment in fragments:
+            next_fragments.extend(fragment.split(separator))
+        fragments = next_fragments
+    return [fragment.strip() for fragment in fragments if fragment.strip()]
+
+
+def _is_negative_brand_fragment(fragment: str, brands: list[str]) -> bool:
+    return any(marker in fragment for marker in _NEGATIVE_BRAND_MARKERS) and any(
+        brand in fragment for brand in brands
+    )
 
 
 def _format_budget(value: Any) -> str | None:

@@ -2174,6 +2174,65 @@ def test_langgraph_runner_excludes_second_successful_item_and_reruns():
     assert response.state["latest_attempt_status"] == "success"
 
 
+def test_langgraph_runner_mixed_negative_purchase_query_is_clean():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    captured: dict[str, object] = {}
+
+    def capture_recommendation(query: str, top_k: int = 3, negative_filters=None):
+        captured["query"] = query
+        captured["negative_filters"] = negative_filters
+        return {
+            "query": query,
+            "filters": {
+                "category": "数码电子",
+                "max_price": None,
+                "brand": None,
+                "keywords": ["手机"],
+            },
+            "items": [
+                {
+                    "product_id": "p_huawei_1",
+                    "title": "华为 Mate 测试机",
+                    "brand": "华为",
+                    "price": 5999,
+                    "reason": "符合手机需求且避开排除品牌。",
+                    "evidence": "命中关键词：手机",
+                }
+            ],
+        }
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=capture_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.RECOMMEND,
+                    purchase_need="推荐手机，不要苹果",
+                    preference_updates={
+                        "target_category": "手机",
+                        "category": "数码电子",
+                    },
+                    negative_updates={"excluded_brands": ["苹果"]},
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("langgraph-session-mixed-negative-query", "推荐手机，不要苹果")
+
+    query = captured["query"]
+    assert "不要" not in query
+    assert "苹果" not in query
+    assert "手机" in query
+    assert captured["negative_filters"].excluded_brands == ["苹果"]
+    assert response.state["latest_attempt_status"] == "success"
+    assert response.state["action"] == "recommend"
+
+
 def test_langgraph_runner_clarifies_invalid_negative_index_without_recommendation():
     from agent.graph.runner import LangGraphAgentRunner
     from agent.understanding import UserIntent
