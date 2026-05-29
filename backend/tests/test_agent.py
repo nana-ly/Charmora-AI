@@ -184,7 +184,7 @@ def test_fallback_understanding_preserves_mixed_purchase_request_with_negative_b
 
     assert understanding is not None
     assert understanding.intent == UserIntent.RECOMMEND
-    assert understanding.purchase_need == message
+    assert understanding.purchase_need == "想买华为手机，预算6000以内"
     assert understanding.preference_updates["target_category"] == "手机"
     assert understanding.preference_updates["category"] == "数码电子"
     assert understanding.preference_updates["budget"] == 6000
@@ -202,7 +202,7 @@ def test_fallback_understanding_preserves_mixed_purchase_request_with_negative_b
 
     assert spaced_understanding is not None
     assert spaced_understanding.intent == UserIntent.RECOMMEND
-    assert spaced_understanding.purchase_need == spaced_negative_message
+    assert spaced_understanding.purchase_need == "想买手机，预算6000以内"
     assert spaced_understanding.preference_updates["target_category"] == "手机"
     assert spaced_understanding.preference_updates["category"] == "数码电子"
     assert spaced_understanding.preference_updates["budget"] == 6000
@@ -242,7 +242,7 @@ def test_fallback_understanding_preserves_negative_only_mixed_purchase_request()
 
     assert understanding is not None
     assert understanding.intent == UserIntent.RECOMMEND
-    assert understanding.purchase_need == message
+    assert understanding.purchase_need == "推荐手机"
     assert understanding.preference_updates["target_category"] == "手机"
     assert understanding.preference_updates["category"] == "数码电子"
     assert "brand" not in understanding.preference_updates
@@ -2795,3 +2795,86 @@ def test_conversation_state_tracks_pending_restore_display_target_default():
 
     assert state.pending_restore_category is None
     assert state.pending_restore_display_target is None
+
+
+def test_fallback_understanding_recommends_broad_phone_request():
+    from agent.fallback_understanding import fallback_understanding
+    from agent.understanding import UserIntent
+
+    understanding = fallback_understanding(
+        message="推荐手机",
+        conversation=ConversationState(session_id="fallback-broad-phone"),
+        reason="test",
+    )
+
+    assert understanding is not None
+    assert understanding.intent == UserIntent.RECOMMEND
+    assert understanding.purchase_need == "推荐手机"
+    assert understanding.preference_updates["target_category"] == "手机"
+    assert understanding.preference_updates["category"] == "数码电子"
+    assert understanding.preference_updates["canonical_target_key"] == "phone"
+    assert understanding.preference_updates["is_broad_category_request"] is True
+    assert understanding.negative_updates == {}
+
+
+def test_fallback_understanding_keeps_negative_updates_for_mixed_broad_request():
+    from agent.fallback_understanding import fallback_understanding
+    from agent.understanding import UserIntent
+
+    understanding = fallback_understanding(
+        message="推荐手机，不要苹果",
+        conversation=ConversationState(session_id="fallback-broad-negative"),
+        reason="test",
+    )
+
+    assert understanding is not None
+    assert understanding.intent == UserIntent.RECOMMEND
+    assert understanding.purchase_need == "推荐手机"
+    assert understanding.preference_updates["target_category"] == "手机"
+    assert understanding.preference_updates["category"] == "数码电子"
+    assert understanding.preference_updates["canonical_target_key"] == "phone"
+    assert understanding.preference_updates["is_broad_category_request"] is True
+    assert understanding.negative_updates == {"excluded_brands": ["苹果"]}
+
+
+def test_fallback_understanding_does_not_recommend_without_target():
+    from agent.fallback_understanding import fallback_understanding
+
+    assert fallback_understanding(
+        message="推荐一下",
+        conversation=ConversationState(session_id="fallback-no-target"),
+        reason="test",
+    ) is None
+
+
+def test_clean_positive_purchase_need_empty_falls_back_to_target_category():
+    from agent.fallback_understanding import fallback_understanding
+    from agent.understanding import UserIntent
+
+    understanding = fallback_understanding(
+        message="手机，不要苹果",
+        conversation=ConversationState(session_id="fallback-empty-clean"),
+        reason="test",
+    )
+
+    assert understanding is not None
+    assert understanding.intent == UserIntent.RECOMMEND
+    assert understanding.purchase_need == "手机"
+
+
+def test_fallback_understanding_recommends_target_with_negative_without_purchase_signal():
+    from agent.fallback_understanding import fallback_understanding
+    from agent.understanding import UserIntent
+
+    understanding = fallback_understanding(
+        message="手机，不要苹果",
+        conversation=ConversationState(session_id="fallback-target-negative"),
+        reason="test",
+    )
+
+    assert understanding is not None
+    assert understanding.intent == UserIntent.RECOMMEND
+    assert understanding.purchase_need == "手机"
+    assert understanding.preference_updates["target_category"] == "手机"
+    assert understanding.preference_updates["canonical_target_key"] == "phone"
+    assert understanding.negative_updates == {"excluded_brands": ["苹果"]}

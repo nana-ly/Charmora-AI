@@ -55,6 +55,8 @@ PURCHASE_SIGNALS = (
     "适合",
 )
 
+BROAD_CATEGORY_SIGNALS = ("推荐", "看看", "有什么", "想买", "要买")
+
 FOCUS_TERMS = (
     "拍照",
     "续航",
@@ -117,6 +119,18 @@ def catalog_category_for(target_category: str) -> str | None:
 
 def has_purchase_signal(message: str) -> bool:
     return any(term in message for term in PURCHASE_SIGNALS)
+
+
+def has_broad_category_signal(message: str) -> bool:
+    return any(signal in message for signal in BROAD_CATEGORY_SIGNALS)
+
+
+def is_standalone_category_term(
+    message: str,
+    target: TargetCategoryMatch,
+) -> bool:
+    stripped = message.strip(" ，,。.!！？?")
+    return stripped == target.matched_text
 
 
 def extract_preference_hints(message: str) -> dict[str, object]:

@@ -8,10 +8,15 @@ from agent.category_rules import (
     catalog_category_for,
     detect_target_category,
     extract_preference_hints,
+    has_broad_category_signal,
     has_purchase_signal,
+    is_standalone_category_term,
 )
 from agent.memory import ConversationState
-from agent.negative_feedback_rules import extract_negative_updates
+from agent.negative_feedback_rules import (
+    clean_positive_purchase_need,
+    extract_negative_updates,
+)
 from agent.understanding import UserIntent, UserUnderstanding
 
 logger = logging.getLogger(__name__)
@@ -89,6 +94,13 @@ def _contextual_price_feedback(
     )
 
 
+def _has_positive_constraints(hints: dict[str, object]) -> bool:
+    return any(
+        key in hints
+        for key in ("budget", "brand", "focus", "usage", "preferred_brands")
+    )
+
+
 def _purchase_request_understanding(
     *,
     message: str,
@@ -96,29 +108,40 @@ def _purchase_request_understanding(
     negative_updates: dict[str, object] | None = None,
 ) -> UserUnderstanding | None:
     target = detect_target_category(message)
-    if target is None or not has_purchase_signal(message):
+    if target is None:
         return None
 
     hints = extract_preference_hints(message)
-    has_constraint = any(
-        key in hints
-        for key in (
-            "budget",
-            "brand",
-            "focus",
-            "usage",
-            "preferred_brands",
+    negative_updates = negative_updates or {}
+    positive_purchase_need = clean_positive_purchase_need(message, negative_updates)
+    if not positive_purchase_need and target.target_category:
+        positive_purchase_need = target.target_category
+    has_negative_updates = bool(negative_updates)
+
+    is_broad = (
+        (
+            has_broad_category_signal(message)
+            or is_standalone_category_term(message, target)
         )
-    ) or bool(negative_updates)
-    if not has_constraint:
+        and not _has_positive_constraints(hints)
+    )
+    has_clean_positive_target = bool(positive_purchase_need)
+    if (
+        not has_purchase_signal(message)
+        and not is_broad
+        and not (has_clean_positive_target and has_negative_updates)
+    ):
         return None
 
     updates = {
         "target_category": target.target_category,
         "category": target.catalog_category
         or catalog_category_for(target.target_category),
+        "canonical_target_key": target.canonical_target_key,
         **hints,
     }
+    updates["is_broad_category_request"] = bool(is_broad)
+
     logger.info(
         "understanding source=fallback reason=%s intent=recommend target_category=%s",
         reason,
@@ -127,11 +150,11 @@ def _purchase_request_understanding(
     return UserUnderstanding(
         intent=UserIntent.RECOMMEND,
         confidence=0.55,
-        purchase_need=message,
+        purchase_need=positive_purchase_need,
         preference_updates={
             key: value for key, value in updates.items() if value is not None
         },
-        negative_updates=negative_updates or {},
+        negative_updates=negative_updates,
     )
 
 
