@@ -56,6 +56,7 @@ PURCHASE_SIGNALS = (
 )
 
 BROAD_CATEGORY_SIGNALS = ("推荐", "看看", "有什么", "想买", "要买")
+RESTORE_SIGNAL_TERMS = ("还是", "之前", "恢复", "回到", "继续看")
 
 FOCUS_TERMS = (
     "拍照",
@@ -92,6 +93,12 @@ def detect_target_category(message: str) -> TargetCategoryMatch | None:
                 canonical_target_key=key,
             )
     return None
+
+
+def detect_restore_target(message: str) -> TargetCategoryMatch | None:
+    if not any(term in message for term in RESTORE_SIGNAL_TERMS):
+        return None
+    return detect_target_category(message)
 
 
 def canonical_target_key(

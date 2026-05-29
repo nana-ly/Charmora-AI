@@ -6,8 +6,11 @@ from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
+from agent.category_rules import detect_restore_target
 from agent.context_manager import (
     ConversationCommand,
+    active_target_key,
+    clear_pending_restore,
     confirm_restore,
     reject_restore,
     request_restore,
@@ -118,8 +121,7 @@ class LangGraphAgentRunner:
 
         message_negative_updates = extract_negative_updates(message)
         if conversation.pending_restore_category and message_negative_updates:
-            conversation.pending_restore_category = None
-            conversation.pending_restore_display_target = None
+            clear_pending_restore(conversation)
 
         resolution = resolve_pending_restore(conversation, message)
         if resolution.handled:
@@ -137,8 +139,27 @@ class LangGraphAgentRunner:
             }
 
         if resolution.clear_pending_before_understanding:
-            conversation.pending_restore_category = None
-            conversation.pending_restore_display_target = None
+            clear_pending_restore(conversation)
+
+        restore_target = detect_restore_target(message)
+        if restore_target is not None:
+            active_key = active_target_key(conversation)
+            if active_key != restore_target.canonical_target_key and request_restore(
+                conversation,
+                restore_target.canonical_target_key,
+                restore_target.target_category,
+            ):
+                understanding = UserUnderstanding(
+                    intent=UserIntent.CLARIFY,
+                    confidence=0.8,
+                    clarifying_question=(
+                        "要恢复之前的"
+                        f"{conversation.pending_restore_display_target or restore_target.target_category}"
+                        "需求吗？"
+                    ),
+                    restore_context_category=restore_target.target_category,
+                )
+                return {"conversation": conversation, "understanding": understanding}
 
         understanding = self.understanding_service.understand(
             message=message,
@@ -146,14 +167,22 @@ class LangGraphAgentRunner:
         )
 
         restore_category = understanding.restore_context_category
-        if restore_category and request_restore(conversation, restore_category):
-            understanding = UserUnderstanding(
-                intent=UserIntent.CLARIFY,
-                confidence=understanding.confidence,
-                clarifying_question=f"是否恢复之前的{restore_category}需求？",
-                restore_context_category=restore_category,
-            )
-
+        if restore_category:
+            if request_restore(
+                conversation,
+                restore_category,
+                restore_category,
+            ):
+                understanding = UserUnderstanding(
+                    intent=UserIntent.CLARIFY,
+                    confidence=understanding.confidence,
+                    clarifying_question=(
+                        "是否恢复之前的"
+                        f"{conversation.pending_restore_display_target or restore_category}"
+                        "需求？"
+                    ),
+                    restore_context_category=restore_category,
+                )
         logger.info("agent intent understood intent=%s", understanding.intent.value)
         return {"conversation": conversation, "understanding": understanding}
 

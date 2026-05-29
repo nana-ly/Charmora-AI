@@ -656,7 +656,8 @@ def test_context_manager_request_restore_requires_existing_archive():
     ]
 
     assert request_restore(state, "手机") is True
-    assert state.pending_restore_category == "手机"
+    assert state.pending_restore_category == "phone"
+    assert state.pending_restore_display_target == "手机"
 
 
 def test_context_manager_resolve_pending_restore_rejects_before_confirmation_without_mutation():
@@ -1732,7 +1733,8 @@ def test_langgraph_runner_requests_restore_instead_of_overwriting_active_context
     assert "恢复之前的手机需求" in response.reply
     assert saved.purchase_need == "办公室喝的咖啡"
     assert saved.preferences["target_category"] == "咖啡"
-    assert saved.pending_restore_category == "手机"
+    assert saved.pending_restore_category == "phone"
+    assert saved.pending_restore_display_target == "手机"
 
 
 def test_langgraph_runner_applies_reset_context_before_new_purchase_need():
@@ -2077,18 +2079,19 @@ def test_langgraph_runner_full_restore_round_trip():
     first = runner.run("langgraph-session-restore-round-trip", "还是看手机吧")
     after_first = store.get_or_create("langgraph-session-restore-round-trip")
 
-    assert len(service.calls) == 1
+    assert len(service.calls) == 0
     assert captured_queries == []
     assert first.state["intent"] == "clarify"
     assert first.state["action"] == "clarify"
     assert after_first.purchase_need == "办公室喝的咖啡"
     assert after_first.preferences["target_category"] == "咖啡"
-    assert after_first.pending_restore_category == "手机"
+    assert after_first.pending_restore_category == "phone"
+    assert after_first.pending_restore_display_target == "手机"
 
     second = runner.run("langgraph-session-restore-round-trip", "对，就按之前的")
     after_second = store.get_or_create("langgraph-session-restore-round-trip")
 
-    assert len(service.calls) == 1
+    assert len(service.calls) == 0
     assert second.state["intent"] == "recommend"
     assert second.state["action"] == "recommend"
     assert second.items
@@ -2982,3 +2985,172 @@ def test_llm_recommend_wrong_broad_flag_is_overridden_by_fallback():
     assert understanding.preference_updates["category"] == "数码电子"
     assert understanding.preference_updates["canonical_target_key"] == "phone"
     assert understanding.preference_updates["is_broad_category_request"] is True
+
+
+def test_detect_restore_target_requires_signal_and_target():
+    from agent.category_rules import detect_restore_target
+
+    assert detect_restore_target("还是推荐手机吧").canonical_target_key == "phone"
+    assert detect_restore_target("恢复之前的手机").canonical_target_key == "phone"
+    assert detect_restore_target("继续看护肤品").canonical_target_key == "skin_care"
+    assert detect_restore_target("推荐手机") is None
+
+
+def test_request_restore_uses_canonical_key_and_display_target():
+    from agent.context_manager import request_restore
+    from agent.memory import ConversationState, PurchaseContext
+
+    state = ConversationState(session_id="restore-canonical")
+    state.previous_purchase_contexts = [
+        PurchaseContext(
+            purchase_need="推荐护肤",
+            preferences={
+                "target_category": "护肤",
+                "category": "美妆护肤",
+                "canonical_target_key": "skin_care",
+            },
+            target_category="护肤",
+            category="美妆护肤",
+            canonical_target_key="skin_care",
+            display_target_category="护肤",
+        )
+    ]
+
+    assert request_restore(state, "skin_care", "护肤品") is True
+    assert state.pending_restore_category == "skin_care"
+    assert state.pending_restore_display_target == "护肤品"
+
+
+def test_confirm_restore_uses_canonical_key_and_clears_pending_display_target():
+    from agent.context_manager import confirm_restore
+    from agent.memory import ConversationState, PurchaseContext
+
+    state = ConversationState(session_id="confirm-restore-canonical")
+    state.purchase_need = "推荐咖啡"
+    state.preferences = {
+        "target_category": "咖啡",
+        "category": "食品生活",
+        "canonical_target_key": "coffee",
+    }
+    state.previous_purchase_contexts = [
+        PurchaseContext(
+            purchase_need="推荐护肤",
+            preferences={
+                "target_category": "护肤",
+                "category": "美妆护肤",
+                "canonical_target_key": "skin_care",
+            },
+            target_category="护肤",
+            category="美妆护肤",
+            canonical_target_key="skin_care",
+            display_target_category="护肤",
+        )
+    ]
+    state.pending_restore_category = "skin_care"
+    state.pending_restore_display_target = "护肤品"
+
+    understanding = confirm_restore(state)
+
+    assert understanding.intent.value == "recommend"
+    assert state.preferences["canonical_target_key"] == "skin_care"
+    assert state.preferences["is_broad_category_request"] is False
+    assert state.pending_restore_category is None
+    assert state.pending_restore_display_target is None
+
+
+def test_reject_restore_clears_pending_restore_fields():
+    from agent.context_manager import reject_restore
+    from agent.memory import ConversationState
+
+    state = ConversationState(session_id="reject-restore-canonical")
+    state.pending_restore_category = "skin_care"
+    state.pending_restore_display_target = "护肤品"
+
+    reject_restore(state)
+
+    assert state.pending_restore_category is None
+    assert state.pending_restore_display_target is None
+
+
+def test_build_restore_rejection_understanding_uses_display_target_not_canonical_key():
+    from agent.context_manager import build_restore_rejection_understanding
+    from agent.memory import ConversationState
+
+    state = ConversationState(session_id="reject-restore-display")
+    state.pending_restore_category = "skin_care"
+    state.pending_restore_display_target = "护肤品"
+
+    understanding = build_restore_rejection_understanding(state, "不要了")
+
+    assert understanding.intent.value == "clarify"
+    assert "护肤品" in understanding.clarifying_question
+    assert "skin_care" not in understanding.clarifying_question
+
+
+def test_build_restore_rejection_understanding_falls_back_with_display_target():
+    from agent.context_manager import build_restore_rejection_understanding
+    from agent.memory import ConversationState
+    from agent.understanding import UserIntent
+
+    state = ConversationState(session_id="reject-restore-phone-budget")
+    state.pending_restore_category = "phone"
+    state.pending_restore_display_target = "手机"
+
+    understanding = build_restore_rejection_understanding(
+        state,
+        "不是，预算3000以内就行",
+    )
+
+    assert understanding.intent in {UserIntent.RECOMMEND, UserIntent.UPDATE_PREFERENCE}
+    assert understanding.intent != UserIntent.CLARIFY
+    assert understanding.reset_context is True
+    assert understanding.purchase_need == "不是，预算3000以内就行"
+    assert state.pending_restore_category == "phone"
+    assert state.pending_restore_display_target == "手机"
+    assert understanding.preference_updates.get("canonical_target_key") == "phone"
+    assert understanding.preference_updates.get("target_category") == "手机"
+    assert "phone" not in (understanding.clarifying_question or "")
+
+
+def test_resolve_pending_restore_uses_current_resolution_model_for_confirmation():
+    from agent.context_manager import ConversationCommand, resolve_pending_restore
+    from agent.memory import ConversationState
+
+    state = ConversationState(session_id="resolve-pending-confirm")
+    state.pending_restore_category = "skin_care"
+    state.pending_restore_display_target = "护肤品"
+
+    result = resolve_pending_restore(state, "是的")
+
+    assert result.handled is True
+    assert result.command == ConversationCommand.CONFIRM_RESTORE
+    assert result.clear_pending_before_understanding is False
+
+
+def test_clear_pending_restore_clears_pending_fields_for_direct_runner_path():
+    from agent.context_manager import clear_pending_restore
+    from agent.memory import ConversationState
+
+    state = ConversationState(session_id="clear-pending")
+    state.pending_restore_category = "skin_care"
+    state.pending_restore_display_target = "护肤品"
+
+    clear_pending_restore(state)
+
+    assert state.pending_restore_category is None
+    assert state.pending_restore_display_target is None
+
+
+def test_confirm_restore_clears_pending_fields_when_archive_missing():
+    from agent.context_manager import confirm_restore
+    from agent.memory import ConversationState
+
+    state = ConversationState(session_id="resolve-pending-no-match")
+    state.pending_restore_category = "skin_care"
+    state.pending_restore_display_target = "护肤品"
+
+    understanding = confirm_restore(state)
+
+    assert understanding.intent.value == "clarify"
+    assert state.pending_restore_category is None
+    assert state.pending_restore_display_target is None
