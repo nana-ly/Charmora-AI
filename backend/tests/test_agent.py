@@ -1714,7 +1714,7 @@ def test_restore_signal_with_broad_target_does_not_directly_recommend_archived_c
     runner = LangGraphAgentRunner(
         store=store,
         recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
-        understanding_service=FakeUnderstandingService(
+        understanding_service=(service := FakeUnderstandingService(
             [
                 make_understanding(
                     intent=UserIntent.CLARIFY,
@@ -1722,7 +1722,7 @@ def test_restore_signal_with_broad_target_does_not_directly_recommend_archived_c
                     restore_context_category="手机",
                 )
             ]
-        ),
+        )),
     )
 
     response = runner.run("langgraph-session-restore-request", "还是看手机吧")
@@ -1740,6 +1740,7 @@ def test_restore_signal_with_broad_target_does_not_directly_recommend_archived_c
     assert saved.purchase_need == "办公室喝的咖啡"
     assert saved.preferences["target_category"] == "咖啡"
     assert saved.pending_restore_category == "phone"
+    assert service.calls == []
     assert saved.pending_restore_display_target == "手机"
 
 
