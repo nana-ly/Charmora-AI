@@ -64,6 +64,8 @@ def filter_item_index_negative_updates_for_current_target(
         and active_last_successful_items
     ):
         return filtered
+    if current_target_key is None and active_target_key is None and active_last_successful_items:
+        return filtered
     if "excluded_item_indexes" in filtered:
         filtered.pop("excluded_item_indexes", None)
     return filtered

@@ -369,6 +369,12 @@ def test_filter_item_index_negative_updates_drops_indexes_before_apply_negative_
         active_last_successful_items=items,
     ) == {"excluded_item_indexes": [1]}
     assert filter_item_index_negative_updates_for_current_target(
+        {"excluded_item_indexes": [2]},
+        current_target_key=None,
+        active_target_key=None,
+        active_last_successful_items=items,
+    ) == {"excluded_item_indexes": [2]}
+    assert filter_item_index_negative_updates_for_current_target(
         {"excluded_item_indexes": [1], "excluded_brands": ["苹果"]},
         current_target_key="phone",
         active_target_key="phone",
