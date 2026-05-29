@@ -61,7 +61,7 @@ def _negative_phrase_patterns() -> Sequence[str]:
     return (
         r"(?:不要|不买|不考虑|排除)\s*第\s*\d+\s*[个款]?",
         r"第\s*\d+\s*[个款]?\s*(?:不要|不买|不考虑|排除)",
-        rf"(?:不要|不买|不考虑|排除)\s*(?:{brand_names})",
+        rf"(?:不要|不买|不考虑|排除|别要|避开)\s*(?:{brand_names})",
         rf"(?:{brand_names})\s*(?:(?:也)?(?:可以|行)\s*)?(?:不要|不买|不考虑|排除)",
     )
 
@@ -79,7 +79,11 @@ def clean_positive_purchase_need(
     text: str,
     negative_updates: NegativeFeedbackUpdates | None = None,
 ) -> str:
-    del negative_updates
+    if negative_updates and (
+        negative_updates.get("unsupported_negative_type")
+        or any(key.startswith("remove_") for key in negative_updates)
+    ):
+        return text.strip()
     return _remove_negative_phrases(text)
 
 

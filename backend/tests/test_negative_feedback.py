@@ -89,6 +89,26 @@ def test_clean_positive_purchase_need_allows_empty_string_for_pure_negative_text
     assert clean_positive_purchase_need("不要苹果") == ""
 
 
+def test_clean_positive_purchase_need_preserves_cancel_or_remove_negative_updates():
+    from agent.negative_feedback_rules import (
+        clean_positive_purchase_need,
+        extract_negative_updates,
+    )
+
+    message = "取消排除苹果"
+    updates = extract_negative_updates(message)
+
+    assert updates == {"remove_excluded_brands": ["苹果"]}
+    assert clean_positive_purchase_need(message, updates) == message
+
+
+def test_clean_positive_purchase_need_removes_avoid_brand_markers():
+    from agent.negative_feedback_rules import clean_positive_purchase_need
+
+    assert clean_positive_purchase_need("推荐手机，避开苹果") == "推荐手机"
+    assert clean_positive_purchase_need("推荐手机，别要苹果") == "推荐手机"
+
+
 def test_negative_rules_do_not_treat_price_feedback_as_brand_exclusion():
     assert extract_negative_updates("苹果手机不要这么贵") == {}
 

@@ -27,10 +27,11 @@ def build_recommendation_query(conversation: ConversationState) -> str:
         category = preferences.get("category")
         purchase_need = str(target or category or "").strip()
     structured_price_limit = _format_price_limit(preferences)
+    query_parts: list[str] = []
     if structured_price_limit and structured_price_limit not in purchase_need:
-        query_parts = [structured_price_limit, purchase_need]
-    else:
-        query_parts = [purchase_need]
+        query_parts.append(structured_price_limit)
+    if purchase_need:
+        query_parts.append(purchase_need)
     query = _join_query(query_parts)
 
     _append_missing(query_parts, query, preferences.get("target_category"))
@@ -73,7 +74,7 @@ def _clean_negative_brand_fragments(purchase_need: str, excluded_brands: list[st
         for fragment in fragments
         if not _is_negative_brand_fragment(fragment, brands)
     ]
-    return _join_query(kept) if kept else purchase_need
+    return _join_query(kept)
 
 
 def _split_purchase_need(purchase_need: str) -> list[str]:

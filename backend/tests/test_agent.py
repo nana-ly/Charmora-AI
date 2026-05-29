@@ -1300,6 +1300,45 @@ def test_query_builder_excludes_all_negative_phrases_when_negative_updates_is_si
     assert "苹果" not in query
 
 
+def test_query_builder_falls_back_to_target_when_avoid_brand_phrase_cleans_empty():
+    from agent.memory import ConversationState
+    from agent.query_builder import build_recommendation_query
+
+    state = ConversationState(session_id="query-clean-avoid-brand")
+    state.purchase_need = "避开苹果"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    state.excluded_brands = ["苹果"]
+
+    query = build_recommendation_query(state)
+
+    assert "避开" not in query
+    assert "苹果" not in query
+    assert "手机" in query
+    assert "数码电子" in query
+
+
+def test_query_builder_omits_empty_purchase_need_when_only_structured_budget_remains():
+    from agent.memory import ConversationState
+    from agent.query_builder import build_recommendation_query
+
+    state = ConversationState(session_id="query-empty-need-with-budget")
+    state.purchase_need = "不要苹果"
+    state.preferences = {"budget": 3000}
+    state.excluded_brands = ["苹果"]
+
+    query = build_recommendation_query(state)
+
+    assert query == "预算3000以内"
+    assert "不要" not in query
+    assert "苹果" not in query
+    assert not query.endswith("，")
+    assert "，，" not in query
+
+
 def test_build_recommendation_query_keeps_positive_brand_only():
     from agent.query_builder import build_recommendation_query
 
