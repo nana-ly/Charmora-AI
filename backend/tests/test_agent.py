@@ -577,6 +577,24 @@ def test_context_manager_archives_active_context_with_cap_and_replace():
     assert [item.purchase_need for item in state.previous_purchase_contexts].count("旧手机需求") == 0
 
 
+def test_context_manager_archive_active_context_preserves_existing_keyless_archives():
+    from agent.context_manager import archive_active_context
+    from agent.memory import PurchaseContext
+
+    state = ConversationState(session_id="archive-keyless")
+    state.purchase_need = "还没确定具体买什么，只是先看看"
+    state.previous_purchase_contexts = [
+        PurchaseContext(purchase_need="之前也没有明确品类"),
+    ]
+
+    archive_active_context(state)
+
+    assert [item.purchase_need for item in state.previous_purchase_contexts] == [
+        "还没确定具体买什么，只是先看看",
+        "之前也没有明确品类",
+    ]
+
+
 def test_context_manager_reset_for_new_target_archives_and_clears_active_context():
     from agent.context_manager import reset_for_new_target
     from schemas.chat import ChatMessage
@@ -1834,6 +1852,9 @@ def test_langgraph_runner_pending_restore_complete_new_request_calls_understandi
                 {
                     "message": message,
                     "pending_restore_category": conversation.pending_restore_category,
+                    "pending_restore_display_target": (
+                        conversation.pending_restore_display_target
+                    ),
                 }
             )
             return make_understanding(
@@ -1853,6 +1874,7 @@ def test_langgraph_runner_pending_restore_complete_new_request_calls_understandi
     state.purchase_need = "办公室喝的咖啡"
     state.preferences = {"target_category": "咖啡", "category": "食品生活"}
     state.pending_restore_category = "手机"
+    state.pending_restore_display_target = "拍照手机"
     state.previous_purchase_contexts = [
         PurchaseContext(
             purchase_need="华为手机，预算6000以内",
@@ -1901,9 +1923,11 @@ def test_langgraph_runner_pending_restore_complete_new_request_calls_understandi
         {
             "message": "我想买咖啡，预算200以内，低糖",
             "pending_restore_category": None,
+            "pending_restore_display_target": None,
         }
     ]
     assert saved.pending_restore_category is None
+    assert saved.pending_restore_display_target is None
     assert saved.purchase_need == "办公室咖啡，预算200以内，低糖"
     assert saved.preferences["target_category"] == "咖啡"
     assert saved.preferences["budget"] == 200
@@ -1914,6 +1938,56 @@ def test_langgraph_runner_pending_restore_complete_new_request_calls_understandi
     assert "低糖" in captured_queries[0]
     assert response.state["intent"] == "recommend"
     assert response.state["action"] == "recommend"
+
+
+def test_langgraph_runner_negative_feedback_clears_pending_restore_display_target():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    class SnapshotUnderstandingService:
+        def __init__(self):
+            self.calls = []
+
+        def understand(self, *, message, conversation):
+            self.calls.append(
+                {
+                    "pending_restore_category": conversation.pending_restore_category,
+                    "pending_restore_display_target": (
+                        conversation.pending_restore_display_target
+                    ),
+                }
+            )
+            return make_understanding(
+                intent=UserIntent.UPDATE_PREFERENCE,
+                negative_updates={"excluded_brands": ["苹果"]},
+            )
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("langgraph-session-restore-negative-clear")
+    state.purchase_need = "拍照好的手机"
+    state.preferences = {"target_category": "手机", "category": "数码电子"}
+    state.pending_restore_category = "手机"
+    state.pending_restore_display_target = "拍照手机"
+    store.save(state)
+
+    service = SnapshotUnderstandingService()
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
+        understanding_service=service,
+    )
+
+    runner.run("langgraph-session-restore-negative-clear", "不要苹果")
+    saved = store.get_or_create("langgraph-session-restore-negative-clear")
+
+    assert service.calls == [
+        {
+            "pending_restore_category": None,
+            "pending_restore_display_target": None,
+        }
+    ]
+    assert saved.pending_restore_category is None
+    assert saved.pending_restore_display_target is None
 
 
 def test_langgraph_runner_full_restore_round_trip():

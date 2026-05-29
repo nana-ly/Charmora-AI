@@ -119,6 +119,7 @@ class LangGraphAgentRunner:
         message_negative_updates = extract_negative_updates(message)
         if conversation.pending_restore_category and message_negative_updates:
             conversation.pending_restore_category = None
+            conversation.pending_restore_display_target = None
 
         resolution = resolve_pending_restore(conversation, message)
         if resolution.handled:
@@ -137,6 +138,7 @@ class LangGraphAgentRunner:
 
         if resolution.clear_pending_before_understanding:
             conversation.pending_restore_category = None
+            conversation.pending_restore_display_target = None
 
         understanding = self.understanding_service.understand(
             message=message,

@@ -93,11 +93,21 @@ def archive_active_context(conversation: ConversationState, max_contexts: int = 
     key = archived.canonical_target_key or active_target_key(conversation)
     if key:
         archived.canonical_target_key = key
-    deduped = [
-        item
-        for item in conversation.previous_purchase_contexts
-        if ensure_archived_target_fields(item) != key
-    ]
+    target = archived.target_category or archived.preferences.get("target_category")
+    if key:
+        deduped = [
+            item
+            for item in conversation.previous_purchase_contexts
+            if ensure_archived_target_fields(item) != key
+        ]
+    elif isinstance(target, str) and target.strip():
+        deduped = [
+            item
+            for item in conversation.previous_purchase_contexts
+            if (item.target_category or item.preferences.get("target_category")) != target
+        ]
+    else:
+        deduped = list(conversation.previous_purchase_contexts)
     conversation.previous_purchase_contexts = [archived, *deduped][:max_contexts]
 
 
