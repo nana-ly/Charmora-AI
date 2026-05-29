@@ -3441,7 +3441,7 @@ def test_pure_item_index_negative_feedback_keeps_existing_list_semantics():
     assert response.state["excluded_product_ids"] == ["p_phone_2"]
 
 
-def test_reset_context_true_without_canonical_target_still_clears_legacy_state():
+def test_legacy_reset_without_canonical_understanding_current_target_still_clears_legacy_state():
     from agent.graph.runner import LangGraphAgentRunner
     from agent.understanding import UserIntent
 
