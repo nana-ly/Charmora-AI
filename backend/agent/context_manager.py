@@ -6,7 +6,11 @@ from enum import Enum
 
 from pydantic import BaseModel
 
-from agent.category_rules import is_restore_confirmation, is_restore_rejection
+from agent.category_rules import (
+    canonical_target_key,
+    is_restore_confirmation,
+    is_restore_rejection,
+)
 from agent.fallback_understanding import fallback_understanding
 from agent.memory import ConversationState, PurchaseContext
 from agent.understanding import UserIntent, UserUnderstanding, clarify_understanding
@@ -42,6 +46,43 @@ def active_target_category(conversation: ConversationState) -> str | None:
     return None
 
 
+def active_target_key(conversation: ConversationState) -> str | None:
+    """返回当前目标的 canonical key，旧状态缺 key 时就地补齐。"""
+
+    key = conversation.preferences.get("canonical_target_key")
+    if isinstance(key, str) and key.strip():
+        return key
+    target = conversation.preferences.get("target_category")
+    category = conversation.preferences.get("category")
+    if isinstance(target, str):
+        derived = canonical_target_key(
+            target,
+            category if isinstance(category, str) else None,
+        )
+        if derived:
+            conversation.preferences["canonical_target_key"] = derived
+            return derived
+    return None
+
+
+def ensure_archived_target_fields(item: PurchaseContext) -> str | None:
+    """补齐旧归档的 canonical/display 目标字段。"""
+
+    target = item.target_category or item.preferences.get("target_category")
+    category = item.category or item.preferences.get("category")
+    if not item.display_target_category and isinstance(target, str):
+        item.display_target_category = target
+    if item.canonical_target_key:
+        return item.canonical_target_key
+    key = canonical_target_key(
+        target if isinstance(target, str) else None,
+        category if isinstance(category, str) else None,
+    )
+    if key:
+        item.canonical_target_key = key
+    return key
+
+
 def archive_active_context(conversation: ConversationState, max_contexts: int = 5) -> None:
     """归档当前购买需求，并按目标品类替换旧归档。"""
 
@@ -49,17 +90,13 @@ def archive_active_context(conversation: ConversationState, max_contexts: int = 
         return
 
     archived = PurchaseContext.from_conversation(conversation)
-    target_category = archived.target_category or active_target_category(conversation)
-    if target_category is None:
-        conversation.previous_purchase_contexts = [archived, *conversation.previous_purchase_contexts][
-            :max_contexts
-        ]
-        return
-
+    key = archived.canonical_target_key or active_target_key(conversation)
+    if key:
+        archived.canonical_target_key = key
     deduped = [
         item
         for item in conversation.previous_purchase_contexts
-        if item.target_category != target_category
+        if ensure_archived_target_fields(item) != key
     ]
     conversation.previous_purchase_contexts = [archived, *deduped][:max_contexts]
 
@@ -104,8 +141,12 @@ def find_archived_context(
 ) -> PurchaseContext | None:
     """按具体目标品类查找已归档的购买上下文。"""
 
+    target_key = canonical_target_key(target_category)
     for item in conversation.previous_purchase_contexts:
         item_target = item.target_category or item.preferences.get("target_category")
+        item_key = ensure_archived_target_fields(item)
+        if target_key is not None and item_key == target_key:
+            return item
         if item_target == target_category:
             return item
     return None
@@ -118,6 +159,11 @@ def request_restore(conversation: ConversationState, target_category: str) -> bo
         return False
 
     conversation.pending_restore_category = target_category
+    archived = find_archived_context(conversation, target_category)
+    if archived is not None:
+        conversation.pending_restore_display_target = (
+            archived.display_target_category or archived.target_category or target_category
+        )
     return True
 
 
@@ -132,11 +178,13 @@ def confirm_restore(conversation: ConversationState) -> UserUnderstanding:
     )
     if archived is None:
         conversation.pending_restore_category = None
+        conversation.pending_restore_display_target = None
         return clarify_understanding("没有找到之前的需求，可以重新说一下想买什么吗？")
 
     archive_active_context(conversation)
     archived.apply_to_conversation(conversation)
     conversation.pending_restore_category = None
+    conversation.pending_restore_display_target = None
 
     return UserUnderstanding(
         intent=UserIntent.RECOMMEND,
@@ -150,6 +198,7 @@ def reject_restore(conversation: ConversationState) -> None:
     """执行恢复拒绝：只清除待恢复标记。"""
 
     conversation.pending_restore_category = None
+    conversation.pending_restore_display_target = None
 
 
 def build_restore_rejection_understanding(

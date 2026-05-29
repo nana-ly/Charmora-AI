@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from agent.category_rules import canonical_target_key
 from agent.negative_feedback_models import NegativeFeedbackItem
 from schemas.chat import ChatMessage
 from schemas.product import ProductCard
@@ -36,12 +37,22 @@ class PurchaseContext(BaseModel):
     last_no_results_relax_options: list[str] = Field(default_factory=list)
     target_category: str | None = None
     category: str | None = None
+    canonical_target_key: str | None = None
+    display_target_category: str | None = None
 
     @classmethod
     def from_conversation(cls, conversation: "ConversationState") -> "PurchaseContext":
         preferences = deepcopy(conversation.preferences)
+        preferences.pop("is_broad_category_request", None)
         target_category = preferences.get("target_category")
         category = preferences.get("category")
+        canonical_key = preferences.get("canonical_target_key")
+        if not isinstance(canonical_key, str) or not canonical_key.strip():
+            canonical_key = canonical_target_key(
+                target_category if isinstance(target_category, str) else None,
+                category if isinstance(category, str) else None,
+            )
+        display_target = target_category if isinstance(target_category, str) else None
 
         return cls(
             purchase_need=conversation.purchase_need or "",
@@ -68,11 +79,12 @@ class PurchaseContext(BaseModel):
             last_no_results_relax_options=deepcopy(conversation.last_no_results_relax_options),
             target_category=target_category if isinstance(target_category, str) else None,
             category=category if isinstance(category, str) else None,
+            canonical_target_key=canonical_key if isinstance(canonical_key, str) else None,
+            display_target_category=display_target,
         )
 
     def apply_to_conversation(self, conversation: "ConversationState") -> None:
         conversation.purchase_need = self.purchase_need
-        conversation.preferences = deepcopy(self.preferences)
         conversation.excluded_product_ids = deepcopy(self.excluded_product_ids)
         conversation.excluded_brands = deepcopy(self.excluded_brands)
         conversation.excluded_keywords = deepcopy(self.excluded_keywords)
@@ -94,6 +106,14 @@ class PurchaseContext(BaseModel):
         conversation.last_result_status = self.last_result_status
         conversation.last_no_results_need = self.last_no_results_need
         conversation.last_no_results_relax_options = deepcopy(self.last_no_results_relax_options)
+        conversation.preferences = deepcopy(self.preferences)
+        if self.canonical_target_key:
+            conversation.preferences["canonical_target_key"] = self.canonical_target_key
+        if self.target_category:
+            conversation.preferences["target_category"] = self.target_category
+        if self.category:
+            conversation.preferences["category"] = self.category
+        conversation.preferences["is_broad_category_request"] = False
 
 
 class ConversationState(BaseModel):
@@ -128,6 +148,7 @@ class ConversationState(BaseModel):
     last_intent: str | None = None
     previous_purchase_contexts: list[PurchaseContext] = Field(default_factory=list)
     pending_restore_category: str | None = None
+    pending_restore_display_target: str | None = None
 
 
 class InMemoryConversationStore:

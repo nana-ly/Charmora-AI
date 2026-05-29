@@ -523,7 +523,12 @@ def test_purchase_context_apply_replaces_active_conversation_fields():
     archived.apply_to_conversation(state)
 
     assert state.purchase_need == "华为手机，预算6000以内"
-    assert state.preferences == {"target_category": "手机", "category": "数码电子", "focus": ["拍照"]}
+    assert state.preferences == {
+        "target_category": "手机",
+        "category": "数码电子",
+        "focus": ["拍照"],
+        "is_broad_category_request": False,
+    }
     assert state.excluded_brands == ["苹果"]
     archived.preferences["focus"].append("续航")
     assert state.preferences["focus"] == ["拍照"]
@@ -707,9 +712,19 @@ def test_context_manager_confirm_and_reject_restore_apply_state_changes():
 
     assert understanding.intent == UserIntent.RECOMMEND
     assert understanding.purchase_need == "华为手机，预算6000以内"
-    assert understanding.preference_updates == {"target_category": "手机", "category": "数码电子"}
+    assert understanding.preference_updates == {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+        "is_broad_category_request": False,
+    }
     assert state.purchase_need == "华为手机，预算6000以内"
-    assert state.preferences == {"target_category": "手机", "category": "数码电子"}
+    assert state.preferences == {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+        "is_broad_category_request": False,
+    }
     assert state.pending_restore_category is None
     assert any(item.target_category == "咖啡" for item in state.previous_purchase_contexts)
 
@@ -2584,3 +2599,63 @@ def test_openai_invoke_chat_client_accepts_custom_max_tokens(monkeypatch):
 
     assert response.content == "完整购买意图"
     assert captured["max_tokens"] == 600
+
+
+def test_category_rules_canonical_target_key_aliases():
+    from agent.category_rules import canonical_target_key, detect_target_category
+
+    phone = detect_target_category("推荐手机")
+    headphones = detect_target_category("推荐耳机")
+    skin_care = detect_target_category("推荐护肤品")
+    skin_care_alias = detect_target_category("看看护肤产品")
+    tshirt = detect_target_category("推荐T恤")
+    jacket = detect_target_category("推荐外套")
+
+    assert phone is not None
+    assert headphones is not None
+    assert skin_care is not None
+    assert skin_care_alias is not None
+    assert tshirt is not None
+    assert jacket is not None
+    assert phone.canonical_target_key == "phone"
+    assert headphones.canonical_target_key == "headphones"
+    assert phone.catalog_category == "数码电子"
+    assert headphones.catalog_category == "数码电子"
+    assert skin_care.target_category == "护肤品"
+    assert skin_care.canonical_target_key == "skin_care"
+    assert skin_care_alias.canonical_target_key == "skin_care"
+    assert tshirt.catalog_category == "服饰运动"
+    assert jacket.catalog_category == "服饰运动"
+    assert canonical_target_key("护肤品", "美妆护肤") == "skin_care"
+    assert canonical_target_key("手机", "数码电子") == "phone"
+
+
+def test_purchase_context_archive_uses_canonical_key_and_drops_broad_flag():
+    from agent.context_manager import archive_active_context
+    from agent.memory import ConversationState
+
+    state = ConversationState(session_id="archive-canonical")
+    state.purchase_need = "推荐手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+        "is_broad_category_request": True,
+    }
+
+    archive_active_context(state)
+
+    archived = state.previous_purchase_contexts[0]
+    assert archived.canonical_target_key == "phone"
+    assert archived.display_target_category == "手机"
+    assert archived.preferences["target_category"] == "手机"
+    assert "is_broad_category_request" not in archived.preferences
+
+
+def test_conversation_state_tracks_pending_restore_display_target_default():
+    from agent.memory import ConversationState
+
+    state = ConversationState(session_id="pending-display-default")
+
+    assert state.pending_restore_category is None
+    assert state.pending_restore_display_target is None
