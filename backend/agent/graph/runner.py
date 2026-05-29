@@ -168,11 +168,7 @@ class LangGraphAgentRunner:
 
         restore_category = understanding.restore_context_category
         if restore_category:
-            if request_restore(
-                conversation,
-                restore_category,
-                restore_category,
-            ):
+            if request_restore(conversation, restore_category):
                 understanding = UserUnderstanding(
                     intent=UserIntent.CLARIFY,
                     confidence=understanding.confidence,

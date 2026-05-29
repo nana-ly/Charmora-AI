@@ -1737,6 +1737,165 @@ def test_langgraph_runner_requests_restore_instead_of_overwriting_active_context
     assert saved.pending_restore_display_target == "手机"
 
 
+def test_langgraph_runner_llm_restore_uses_archived_display_target_not_canonical_key():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.memory import PurchaseContext
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("langgraph-session-llm-restore-display")
+    state.purchase_need = "办公室喝的咖啡"
+    state.preferences = {"target_category": "咖啡", "category": "食品生活"}
+    state.previous_purchase_contexts = [
+        PurchaseContext(
+            purchase_need="温和护肤品，预算500以内",
+            preferences={
+                "target_category": "护肤品",
+                "category": "美妆护肤",
+                "canonical_target_key": "skin_care",
+            },
+            target_category="护肤品",
+            category="美妆护肤",
+            canonical_target_key="skin_care",
+            display_target_category="护肤品",
+        )
+    ]
+    store.save(state)
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.CLARIFY,
+                    clarifying_question="是否恢复之前的护肤品需求？",
+                    restore_context_category="skin_care",
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("langgraph-session-llm-restore-display", "之前那类继续")
+    saved = store.get_or_create("langgraph-session-llm-restore-display")
+
+    assert response.state["intent"] == "clarify"
+    assert response.state["action"] == "clarify"
+    assert "护肤品" in response.reply
+    assert "skin_care" not in response.reply
+    assert saved.pending_restore_category == "skin_care"
+    assert saved.pending_restore_display_target == "护肤品"
+
+
+def test_restore_signal_without_archive_but_recognizable_target_recommends():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("langgraph-session-restore-signal-no-archive")
+    state.purchase_need = "办公室喝的咖啡"
+    state.preferences = {"target_category": "咖啡", "category": "食品生活"}
+    store.save(state)
+
+    captured_queries: list[str] = []
+
+    def capture_recommendation(query: str, top_k: int = 3):
+        captured_queries.append(query)
+        return single_recommendation(query, top_k=top_k)
+
+    service = FakeUnderstandingService(
+        [
+            make_understanding(
+                intent=UserIntent.RECOMMEND,
+                purchase_need="温和护肤品，预算500以内",
+                preference_updates={
+                    "target_category": "护肤品",
+                    "category": "美妆护肤",
+                    "budget": 500,
+                },
+                reset_context=True,
+            )
+        ]
+    )
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=capture_recommendation),
+        understanding_service=service,
+    )
+
+    response = runner.run("langgraph-session-restore-signal-no-archive", "继续看护肤品")
+    saved = store.get_or_create("langgraph-session-restore-signal-no-archive")
+
+    assert len(service.calls) == 1
+    assert response.state["intent"] == "recommend"
+    assert response.state["action"] == "recommend"
+    assert captured_queries
+    assert "护肤品" in captured_queries[0]
+    assert saved.pending_restore_category is None
+    assert saved.pending_restore_display_target is None
+    assert saved.purchase_need == "温和护肤品，预算500以内"
+
+
+def test_restore_signal_uses_active_target_key_for_legacy_state_without_canonical_key():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.memory import PurchaseContext
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("langgraph-session-restore-signal-legacy-active")
+    state.purchase_need = "温和护肤品，预算500以内"
+    state.preferences = {"target_category": "护肤品", "category": "美妆护肤"}
+    state.previous_purchase_contexts = [
+        PurchaseContext(
+            purchase_need="旧护肤品需求",
+            preferences={
+                "target_category": "护肤品",
+                "category": "美妆护肤",
+                "canonical_target_key": "skin_care",
+            },
+            target_category="护肤品",
+            category="美妆护肤",
+            canonical_target_key="skin_care",
+            display_target_category="护肤品",
+        )
+    ]
+    store.save(state)
+
+    captured_queries: list[str] = []
+
+    def capture_recommendation(query: str, top_k: int = 3):
+        captured_queries.append(query)
+        return single_recommendation(query, top_k=top_k)
+
+    service = FakeUnderstandingService(
+        [
+            make_understanding(
+                intent=UserIntent.UPDATE_PREFERENCE,
+                preference_updates={"focus": ["保湿"]},
+            )
+        ]
+    )
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=capture_recommendation),
+        understanding_service=service,
+    )
+
+    response = runner.run(
+        "langgraph-session-restore-signal-legacy-active",
+        "继续看护肤品，保湿一点",
+    )
+    saved = store.get_or_create("langgraph-session-restore-signal-legacy-active")
+
+    assert len(service.calls) == 1
+    assert response.state["intent"] == "update_preference"
+    assert response.state["action"] == "recommend"
+    assert captured_queries
+    assert saved.pending_restore_category is None
+    assert saved.pending_restore_display_target is None
+    assert saved.preferences["canonical_target_key"] == "skin_care"
+
+
 def test_langgraph_runner_applies_reset_context_before_new_purchase_need():
     from agent.graph.runner import LangGraphAgentRunner
     from agent.understanding import UserIntent
