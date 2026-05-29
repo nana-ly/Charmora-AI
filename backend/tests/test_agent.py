@@ -3478,3 +3478,71 @@ def test_legacy_reset_without_canonical_understanding_current_target_still_clear
     assert "canonical_target_key" not in saved.preferences
     assert "target_category" not in saved.preferences
     assert "budget" not in saved.preferences
+
+
+def test_langgraph_runner_broad_category_reply_uses_broad_copy():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.RECOMMEND,
+                    purchase_need="推荐手机",
+                    preference_updates={
+                        "target_category": "手机",
+                        "category": "数码电子",
+                        "canonical_target_key": "phone",
+                        "is_broad_category_request": True,
+                    },
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("broad-reply", "推荐手机")
+
+    assert "手机" in response.reply
+    assert response.state["preferences"]["is_broad_category_request"] is True
+
+
+def test_langgraph_runner_refinement_clears_stale_broad_flag():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.RECOMMEND,
+                    purchase_need="推荐手机",
+                    preference_updates={
+                        "target_category": "手机",
+                        "category": "数码电子",
+                        "canonical_target_key": "phone",
+                        "is_broad_category_request": True,
+                    },
+                ),
+                make_understanding(
+                    intent=UserIntent.UPDATE_PREFERENCE,
+                    purchase_need="推荐手机",
+                    preference_updates={"budget": 3000},
+                ),
+            ]
+        ),
+    )
+
+    runner.run("stale-broad", "推荐手机")
+    second = runner.run("stale-broad", "3000以内")
+
+    assert second.state["preferences"]["is_broad_category_request"] is False
+    assert "我先按" not in second.reply

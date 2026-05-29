@@ -54,6 +54,7 @@ class ShoppingAgentState(TypedDict, total=False):
     understanding: UserUnderstanding
     negative_feedback_result: NegativeFeedbackApplicationResult
     pending_restore_command: ConversationCommand
+    current_turn_is_broad: bool
     action: AgentAction
     action_result: ActionResult
     reply: str
@@ -189,6 +190,15 @@ class LangGraphAgentRunner:
         restore_command = state.get("pending_restore_command")
         active_key_before = active_target_key(conversation)
         active_items_before = list(conversation.last_successful_items)
+        current_turn_is_broad = (
+            understanding.intent == UserIntent.RECOMMEND
+            and understanding.preference_updates.get("is_broad_category_request") is True
+        )
+        # broad 是“本轮是否泛品类推荐”的瞬时语义；细化预算/品牌时必须写回 False，避免复用上一轮 broad 文案。
+        if understanding.intent in {UserIntent.RECOMMEND, UserIntent.UPDATE_PREFERENCE}:
+            understanding.preference_updates["is_broad_category_request"] = (
+                current_turn_is_broad
+            )
         updates = understanding.preference_updates
         current_target_key = updates.get("canonical_target_key")
         if not isinstance(current_target_key, str):
@@ -218,6 +228,7 @@ class LangGraphAgentRunner:
                 "conversation": conversation,
                 "understanding": restored_understanding,
                 "negative_feedback_result": negative_feedback_result,
+                "current_turn_is_broad": current_turn_is_broad,
             }
 
         if restore_command == ConversationCommand.REJECT_RESTORE:
@@ -251,6 +262,7 @@ class LangGraphAgentRunner:
         return {
             "conversation": conversation,
             "negative_feedback_result": negative_feedback_result,
+            "current_turn_is_broad": current_turn_is_broad,
         }
 
     def _decide_next_action(self, state: ShoppingAgentState) -> dict[str, AgentAction]:
@@ -347,6 +359,16 @@ class LangGraphAgentRunner:
                     f"{action_result.negative_feedback.ack_message}"
                     "我根据你的需求筛选了这几款商品，可以先看第一款的匹配理由。"
                 ),
+                "items": action_result.items,
+            }
+
+        if (
+            action_result.reply_type == "recommendation_reply"
+            and state.get("current_turn_is_broad") is True
+        ):
+            target = state["conversation"].preferences.get("target_category") or "这个品类"
+            return {
+                "reply": f"我先按{target}这个品类给你挑几款代表商品，你可以再告诉我预算、品牌或使用场景。",
                 "items": action_result.items,
             }
 
