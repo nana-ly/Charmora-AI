@@ -292,7 +292,7 @@ class LLMUserUnderstandingService:
         return all(
             isinstance(updates.get(key), str) and updates[key].strip()
             for key in ("target_category", "category", "canonical_target_key")
-        ) and isinstance(updates.get("is_broad_category_request"), bool)
+        ) and updates.get("is_broad_category_request") is True
 
     def _needs_purchase_need(
         self,

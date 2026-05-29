@@ -2944,3 +2944,41 @@ def test_llm_recommend_missing_broad_fields_is_completed_by_fallback():
     assert understanding.preference_updates["category"] == "数码电子"
     assert understanding.preference_updates["canonical_target_key"] == "phone"
     assert understanding.preference_updates["is_broad_category_request"] is True
+
+
+def test_llm_recommend_wrong_broad_flag_is_overridden_by_fallback():
+    from agent.understanding import LLMUserUnderstandingService, UserIntent
+
+    llm = FakeLLM(
+        json.dumps(
+            {
+                "intent": "recommend",
+                "confidence": 0.8,
+                "purchase_need": "推荐手机",
+                "preference_updates": {
+                    "target_category": "手机",
+                    "category": "数码电子",
+                    "canonical_target_key": "phone",
+                    "is_broad_category_request": False,
+                },
+                "negative_updates": {},
+                "target_item_index": None,
+                "clarifying_question": None,
+                "reset_context": False,
+                "restore_context_category": None,
+            },
+            ensure_ascii=False,
+        )
+    )
+    service = LLMUserUnderstandingService(llm=llm)
+
+    understanding = service.understand(
+        message="推荐手机",
+        conversation=ConversationState(session_id="llm-wrong-broad-flag"),
+    )
+
+    assert understanding.intent == UserIntent.RECOMMEND
+    assert understanding.preference_updates["target_category"] == "手机"
+    assert understanding.preference_updates["category"] == "数码电子"
+    assert understanding.preference_updates["canonical_target_key"] == "phone"
+    assert understanding.preference_updates["is_broad_category_request"] is True
