@@ -202,6 +202,19 @@ class LLMUserUnderstandingService:
             parsed = json.loads(getattr(response, "content", ""))
             normalized = normalize_understanding_payload(parsed)
             understanding = UserUnderstanding.model_validate(normalized)
+            fallback = self._fallback_understanding(
+                message=message,
+                conversation=conversation,
+                reason="deterministic_broad_overlay",
+            )
+            if (
+                fallback is not None
+                and fallback.intent == UserIntent.RECOMMEND
+                and fallback.preference_updates.get("is_broad_category_request") is True
+            ):
+                if understanding.intent == UserIntent.CLARIFY or not self._has_broad_target_fields(understanding):
+                    return fallback
+
             if understanding.intent == UserIntent.CLARIFY:
                 return (
                     self._fallback_understanding(
@@ -274,6 +287,13 @@ class LLMUserUnderstandingService:
             return False
         return self._has_active_purchase_context(conversation)
 
+    def _has_broad_target_fields(self, understanding: UserUnderstanding) -> bool:
+        updates = understanding.preference_updates
+        return all(
+            isinstance(updates.get(key), str) and updates[key].strip()
+            for key in ("target_category", "category", "canonical_target_key")
+        ) and isinstance(updates.get("is_broad_category_request"), bool)
+
     def _needs_purchase_need(
         self,
         understanding: UserUnderstanding,
@@ -336,6 +356,10 @@ class LLMUserUnderstandingService:
             "Use restore_context_category only when the user may be returning to an archived target and needs confirmation.\n"
             "Negative feedback such as 不要苹果, 不考虑华为, 排除第2款 belongs in negative_updates, "
             "not in preference_updates brand/preferred_brands.\n"
+            "Broad category requests such as 推荐手机, 看看护肤品, 有什么咖啡推荐 must return intent=recommend, "
+            "purchase_need cleaned from negative phrases, preference_updates.target_category, category, canonical_target_key, "
+            "and is_broad_category_request=true. Do not put negative phrases into purchase_need.\n"
+            "For 推荐手机，不要苹果, return intent=recommend with target phone fields and negative_updates.excluded_brands.\n"
             "Always include confidence, purchase_need, preference_updates, negative_updates, target_item_index, clarifying_question, "
             "reset_context, restore_context_category.\n"
             "Example complete request: 用户=我想买一台华为手机，预算6000以内，主要拍照和续航; "

@@ -2878,3 +2878,69 @@ def test_fallback_understanding_recommends_target_with_negative_without_purchase
     assert understanding.preference_updates["target_category"] == "手机"
     assert understanding.preference_updates["canonical_target_key"] == "phone"
     assert understanding.negative_updates == {"excluded_brands": ["苹果"]}
+
+
+def test_llm_clarify_for_broad_phone_is_overridden_by_fallback():
+    from agent.understanding import LLMUserUnderstandingService, UserIntent
+
+    llm = FakeLLM(
+        json.dumps(
+            {
+                "intent": "clarify",
+                "confidence": 0.7,
+                "purchase_need": None,
+                "preference_updates": {},
+                "negative_updates": {},
+                "target_item_index": None,
+                "clarifying_question": "想买什么类型？",
+                "reset_context": False,
+                "restore_context_category": None,
+            },
+            ensure_ascii=False,
+        )
+    )
+    service = LLMUserUnderstandingService(llm=llm)
+
+    understanding = service.understand(
+        message="推荐手机",
+        conversation=ConversationState(session_id="llm-clarify-broad"),
+    )
+
+    assert understanding.intent == UserIntent.RECOMMEND
+    assert understanding.purchase_need == "推荐手机"
+    assert understanding.preference_updates["target_category"] == "手机"
+    assert understanding.preference_updates["canonical_target_key"] == "phone"
+    assert understanding.preference_updates["is_broad_category_request"] is True
+
+
+def test_llm_recommend_missing_broad_fields_is_completed_by_fallback():
+    from agent.understanding import LLMUserUnderstandingService, UserIntent
+
+    llm = FakeLLM(
+        json.dumps(
+            {
+                "intent": "recommend",
+                "confidence": 0.8,
+                "purchase_need": "推荐手机",
+                "preference_updates": {},
+                "negative_updates": {},
+                "target_item_index": None,
+                "clarifying_question": None,
+                "reset_context": False,
+                "restore_context_category": None,
+            },
+            ensure_ascii=False,
+        )
+    )
+    service = LLMUserUnderstandingService(llm=llm)
+
+    understanding = service.understand(
+        message="推荐手机",
+        conversation=ConversationState(session_id="llm-missing-broad-fields"),
+    )
+
+    assert understanding.intent == UserIntent.RECOMMEND
+    assert understanding.preference_updates["target_category"] == "手机"
+    assert understanding.preference_updates["category"] == "数码电子"
+    assert understanding.preference_updates["canonical_target_key"] == "phone"
+    assert understanding.preference_updates["is_broad_category_request"] is True
