@@ -1223,21 +1223,42 @@ def test_build_recommendation_query_adds_structured_target_and_budget():
     assert query.count("预算3000以内") == 1
 
 
-def test_build_recommendation_query_merges_excluded_brands_and_price_preference():
+def test_build_recommendation_query_does_not_append_negative_brand_fragments():
     from agent.query_builder import build_recommendation_query
 
-    state = ConversationState(session_id="session-1")
-    state.purchase_need = "拍照好的手机"
+    state = ConversationState(session_id="query-negative-clean")
+    state.purchase_need = "预算9000以内，想买拍照好的手机"
     state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
         "excluded_brands": ["苹果"],
-        "price_preference": "lower",
     }
     state.excluded_brands = ["三星"]
 
     query = build_recommendation_query(state)
 
-    assert ("不要三星、苹果" in query) or ("不要苹果、三星" in query)
-    assert "价格更低" in query
+    assert "不要" not in query
+    assert "苹果" not in query
+    assert "三星" not in query
+    assert "手机" in query
+    assert "数码电子" in query
+
+
+def test_build_recommendation_query_keeps_positive_brand_only():
+    from agent.query_builder import build_recommendation_query
+
+    state = ConversationState(session_id="query-positive-brand")
+    state.purchase_need = "预算9000以内，想买拍照好的手机"
+    state.preferences = {
+        "brand": "华为",
+        "preferred_brands": ["小米"],
+    }
+
+    query = build_recommendation_query(state)
+
+    assert "华为" in query
+    assert "小米" in query
+    assert "不要" not in query
 
 
 def test_build_recommendation_query_consumes_lower_price_direction():

@@ -33,16 +33,6 @@ def build_recommendation_query(conversation: ConversationState) -> str:
     _append_values(query_parts, query, preferences.get("focus"))
     query = _join_query(query_parts)
 
-    excluded = _unique_values(
-        [
-            *conversation.excluded_brands,
-            *_as_values(preferences.get("excluded_brands")),
-        ]
-    )
-    if excluded:
-        _append_missing(query_parts, query, "不要" + "、".join(excluded))
-        query = _join_query(query_parts)
-
     has_lower_price_direction = (
         preferences.get("price_direction") == "lower"
         or preferences.get("price_preference") == "lower"
