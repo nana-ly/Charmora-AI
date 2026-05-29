@@ -1,5 +1,6 @@
 from recommendation_core.data import load_products
 from recommendation_core.filters import extract_filters
+from recommendation_core.negative_filter import passes_negative_filter
 from recommendation_core.pipeline import recommend_products
 from recommendation_core.ranking import choose_candidates
 from recommendation_core.response_builder import build_response_item
@@ -67,6 +68,20 @@ def test_recommendation_core_negative_filters_none_and_empty_are_equivalent():
 
     assert none_response == default_response
     assert empty_response == default_response
+
+
+def test_negative_filter_excludes_composite_brand_by_whitespace_token():
+    product = {"product_id": "p_1", "brand": "Apple 苹果"}
+    negative_filters = NegativeFilters(excluded_brands=["苹果"])
+
+    assert passes_negative_filter(product, negative_filters) is False
+
+
+def test_negative_filter_does_not_exclude_composite_brand_by_substring():
+    product = {"product_id": "p_1", "brand": "Apple 苹果"}
+    negative_filters = NegativeFilters(excluded_brands=["苹"])
+
+    assert passes_negative_filter(product, negative_filters) is True
 
 
 def test_recommendation_core_keeps_strict_candidate_filtering_and_card_builder():

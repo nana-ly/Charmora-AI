@@ -9,6 +9,11 @@ def normalize_brand_key(value: str) -> str:
     return value.strip().casefold()
 
 
+def normalized_brand_match_keys(value: str) -> set[str]:
+    normalized = normalize_brand_key(value)
+    return {normalized, *normalized.split()}
+
+
 def has_negative_filters(negative_filters: NegativeFilters | None) -> bool:
     if negative_filters is None:
         return False
@@ -35,7 +40,7 @@ def passes_negative_filter(
     }
     product_brand = product.get("brand")
     if isinstance(product_brand, str):
-        return normalize_brand_key(product_brand) not in excluded_brand_keys
+        return not (normalized_brand_match_keys(product_brand) & excluded_brand_keys)
 
     return True
 
