@@ -100,6 +100,16 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 - 推荐工具异常会返回稳定 `tool_error` 对话响应：`items=[]`、`state.result_status="tool_error"`、`state.tool_error="recommendation_failed"`。这不会覆盖上一轮成功商品，也不会伪造商品。
 - 无结果或工具错误之后，用户仍可追问上一轮成功推荐的解释。
 
+### 泛品类推荐与多轮状态
+
+`/chat` 和 `/chat/stream` 支持“推荐手机”“推荐护肤品”这类泛品类请求。Agent 会写入 `state.preferences.target_category`、`category`、`canonical_target_key` 和本轮 `is_broad_category_request`，并先返回代表性推荐；用户后续补充预算、品牌、用途时会清除 stale broad 标记。
+
+负反馈只作为结构化过滤条件进入状态，例如“推荐手机，不要苹果”会保留 `excluded_brands=["苹果"]`，但 query 不会包含“不要苹果”。“推荐手机，不要第2个，不要苹果”在 MVP 下只应用 item-index 单字段负反馈，query 仍会移除全部负向短语。
+
+目标切换使用 `canonical_target_key` 判断。`手机` 与 `耳机` 都属于 `数码电子`，但会被视为不同购买目标；`护肤` 与 `护肤品` 会归为同一个 `skin_care` 目标。恢复旧目标时，`pending_restore_category` 保存 canonical key，`pending_restore_display_target` 只用于展示文案。
+
+推荐链路的 `extract_filters()` 会把“护肤品”“美妆”“化妆品”统一映射到 catalog category `美妆护肤`，因此理解层、query_builder 和向量检索过滤条件使用同一类目语义。
+
 ## Shopping Agent Understanding Fallback
 
 The `/chat` and `/chat/stream` contracts stay unchanged. The backend understanding flow is:

@@ -79,6 +79,14 @@ def test_extract_filters_parses_brand_preference():
     assert filters["brand"] == "苹果"
 
 
+def test_extract_filters_maps_skin_care_terms_to_beauty_category():
+    from recommendation_core.filters import extract_filters
+
+    for query in ("推荐护肤品", "推荐美妆", "推荐化妆品"):
+        filters = extract_filters(query)
+        assert filters["category"] == "美妆护肤"
+
+
 def test_extract_filters_supports_extended_keywords_and_budget_patterns():
     filters = extract_filters("预算9000想买续航好的学生手机")
     reversed_budget_filters = extract_filters("不超过9000的拍照手机")

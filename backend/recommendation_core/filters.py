@@ -5,11 +5,12 @@
 """
 
 import re
+from collections.abc import Sequence
 from typing import Any
 
 
-CATEGORY_RULES = {
-    "数码电子": [
+CATEGORY_KEYWORDS: dict[str, Sequence[str]] = {
+    "数码电子": (
         "手机",
         "耳机",
         "电脑",
@@ -22,8 +23,12 @@ CATEGORY_RULES = {
         "办公",
         "学生",
         "降噪",
-    ],
-    "美妆护肤": [
+    ),
+    "美妆护肤": (
+        "护肤产品",
+        "护肤品",
+        "化妆品",
+        "美妆",
         "精华",
         "敏感肌",
         "护肤",
@@ -35,8 +40,8 @@ CATEGORY_RULES = {
         "美白",
         "油皮",
         "干皮",
-    ],
-    "服饰运动": [
+    ),
+    "服饰运动": (
         "T恤",
         "通勤",
         "运动",
@@ -47,8 +52,8 @@ CATEGORY_RULES = {
         "跑步",
         "健身",
         "防晒衣",
-    ],
-    "食品生活": [
+    ),
+    "食品生活": (
         "咖啡",
         "速溶",
         "饮品",
@@ -59,8 +64,9 @@ CATEGORY_RULES = {
         "早餐",
         "办公室",
         "精品",
-    ],
+    ),
 }
+CATEGORY_RULES = CATEGORY_KEYWORDS
 BRAND_RULES = ["Apple", "苹果", "小米", "华为", "雅诗兰黛", "优衣库", "三顿半"]
 EMPTY_FILTERS: dict[str, Any] = {
     "category": None,
@@ -68,6 +74,13 @@ EMPTY_FILTERS: dict[str, Any] = {
     "brand": None,
     "keywords": [],
 }
+
+
+def _detect_category(query: str) -> str | None:
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        if any(keyword in query for keyword in keywords):
+            return category
+    return None
 
 
 def create_empty_filters() -> dict[str, Any]:
@@ -84,12 +97,12 @@ def extract_filters(query: str) -> dict[str, Any]:
     """从用户自然语言需求中解析基础筛选条件。"""
     filters = create_empty_filters()
 
-    for category, words in CATEGORY_RULES.items():
-        matched_words = [word for word in words if word in query]
-        if matched_words:
-            filters["category"] = category
-            filters["keywords"].extend(matched_words)
-            break
+    category = _detect_category(query)
+    if category:
+        filters["category"] = category
+        filters["keywords"].extend(
+            word for word in CATEGORY_KEYWORDS[category] if word in query
+        )
 
     price_match = re.search(
         r"(?:预算\s*)?(\d+)\s*(?:以内|以下|左右|不超过)?|不超过\s*(\d+)",
