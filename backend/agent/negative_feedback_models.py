@@ -1,4 +1,4 @@
-"""Agent-side negative feedback state models."""
+"""Agent 侧负反馈状态模型。"""
 
 from typing import Literal
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class NegativeFeedbackItem(BaseModel):
-    """Recorded negative feedback item for state and archive reuse."""
+    """记录的负反馈项，用于状态和归档复用。"""
 
     product_id: str | None = None
     title: str = ""
@@ -18,7 +18,7 @@ class NegativeFeedbackItem(BaseModel):
 
 
 class NegativeFeedbackApplicationResult(BaseModel):
-    """Result of applying one negative feedback update."""
+    """应用一次负反馈更新后的结果。"""
 
     detected: bool = False
     applied: bool = False

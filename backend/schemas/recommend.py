@@ -12,7 +12,7 @@ class RecommendRequest(BaseModel):
 
 
 class ExcludedPriceRange(BaseModel):
-    """Reserved structure for price-range exclusions."""
+    """预留的价格区间排除结构。"""
 
     min_price: float | None = None
     max_price: float | None = None
@@ -21,7 +21,7 @@ class ExcludedPriceRange(BaseModel):
 
 
 class NegativeFilters(BaseModel):
-    """Negative filters consumed by the recommendation chain."""
+    """推荐链使用的负向过滤条件。"""
 
     excluded_product_ids: list[str] = Field(default_factory=list)
     excluded_brands: list[str] = Field(default_factory=list)

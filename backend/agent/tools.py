@@ -1,4 +1,4 @@
-"""Agent callable tools."""
+"""Agent 可调用工具。"""
 
 import inspect
 from collections.abc import Callable
@@ -9,7 +9,7 @@ from schemas.recommend import NegativeFilters, RecommendFilters, RecommendRespon
 
 
 class RecommendationTool:
-    """Small wrapper around the recommendation chain."""
+    """推荐链的轻量封装。"""
 
     def __init__(
         self,
@@ -23,7 +23,7 @@ class RecommendationTool:
         top_k: int = 3,
         negative_filters: NegativeFilters | None = None,
     ) -> RecommendResponse:
-        """Call the recommendation chain and normalize the structured response."""
+        """调用推荐链并规范化结构化响应。"""
         kwargs: dict[str, Any] = {"top_k": top_k}
         if negative_filters is not None and self._accepts_negative_filters():
             kwargs["negative_filters"] = negative_filters

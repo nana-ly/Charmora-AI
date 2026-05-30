@@ -1,4 +1,4 @@
-"""Deterministic parsing rules for negative preference updates."""
+"""负向偏好更新的确定性解析规则。"""
 
 from __future__ import annotations
 

@@ -242,7 +242,7 @@ class LangGraphAgentRunner:
         effective_reset = canonical_target_changed or (
             understanding.reset_context and current_target_key is None
         )
-        # reset_context is legacy understanding state; canonical target changes own reset.
+        # reset_context 是旧版理解状态；标准目标变化会自行重置。
         if effective_reset:
             reset_for_new_target(conversation)
 

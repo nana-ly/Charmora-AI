@@ -16,7 +16,7 @@ EXIT_COMMANDS = {"exit", "quit", "q"}
 
 
 class ChatCliError(RuntimeError):
-    """Raised when a chat request cannot be completed."""
+    """聊天请求无法完成时抛出。"""
 
 
 STREAM_READ_ERRORS = (

@@ -1,4 +1,4 @@
-"""Helpers for applying negative feedback to conversation state."""
+"""将负反馈应用到会话状态的辅助函数。"""
 
 from typing import Any
 
@@ -56,7 +56,7 @@ def filter_item_index_negative_updates_for_current_target(
     if not negative_updates:
         return {}
     filtered = dict(negative_updates)
-    # Only apply "the Nth item" when it still points at the active result list.
+    # 仅当“第 N 个商品”仍指向当前活跃结果列表时才应用。
     if (
         current_target_key
         and active_target_key

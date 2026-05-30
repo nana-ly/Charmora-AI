@@ -1,4 +1,4 @@
-"""Negative filtering helpers for recommendation candidates and results."""
+"""推荐候选与结果的负向过滤辅助函数。"""
 
 from typing import Any
 

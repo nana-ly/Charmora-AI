@@ -50,7 +50,7 @@ def recommend_products(
     retrieval_results = active_retriever.search(query, candidates=candidates, top_k=top_k)
     items = []
     for result in retrieval_results:
-        # Final safety filter for retrievers that ignore candidate constraints.
+        # 最终安全过滤，防止 retriever 忽略候选约束。
         if not passes_negative_filter(result.product, negative_filters):
             continue
         items.append(
