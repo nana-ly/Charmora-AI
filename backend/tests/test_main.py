@@ -3,8 +3,9 @@ from fastapi.testclient import TestClient
 
 import api.deps as api_deps
 import api.rag as api_rag
+import api.recommend as api_recommend
 import services.retriever_factory as retriever_factory
-from agent.memory import InMemoryConversationStore
+from agent.memory import InMemoryConversationStore, PurchaseContext
 from agent.runner import create_agent_runner
 from agent.tools import RecommendationTool
 from agent.understanding import UserIntent, UserUnderstanding
@@ -214,6 +215,33 @@ def test_recommend_returns_500_when_vector_search_fails(monkeypatch):
         )
 
 
+def test_recommend_route_returns_200_with_empty_items_for_no_results(monkeypatch):
+    route = next(route for route in app.routes if route.path == "/recommend")
+    assert route.response_model is None
+
+    fake_result = {
+        "query": "100 元以内的手机",
+        "filters": {
+            "category": "数码电子",
+            "max_price": 100,
+            "brand": None,
+            "keywords": ["手机"],
+        },
+        "items": [],
+    }
+
+    monkeypatch.setattr(
+        api_recommend,
+        "run_recommendation",
+        lambda query: fake_result,
+    )
+
+    response = client.post("/recommend", json={"query": "100 元以内的手机"})
+
+    assert response.status_code == 200
+    assert response.json() == fake_result
+
+
 def test_chat_uses_vector_retriever_by_default(monkeypatch):
     monkeypatch.setenv("RETRIEVER_MODE", "vector")
     monkeypatch.setattr(
@@ -335,6 +363,54 @@ def test_chat_response_exposes_canonical_target_key(monkeypatch):
     assert body["state"]["preferences"]["is_broad_category_request"] is True
 
 
+def test_chat_no_results_keeps_response_shape_and_relax_options(monkeypatch):
+    def no_results_recommendation(query, top_k=3, negative_filters=None):
+        return {
+            "query": query,
+            "filters": {
+                "category": "数码电子",
+                "max_price": 100,
+                "brand": None,
+                "keywords": ["手机"],
+            },
+            "items": [],
+        }
+
+    inject_recommend_chat_runner(
+        monkeypatch,
+        recommendation_tool=RecommendationTool(
+            recommend_func=no_results_recommendation
+        ),
+        understanding_service=FakeUnderstandingService(
+            UserUnderstanding(
+                intent=UserIntent.RECOMMEND,
+                confidence=0.9,
+                purchase_need="100 元以内的手机",
+                preference_updates={
+                    "target_category": "手机",
+                    "category": "数码电子",
+                    "canonical_target_key": "phone",
+                    "max_price": 100,
+                },
+            )
+        ),
+    )
+
+    response = client.post(
+        "/chat",
+        json={"session_id": "api-no-results-session", "message": "推荐手机"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"session_id", "reply", "items", "state"}
+    assert body["items"] == []
+    assert body["state"]["result_status"] == "no_results"
+    assert body["state"]["latest_attempt_status"] == "no_results"
+    assert body["state"]["relax_options"]
+    assert "tool_error" not in body["state"]
+
+
 def test_chat_response_includes_negative_feedback_state(monkeypatch):
     store = InMemoryConversationStore()
     apple_item = ProductCard(
@@ -408,6 +484,144 @@ def test_chat_response_includes_negative_feedback_state(monkeypatch):
     assert body["state"]["negative_feedback"]["applied"] is True
     assert body["state"]["excluded_brands"] == ["苹果"]
     assert captured["negative_filters"].excluded_brands == ["苹果"]
+
+
+def test_chat_negative_feedback_noop_keeps_response_contract(monkeypatch):
+    store = InMemoryConversationStore()
+    state = store.get_or_create("api-negative-noop-session")
+    state.purchase_need = "拍照好的手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    state.excluded_brands = ["苹果"]
+    store.save(state)
+
+    def fail_recommendation(query, top_k=3, negative_filters=None):
+        raise AssertionError("noop negative feedback should not call recommendation")
+
+    monkeypatch.setattr(
+        api_deps,
+        "agent_runner",
+        create_agent_runner(
+            config=AppConfig(agent_runner="langgraph"),
+            store=store,
+            recommendation_tool=RecommendationTool(
+                recommend_func=fail_recommendation
+            ),
+            understanding_service=FakeUnderstandingService(
+                UserUnderstanding(
+                    intent=UserIntent.UPDATE_PREFERENCE,
+                    confidence=0.9,
+                    negative_updates={"excluded_brands": ["苹果"]},
+                )
+            ),
+        ),
+    )
+
+    response = client.post(
+        "/chat",
+        json={"session_id": "api-negative-noop-session", "message": "不要苹果"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"session_id", "reply", "items", "state"}
+    assert body["items"] == []
+    assert body["state"]["action"] == "reply_only"
+    assert body["state"]["negative_feedback"]["noop"] is True
+    assert body["state"]["negative_feedback"]["noop_reason"] == "already_excluded"
+    assert body["state"]["excluded_brands"] == ["苹果"]
+
+
+def test_chat_pending_restore_confirmation_keeps_response_contract(monkeypatch):
+    store = InMemoryConversationStore()
+    phone_item = ProductCard(
+        product_id="p_restore_phone",
+        title="恢复的拍照手机",
+        brand="TestPhone",
+        price=2999,
+        reason="符合之前的手机需求",
+        evidence="restore",
+    )
+    skin_item = ProductCard(
+        product_id="p_restore_skin",
+        title="当前护肤品",
+        brand="TestSkin",
+        price=199,
+        reason="当前护肤品结果",
+        evidence="skin",
+    )
+    state = store.get_or_create("api-restore-confirm-session")
+    state.purchase_need = "适合干皮的护肤品"
+    state.preferences = {
+        "target_category": "护肤品",
+        "category": "美妆护肤",
+        "canonical_target_key": "skin_care",
+    }
+    state.pending_restore_category = "phone"
+    state.pending_restore_display_target = "手机"
+    state.previous_purchase_contexts = [
+        PurchaseContext(
+            purchase_need="拍照好的手机",
+            preferences={
+                "target_category": "手机",
+                "category": "数码电子",
+                "canonical_target_key": "phone",
+            },
+            last_successful_items=[phone_item],
+            last_items=[phone_item],
+            target_category="手机",
+            category="数码电子",
+            canonical_target_key="phone",
+        )
+    ]
+    state.last_successful_items = [skin_item]
+    state.last_items = [skin_item]
+    store.save(state)
+
+    def restore_recommendation(query, top_k=3, negative_filters=None):
+        return {
+            "query": query,
+            "filters": {
+                "category": "数码电子",
+                "max_price": None,
+                "brand": None,
+                "keywords": ["手机"],
+            },
+            "items": [phone_item],
+        }
+
+    monkeypatch.setattr(
+        api_deps,
+        "agent_runner",
+        create_agent_runner(
+            config=AppConfig(agent_runner="langgraph"),
+            store=store,
+            recommendation_tool=RecommendationTool(
+                recommend_func=restore_recommendation
+            ),
+            understanding_service=FakeUnderstandingService(),
+        ),
+    )
+
+    response = client.post(
+        "/chat",
+        json={
+            "session_id": "api-restore-confirm-session",
+            "message": "对，就按之前的",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"session_id", "reply", "items", "state"}
+    assert body["items"][0]["product_id"] == "p_restore_phone"
+    assert body["state"]["action"] == "recommend"
+    assert body["state"]["preferences"]["canonical_target_key"] == "phone"
+    assert "pending_restore_category" not in body["state"]
+    assert "pending_restore_display_target" not in body["state"]
 
 
 def test_chat_tool_error_keeps_response_shape(monkeypatch):

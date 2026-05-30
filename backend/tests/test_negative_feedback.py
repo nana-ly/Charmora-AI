@@ -67,6 +67,12 @@ def test_extract_negative_updates_single_field_priority_for_mixed_item_index_and
     }
 
 
+def test_extract_negative_updates_keeps_rule_parser_early_return_for_mixed_item_and_brand():
+    assert extract_negative_updates("推荐手机，不要第 2 个，不要苹果") == {
+        "excluded_item_indexes": [2]
+    }
+
+
 def test_clean_positive_purchase_need_removes_all_negative_phrases_with_single_field_updates():
     from agent.negative_feedback_rules import (
         clean_positive_purchase_need,
@@ -147,6 +153,45 @@ def test_apply_negative_feedback_keeps_mvp_item_index_priority_for_mixed_updates
     assert result.applied is True
     assert result.target_product_ids == ["p_huawei"]
     assert state.excluded_product_ids == ["p_huawei"]
+    assert state.excluded_brands == []
+
+
+def test_apply_negative_feedback_prefers_item_index_before_brand_in_mixed_updates():
+    state = ConversationState(session_id="negative-priority")
+    state.purchase_need = "手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    state.last_successful_items = [
+        ProductCard(
+            product_id="p_item_1",
+            title="Apple 手机",
+            brand="Apple",
+            price=6999,
+            reason="test",
+            evidence="test",
+        ),
+        ProductCard(
+            product_id="p_item_2",
+            title="Huawei 手机",
+            brand="Huawei",
+            price=5999,
+            reason="test",
+            evidence="test",
+        ),
+    ]
+
+    result = apply_negative_feedback(
+        state,
+        {"excluded_item_indexes": [2], "excluded_brands": ["Apple"]},
+        catalog_products=state.last_successful_items,
+    )
+
+    assert result.applied is True
+    assert result.target_product_ids == ["p_item_2"]
+    assert state.excluded_product_ids == ["p_item_2"]
     assert state.excluded_brands == []
 
 

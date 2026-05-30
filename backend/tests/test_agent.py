@@ -2522,6 +2522,69 @@ def test_langgraph_runner_excludes_second_successful_item_and_reruns():
     assert response.state["latest_attempt_status"] == "success"
 
 
+def test_langgraph_runner_does_not_merge_rule_negative_updates_after_llm_success():
+    from agent.runner import create_agent_runner
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("negative-no-post-merge")
+    state.purchase_need = "手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    state.last_successful_items = [
+        ProductCard(
+            product_id="p_keep_1",
+            title="Apple 手机",
+            brand="Apple",
+            price=6999,
+            reason="test",
+            evidence="test",
+        ),
+        ProductCard(
+            product_id="p_keep_2",
+            title="Huawei 手机",
+            brand="Huawei",
+            price=5999,
+            reason="test",
+            evidence="test",
+        ),
+    ]
+    state.last_items = list(state.last_successful_items)
+    store.save(state)
+    captured_negative_filters = []
+
+    def capture_recommendation(query: str, top_k: int = 3, negative_filters=None):
+        captured_negative_filters.append(negative_filters)
+        return single_recommendation(query, top_k)
+
+    runner = create_agent_runner(
+        config=AppConfig(agent_runner="langgraph"),
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=capture_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent="update_preference",
+                    negative_updates={"excluded_item_indexes": [2]},
+                    confidence=0.9,
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("negative-no-post-merge", "不要第 2 个，不要苹果")
+    saved = store.get_or_create("negative-no-post-merge")
+
+    assert response.state["negative_feedback"]["applied"] is True
+    assert saved.excluded_product_ids == ["p_keep_2"]
+    assert saved.excluded_brands == []
+    assert captured_negative_filters
+    assert captured_negative_filters[-1].excluded_product_ids == ["p_keep_2"]
+    assert captured_negative_filters[-1].excluded_brands == []
+
+
 def test_langgraph_runner_mixed_negative_purchase_query_is_clean():
     from agent.graph.runner import LangGraphAgentRunner
     from agent.understanding import UserIntent
@@ -3690,3 +3753,232 @@ def test_langgraph_runner_contextual_budget_refinement_uses_fallback():
     assert second.state["preferences"]["budget"] == 3000
     assert second.state["preferences"]["is_broad_category_request"] is False
     assert "我先按" not in second.reply
+
+
+def test_langgraph_runner_tool_error_keeps_contract_state_and_hidden_relax_options():
+    from agent.runner import create_agent_runner
+
+    def fail_recommendation(query: str, top_k: int = 3, negative_filters=None):
+        raise RuntimeError("recommendation backend unavailable")
+
+    store = InMemoryConversationStore()
+    conversation = store.get_or_create("tool-error-contract")
+    conversation.purchase_need = "3000 元以内的手机"
+    conversation.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+        "max_price": 3000,
+    }
+    previous_item = ProductCard(
+        product_id="p_keep_1",
+        title="上一轮手机",
+        brand="TestBrand",
+        price=2999,
+        reason="上一轮推荐理由",
+        evidence="上一轮证据",
+    )
+    conversation.last_items = [previous_item]
+    conversation.last_successful_items = [previous_item]
+    conversation.latest_no_results_relax_options = ["提高预算"]
+    conversation.last_no_results_relax_options = ["提高预算"]
+
+    runner = create_agent_runner(
+        config=AppConfig(agent_runner="langgraph"),
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=fail_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent="recommend",
+                    purchase_need="3000 元以内的拍照手机",
+                    preference_updates={
+                        "target_category": "手机",
+                        "category": "数码电子",
+                        "canonical_target_key": "phone",
+                        "max_price": 3000,
+                    },
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("tool-error-contract", "推荐 3000 元以内的拍照手机")
+    saved = store.get_or_create("tool-error-contract")
+
+    assert response.items == []
+    assert response.state["result_status"] == "tool_error"
+    assert response.state["latest_attempt_status"] == "tool_error"
+    assert response.state["tool_error"] == "recommendation_failed"
+    assert "relax_options" not in response.state
+    assert saved.last_query is not None
+    assert "拍照手机" in saved.last_query
+    assert saved.latest_no_results_relax_options == ["提高预算"]
+    assert saved.last_no_results_relax_options == ["提高预算"]
+    assert saved.last_items == [previous_item]
+    assert saved.last_successful_items == [previous_item]
+
+
+def test_langgraph_runner_explains_previous_items_after_tool_error():
+    from agent.runner import create_agent_runner
+
+    def fail_recommendation(query: str, top_k: int = 3, negative_filters=None):
+        raise RuntimeError("recommendation backend unavailable")
+
+    store = InMemoryConversationStore()
+    previous_item = ProductCard(
+        product_id="p_explain_keep",
+        title="可解释手机",
+        brand="ExplainBrand",
+        price=2999,
+        reason="适合拍照",
+        evidence="主摄像素高，价格 2999 元",
+    )
+    conversation = store.get_or_create("explain-after-error")
+    conversation.purchase_need = "3000 元以内的手机"
+    conversation.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    conversation.last_items = [previous_item]
+    conversation.last_successful_items = [previous_item]
+    conversation.latest_attempt_status = "success"
+
+    runner = create_agent_runner(
+        config=AppConfig(agent_runner="langgraph"),
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=fail_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent="recommend",
+                    purchase_need="3000 元以内的拍照手机",
+                    preference_updates={
+                        "target_category": "手机",
+                        "category": "数码电子",
+                        "canonical_target_key": "phone",
+                    },
+                ),
+                make_understanding(
+                    intent="explain",
+                    target_item_index=1,
+                    confidence=0.9,
+                ),
+            ]
+        ),
+    )
+
+    failed = runner.run("explain-after-error", "推荐 3000 元以内的拍照手机")
+    explained = runner.run("explain-after-error", "为什么第一个？")
+
+    assert failed.state["result_status"] == "tool_error"
+    assert explained.state["action"] == "explain"
+    assert explained.items == [previous_item]
+    assert "可解释手机" in explained.reply
+    assert "result_status" not in explained.state
+
+
+def test_purchase_context_round_trips_architecture_fields_and_clears_target_item_index():
+    from agent.memory import ConversationState, PurchaseContext
+    from agent.negative_feedback_models import NegativeFeedbackItem
+    from schemas.product import ProductCard
+    from schemas.recommend import ExcludedPriceRange, RecommendFilters
+
+    item = ProductCard(
+        product_id="p_round_trip",
+        title="归档手机",
+        brand="RoundBrand",
+        price=2999,
+        reason="归档理由",
+        evidence="归档证据",
+    )
+    source = ConversationState(session_id="archive-source")
+    source.purchase_need = "3000 元以内的手机"
+    source.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+        "display_target_category": "手机",
+        "max_price": 3000,
+        "is_broad_category_request": True,
+    }
+    source.excluded_product_ids = ["p_old"]
+    source.excluded_brands = ["Apple"]
+    source.excluded_keywords = ["二手"]
+    source.excluded_price_ranges = [
+        ExcludedPriceRange(
+            min_price=1000,
+            max_price=2000,
+            reason="排除旧价格带",
+            source_product_id="p_old",
+        )
+    ]
+    source.negative_feedback_items = [
+        NegativeFeedbackItem(product_id="p_old", title="旧手机")
+    ]
+    source.latest_attempt_status = "no_results"
+    source.latest_attempt_error = None
+    source.latest_no_results_relax_options = ["提高预算"]
+    source.last_successful_items = [item]
+    source.last_successful_result_id = "result-1"
+    source.last_successful_query = "手机 query"
+    source.last_successful_filters = RecommendFilters(
+        category="数码电子", max_price=3000, keywords=["手机"]
+    )
+    source.target_item_index = 2
+    source.last_query = "最后一次 query"
+    source.last_filters = RecommendFilters(
+        category="数码电子", max_price=2500, keywords=["手机"]
+    )
+    source.last_items = [item]
+    source.last_result_status = "no_results"
+    source.last_no_results_need = "严格需求"
+    source.last_no_results_relax_options = ["放宽品牌"]
+
+    archived = PurchaseContext.from_conversation(source)
+    target = ConversationState(session_id="archive-target")
+    target.target_item_index = 3
+    archived.apply_to_conversation(target)
+
+    assert target.purchase_need == "3000 元以内的手机"
+    assert target.preferences == {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+        "display_target_category": "手机",
+        "max_price": 3000,
+        "is_broad_category_request": False,
+    }
+    assert target.excluded_product_ids == ["p_old"]
+    assert target.excluded_brands == ["Apple"]
+    assert target.excluded_keywords == ["二手"]
+    assert target.excluded_price_ranges == [
+        ExcludedPriceRange(
+            min_price=1000,
+            max_price=2000,
+            reason="排除旧价格带",
+            source_product_id="p_old",
+        )
+    ]
+    assert target.negative_feedback_items == [
+        NegativeFeedbackItem(product_id="p_old", title="旧手机")
+    ]
+    assert target.latest_attempt_status == "no_results"
+    assert target.latest_attempt_error is None
+    assert target.latest_no_results_relax_options == ["提高预算"]
+    assert target.last_successful_items == [item]
+    assert target.last_successful_result_id == "result-1"
+    assert target.last_successful_query == "手机 query"
+    assert target.last_successful_filters == RecommendFilters(
+        category="数码电子", max_price=3000, keywords=["手机"]
+    )
+    assert target.target_item_index is None
+    assert target.last_query == "最后一次 query"
+    assert target.last_filters == RecommendFilters(
+        category="数码电子", max_price=2500, keywords=["手机"]
+    )
+    assert target.last_items == [item]
+    assert target.last_result_status == "no_results"
+    assert target.last_no_results_need == "严格需求"
+    assert target.last_no_results_relax_options == ["放宽品牌"]

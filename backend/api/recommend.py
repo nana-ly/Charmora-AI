@@ -9,7 +9,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/recommend")
+@router.post("/recommend", response_model=None)
 def recommend(request: RecommendRequest) -> dict:
     """执行推荐链路。"""
     logger.info("recommend request received")

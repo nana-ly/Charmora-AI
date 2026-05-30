@@ -14,6 +14,19 @@
 - `POST /chat`：多轮导购对话，使用 LangGraph Runner 维护会话状态并调用推荐工具。
 - `POST /chat/stream`：多轮导购 SSE 事件流接口。
 
+## 导购 Agent 架构合同
+
+`/chat` 和 `/chat/stream` 使用可控状态机式导购 Agent。LLM 只负责用户理解和可选理由生成；商品存在性、负反馈排除、筛选、排序和卡片构造由后端确定性逻辑完成。
+
+稳定行为：
+- `/chat` 推荐成功时刷新 `last_items`、`last_successful_items`、`last_successful_result_id`、`last_successful_query` 和 `last_successful_filters`。
+- 推荐无结果时返回 HTTP 200、`items=[]`、`state.result_status="no_results"` 和 `state.relax_options`，不清空上一轮可解释结果。
+- 推荐工具异常时返回 HTTP 200、`items=[]`、`state.result_status="tool_error"` 和 `state.tool_error="recommendation_failed"`；也可按合同检查 `result_status="tool_error"`。该分支不暴露 `relax_options`，不清空 `last_items` 或 `last_successful_items`。
+- 解释请求读取 `last_items`；没有序号时默认解释第 1 个商品，数字序号按 1-based 处理。
+- 负反馈只作用于当前活跃购买目标。规则解析是兜底路径，不会在 LLM 成功后自动补齐额外负反馈。
+- 跨品类切换会归档旧购买上下文；用户疑似回到旧目标时先返回待确认状态，而不是直接恢复。
+- `/chat/stream` 对成功、无结果、工具错误、负反馈 noop、待恢复状态均输出 `start -> delta -> items -> state -> done`。只有未被 Agent 转换成稳定 `ChatResponse` 的异常才输出 `start -> error -> done`。
+
 ## 快速运行
 
 ```powershell
