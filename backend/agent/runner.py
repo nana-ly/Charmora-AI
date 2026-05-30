@@ -6,7 +6,7 @@ API 层只依赖 AgentRunner 协议，不关心 LangGraph Runner 的内部编排
 
 from typing import Protocol
 
-from agent.memory import InMemoryConversationStore
+from agent.memory import ConversationStore, InMemoryConversationStore
 from agent.tools import RecommendationTool
 from agent.understanding import LLMUserUnderstandingService, UserUnderstandingService
 from core.config import AppConfig, load_app_config
@@ -24,7 +24,7 @@ class AgentRunner(Protocol):
 def create_agent_runner(
     *,
     config: AppConfig | None = None,
-    store: InMemoryConversationStore | None = None,
+    store: ConversationStore | None = None,
     recommendation_tool: RecommendationTool | None = None,
     understanding_service: UserUnderstandingService | None = None,
 ) -> AgentRunner:

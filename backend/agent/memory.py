@@ -1,7 +1,7 @@
 """对话状态存储模块。"""
 
 from copy import deepcopy
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -149,6 +149,22 @@ class ConversationState(BaseModel):
     previous_purchase_contexts: list[PurchaseContext] = Field(default_factory=list)
     pending_restore_category: str | None = None
     pending_restore_display_target: str | None = None
+
+
+@runtime_checkable
+class ConversationStore(Protocol):
+    """会话状态存储接口。
+
+    Runner 只依赖这个最小接口；具体实现可以是内存、Redis 或 SQLite。
+    """
+
+    def get_or_create(self, session_id: str) -> ConversationState:
+        """获取会话状态；不存在时创建空状态。"""
+        ...
+
+    def save(self, state: ConversationState) -> None:
+        """保存会话状态。"""
+        ...
 
 
 class InMemoryConversationStore:

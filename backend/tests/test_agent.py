@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agent.memory import ConversationState, InMemoryConversationStore
+from agent.memory import ConversationState, ConversationStore, InMemoryConversationStore
 from agent.tools import RecommendationTool
 from core.config import AppConfig, LLMConfig, load_app_config
 from llm.client import ChatInvokeResponse
@@ -91,6 +91,16 @@ def single_recommendation(query: str, top_k: int = 3):
             }
         ][:top_k],
     }
+
+
+def test_in_memory_conversation_store_satisfies_store_protocol():
+    store = InMemoryConversationStore()
+    state = store.get_or_create("store-protocol")
+    state.purchase_need = "3000 元以内的手机"
+    store.save(state)
+
+    assert isinstance(store, ConversationStore)
+    assert store.get_or_create("store-protocol").purchase_need == "3000 元以内的手机"
 
 
 def test_category_rules_detect_target_category_and_catalog_category():

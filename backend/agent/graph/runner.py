@@ -17,7 +17,7 @@ from agent.context_manager import (
     reset_for_new_target,
     resolve_pending_restore,
 )
-from agent.memory import ConversationState, InMemoryConversationStore
+from agent.memory import ConversationState, ConversationStore
 from agent.negative_feedback import (
     apply_negative_feedback,
     build_negative_filters,
@@ -67,7 +67,7 @@ class LangGraphAgentRunner:
 
     def __init__(
         self,
-        store: InMemoryConversationStore,
+        store: ConversationStore,
         recommendation_tool: RecommendationTool,
         understanding_service: UserUnderstandingService | None = None,
         llm_config: LLMConfig | None = None,
