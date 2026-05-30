@@ -101,6 +101,40 @@ def _has_positive_constraints(hints: dict[str, object]) -> bool:
     )
 
 
+def _contextual_preference_feedback(
+    *,
+    message: str,
+    conversation: ConversationState,
+    reason: str,
+) -> UserUnderstanding | None:
+    if not _has_active_purchase_context(conversation):
+        return None
+    if detect_target_category(message) is not None:
+        return None
+
+    hints = extract_preference_hints(message)
+    if not _has_positive_constraints(hints):
+        return None
+
+    updates = dict(hints)
+    for key in ("target_category", "category", "canonical_target_key"):
+        value = conversation.preferences.get(key)
+        if isinstance(value, str) and value:
+            updates[key] = value
+
+    logger.info(
+        "understanding source=fallback reason=%s intent=update_preference target_category=%s",
+        reason,
+        updates.get("target_category"),
+    )
+    return UserUnderstanding(
+        intent=UserIntent.UPDATE_PREFERENCE,
+        confidence=0.6,
+        purchase_need=conversation.purchase_need,
+        preference_updates=updates,
+    )
+
+
 def _purchase_request_understanding(
     *,
     message: str,
@@ -187,6 +221,14 @@ def fallback_understanding(
             preference_updates={},
             negative_updates=negative_updates,
         )
+
+    contextual_preferences = _contextual_preference_feedback(
+        message=message,
+        conversation=conversation,
+        reason=reason,
+    )
+    if contextual_preferences is not None:
+        return contextual_preferences
 
     contextual = _contextual_price_feedback(
         message=message,

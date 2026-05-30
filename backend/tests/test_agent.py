@@ -332,6 +332,34 @@ def test_fallback_understanding_does_not_invent_context_for_too_expensive():
     assert understanding is None
 
 
+def test_fallback_understanding_updates_budget_with_existing_context():
+    from agent.fallback_understanding import fallback_understanding
+    from agent.understanding import UserIntent
+
+    state = ConversationState(session_id="session-contextual-budget")
+    state.purchase_need = "推荐手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+        "is_broad_category_request": True,
+    }
+
+    understanding = fallback_understanding(
+        message="3000以内",
+        conversation=state,
+        reason="llm_unavailable",
+    )
+
+    assert understanding is not None
+    assert understanding.intent == UserIntent.UPDATE_PREFERENCE
+    assert understanding.purchase_need == "推荐手机"
+    assert understanding.preference_updates["budget"] == 3000
+    assert understanding.preference_updates["target_category"] == "手机"
+    assert understanding.preference_updates["category"] == "数码电子"
+    assert understanding.preference_updates["canonical_target_key"] == "phone"
+
+
 def test_clarify_for_context_uses_generic_question_without_purchase_context():
     from agent.understanding import clarify_for_context
 
@@ -3637,5 +3665,28 @@ def test_langgraph_runner_refinement_clears_stale_broad_flag():
     runner.run("stale-broad", "推荐手机")
     second = runner.run("stale-broad", "3000以内")
 
+    assert second.state["preferences"]["is_broad_category_request"] is False
+    assert "我先按" not in second.reply
+
+
+def test_langgraph_runner_contextual_budget_refinement_uses_fallback():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import LLMUserUnderstandingService
+
+    store = InMemoryConversationStore()
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
+        understanding_service=LLMUserUnderstandingService(
+            config=LLMConfig(enabled=False, api_key="")
+        ),
+    )
+
+    runner.run("fallback-budget-refinement", "推荐手机")
+    second = runner.run("fallback-budget-refinement", "3000以内")
+
+    assert second.state["intent"] == "update_preference"
+    assert second.state["action"] == "recommend"
+    assert second.state["preferences"]["budget"] == 3000
     assert second.state["preferences"]["is_broad_category_request"] is False
     assert "我先按" not in second.reply
