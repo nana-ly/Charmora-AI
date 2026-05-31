@@ -36,3 +36,11 @@ def test_load_app_config_reads_conversation_store_settings(monkeypatch):
 
     assert config.conversation_store_mode == "sqlite"
     assert config.conversation_store_path == "data/test-conversations.sqlite3"
+
+
+def test_load_app_config_reads_conversation_store_update_retries(monkeypatch):
+    monkeypatch.setenv("CONVERSATION_STORE_UPDATE_RETRIES", "5")
+
+    config = load_app_config(env_file=None)
+
+    assert config.conversation_store_update_retries == 5

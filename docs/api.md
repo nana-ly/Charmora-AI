@@ -84,7 +84,8 @@ Request:
 
 ```json
 {
-  "query": "预算9000以内，想买拍照和剪视频好的手机"
+  "query": "预算9000以内，想买拍照和剪视频好的手机",
+  "debug": false
 }
 ```
 
@@ -128,9 +129,12 @@ Response:
 | `items[].price` | `number` | 商品价格。 |
 | `items[].reason` | `string` | 中文推荐理由。 |
 | `items[].evidence` | `string` | 中文匹配依据。 |
+| `trace` | `object \| null` | 内部调试 trace；默认不返回。 |
 
 推荐链路不会为无结果或异常伪造商品。检索结果为空时 `items` 是 `[]`；推荐链路异常时异常向上暴露。
 后端会在当前 Python 进程内缓存推荐服务的配置、retriever 和 reason service；`/recommend` 与 `/chat` 中的推荐工具共用同一个推荐入口。
+
+调试 trace 需要同时满足服务端 `RECOMMEND_TRACE_ENABLED=true` 和请求显式开启，例如 body/query 中 `debug=true` 或请求头 `X-Debug-Trace: true`。trace 只包含候选数量、召回数量、最终数量、负反馈过滤状态和每个结果的 `product_id/title/brand/rank/score/score_type/source/evidence/retriever_mode`，不包含完整用户原文、完整商品 JSON 或完整 RAG 文档。
 
 ## RAG Search
 
@@ -156,11 +160,20 @@ Response:
       "title": "修护精华",
       "brand": "测试品牌",
       "score": 0.82,
-      "evidence": "向量召回：相似度 0.82 ..."
+      "rank": 1,
+      "source": "vector",
+      "retriever_mode": "vector",
+      "score_type": "vector_similarity",
+      "evidence": "向量召回：相似度 0.82 ...",
+      "metadata": {
+        "document_preview": "截断后的 RAG 文档摘要"
+      }
     }
   ]
 }
 ```
+
+`/rag/search` 复用应用级 `RecommendationService` 的 retriever 缓存；当前 `RETRIEVER_MODE=keyword` 时返回关键词检索调试结果，`RETRIEVER_MODE=vector` 时返回向量检索调试结果。
 
 ## Chat
 

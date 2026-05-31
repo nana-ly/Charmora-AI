@@ -60,11 +60,20 @@ class VectorRetriever(Retriever):
                 continue
 
             product = product_by_id.get(product_id) or _metadata_to_product(row)
+            row_metadata = dict(row.get("metadata") or {})
+            trace_metadata = {
+                "document_preview": _document_preview(row.get("document")),
+            }
             results.append(
                 RetrievalResult(
                     product=product,
                     evidence=_build_evidence(row),
                     score=float(row.get("score") or 0.0),
+                    rank=len(results) + 1,
+                    source=str(row_metadata.get("source") or "vector"),
+                    retriever_mode="vector",
+                    score_type="vector_similarity",
+                    metadata=trace_metadata,
                 )
             )
             if len(results) >= top_k:
@@ -110,10 +119,18 @@ def _metadata_to_product(row: dict[str, Any]) -> dict[str, Any]:
 
 def _build_evidence(row: dict[str, Any]) -> str:
     score = float(row.get("score") or 0.0)
-    document = " ".join(str(row.get("document") or "").split())
+    document = _document_preview(row.get("document"), max_length=120)
     if len(document) > 120:
         document = f"{document[:120]}..."
     if document:
         return f"向量召回：相似度 {score:.2f}；{document}"
     return f"向量召回：相似度 {score:.2f}。"
+
+
+def _document_preview(document: Any, max_length: int = 160) -> str:
+    """生成 trace 可展示的短摘要，避免暴露完整 RAG 文档。"""
+    preview = " ".join(str(document or "").split())
+    if len(preview) > max_length:
+        return f"{preview[:max_length]}..."
+    return preview
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import threading
 from typing import Any, Callable
 
@@ -64,6 +65,7 @@ class RecommendationService:
         query: str,
         top_k: int | None = None,
         negative_filters: NegativeFilters | None = None,
+        include_trace: bool = False,
     ) -> dict[str, Any]:
         """使用缓存的 retriever/reason service 执行推荐链路。"""
         kwargs: dict[str, Any] = {
@@ -73,7 +75,13 @@ class RecommendationService:
         }
         if negative_filters is not None:
             kwargs["negative_filters"] = negative_filters
+        if include_trace and _accepts_argument(self._recommend_func, "include_trace"):
+            kwargs["include_trace"] = True
         return self._recommend_func(query, **kwargs)
+
+    def search(self, query: str, top_k: int = 5) -> list:
+        """复用应用级 retriever 执行调试检索，避免绕过缓存创建新客户端。"""
+        return self._get_retriever().search(query, top_k=top_k)
 
     def ready(self) -> dict[str, Any]:
         """检查推荐依赖是否可用，失败时不吞错，转成 readiness 响应字段。"""
@@ -116,10 +124,23 @@ def run_recommendation(
     query: str,
     top_k: int | None = None,
     negative_filters: NegativeFilters | None = None,
+    include_trace: bool = False,
 ) -> dict[str, Any]:
     """兼容旧入口：委托给进程内全局 RecommendationService。"""
     return get_recommendation_service().recommend(
         query,
         top_k=top_k,
         negative_filters=negative_filters,
+        include_trace=include_trace,
+    )
+
+
+def _accepts_argument(func: RecommendFunc, name: str) -> bool:
+    signature = inspect.signature(func)
+    return (
+        name in signature.parameters
+        or any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
     )

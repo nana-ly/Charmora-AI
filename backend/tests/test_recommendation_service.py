@@ -90,6 +90,26 @@ def test_recommendation_service_passes_negative_filters_to_pipeline():
     assert captured["negative_filters"] is negative_filters
 
 
+def test_recommendation_service_passes_include_trace_to_pipeline():
+    captured = {}
+
+    def recommend_func(query, **kwargs):
+        captured.update(kwargs)
+        return {"query": query, "filters": {}, "items": [], "trace": {"items": []}}
+
+    service = recommendation_service.RecommendationService(
+        config=AppConfig(default_top_k=3),
+        retriever_factory=lambda config: object(),
+        reason_service_factory=DummyReasonService,
+        recommend_func=recommend_func,
+    )
+
+    response = service.recommend("camera phone", include_trace=True)
+
+    assert captured["include_trace"] is True
+    assert response["trace"] == {"items": []}
+
+
 def test_recommendation_service_ready_reports_retriever_failure():
     def failing_retriever_factory(config):
         raise RuntimeError("missing embedding config")

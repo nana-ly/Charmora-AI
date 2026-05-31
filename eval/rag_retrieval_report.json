@@ -1,0 +1,1371 @@
+{
+  "metrics": {
+    "case_pass_rate": 0.875,
+    "hit@k": 0.8667,
+    "recall@k": 0.8666666666666667,
+    "category_hit_rate": 0.875,
+    "brand_hit_rate": 1.0,
+    "no_results_rate": 0.125,
+    "unexpected_no_results_count": 1,
+    "negative_exclusion_hit_rate": 1.0,
+    "candidate_count_avg": 24.1875,
+    "retrieved_count_avg": 2.625,
+    "final_count_avg": 2.625
+  },
+  "results": [
+    {
+      "case_id": "phone_huawei_camera",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_digital_002",
+          "title": "华为HUAWEI Pura 90 Pro 超感光影像曲面屏轻薄旗舰手机12+256GB",
+          "brand": "华为",
+          "price": 6999.0,
+          "reason": "华为HUAWEI Pura 90 Pro 超感光影像曲面屏轻薄旗舰手机12+256GB 与你的需求「推荐一款拍照好的华为手机」匹配，临时匹配：命中 手机、拍照；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机、拍照；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "智能手机"
+        },
+        {
+          "product_id": "p_digital_005",
+          "title": "华为HUAWEI MatePad Pro Max 12.6英寸高刷屏多任务办公平板电脑",
+          "brand": "华为",
+          "price": 4999.0,
+          "reason": "华为HUAWEI MatePad Pro Max 12.6英寸高刷屏多任务办公平板电脑 与你的需求「推荐一款拍照好的华为手机」匹配，临时匹配：命中 手机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "平板电脑"
+        },
+        {
+          "product_id": "p_digital_021",
+          "title": "华为 MatePad Pro 13.2英寸 柔性OLED高刷屏轻办公创作旗舰平板电脑",
+          "brand": "华为",
+          "price": 5199.0,
+          "reason": "华为 MatePad Pro 13.2英寸 柔性OLED高刷屏轻办公创作旗舰平板电脑 与你的需求「推荐一款拍照好的华为手机」匹配，临时匹配：命中 手机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "平板电脑"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 12,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 5,
+        "negative_filtered_candidate_count": 5,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_digital_002",
+            "title": "华为HUAWEI Pura 90 Pro 超感光影像曲面屏轻薄旗舰手机12+256GB",
+            "brand": "华为",
+            "rank": 1,
+            "score": 14.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机、拍照；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_005",
+            "title": "华为HUAWEI MatePad Pro Max 12.6英寸高刷屏多任务办公平板电脑",
+            "brand": "华为",
+            "rank": 2,
+            "score": 1.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_021",
+            "title": "华为 MatePad Pro 13.2英寸 柔性OLED高刷屏轻办公创作旗舰平板电脑",
+            "brand": "华为",
+            "rank": 3,
+            "score": 1.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_digital_002"
+      ],
+      "expected_category": "数码电子",
+      "expected_brand": "华为",
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "phone_xiaomi_camera_ultra",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_digital_008",
+          "title": "小米 17 Ultra 2K高刷屏潜望长焦澎湃芯片影像旗舰5G手机12+256GB",
+          "brand": "小米",
+          "price": 7499.0,
+          "reason": "小米 17 Ultra 2K高刷屏潜望长焦澎湃芯片影像旗舰5G手机12+256GB 与你的需求「想要小米拍照旗舰手机」匹配，临时匹配：命中 手机、拍照；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机、拍照；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "智能手机"
+        },
+        {
+          "product_id": "p_digital_010",
+          "title": "小米 MIX Fold 5 内折大屏旗舰折叠屏手机多任务办公影音利器",
+          "brand": "小米",
+          "price": 9999.0,
+          "reason": "小米 MIX Fold 5 内折大屏旗舰折叠屏手机多任务办公影音利器 与你的需求「想要小米拍照旗舰手机」匹配，临时匹配：命中 手机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "智能手机"
+        },
+        {
+          "product_id": "p_digital_009",
+          "title": "小米 17 Max 大屏长续航高性能影音游戏5G智能手机12+256GB",
+          "brand": "小米",
+          "price": 6499.0,
+          "reason": "小米 17 Max 大屏长续航高性能影音游戏5G智能手机12+256GB 与你的需求「想要小米拍照旗舰手机」匹配，临时匹配：命中 手机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "智能手机"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 10,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 4,
+        "negative_filtered_candidate_count": 4,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_digital_008",
+            "title": "小米 17 Ultra 2K高刷屏潜望长焦澎湃芯片影像旗舰5G手机12+256GB",
+            "brand": "小米",
+            "rank": 1,
+            "score": 13.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机、拍照；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_010",
+            "title": "小米 MIX Fold 5 内折大屏旗舰折叠屏手机多任务办公影音利器",
+            "brand": "小米",
+            "rank": 2,
+            "score": 10.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_009",
+            "title": "小米 17 Max 大屏长续航高性能影音游戏5G智能手机12+256GB",
+            "brand": "小米",
+            "rank": 3,
+            "score": 9.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_digital_008"
+      ],
+      "expected_category": "数码电子",
+      "expected_brand": "小米",
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "phone_oppo_portrait_budget",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_digital_016",
+          "title": "OPPO Reno 16 Pro 轻薄人像摄影高刷屏快充5G智能手机12+256GB",
+          "brand": "OPPO",
+          "price": 3299.0,
+          "reason": "OPPO Reno 16 Pro 轻薄人像摄影高刷屏快充5G智能手机12+256GB 与你的需求「预算4000以内，想买轻薄人像摄影手机」匹配，临时匹配：命中 手机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "智能手机"
+        },
+        {
+          "product_id": "p_digital_011",
+          "title": "小米平板 8 Pro 12.1英寸高刷大屏影音娱乐学习办公平板电脑",
+          "brand": "小米",
+          "price": 3299.0,
+          "reason": "小米平板 8 Pro 12.1英寸高刷大屏影音娱乐学习办公平板电脑 与你的需求「预算4000以内，想买轻薄人像摄影手机」匹配，临时匹配：命中 手机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "平板电脑"
+        },
+        {
+          "product_id": "p_digital_007",
+          "title": "华为HUAWEI FreeBuds Pro 5 主动降噪真无线蓝牙耳机高解析音质",
+          "brand": "华为",
+          "price": 1699.0,
+          "reason": "华为HUAWEI FreeBuds Pro 5 主动降噪真无线蓝牙耳机高解析音质 与你的需求「预算4000以内，想买轻薄人像摄影手机」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "真无线耳机"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 19,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 5,
+        "negative_filtered_candidate_count": 5,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_digital_016",
+            "title": "OPPO Reno 16 Pro 轻薄人像摄影高刷屏快充5G智能手机12+256GB",
+            "brand": "OPPO",
+            "rank": 1,
+            "score": 9.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_011",
+            "title": "小米平板 8 Pro 12.1英寸高刷大屏影音娱乐学习办公平板电脑",
+            "brand": "小米",
+            "rank": 2,
+            "score": 1.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_007",
+            "title": "华为HUAWEI FreeBuds Pro 5 主动降噪真无线蓝牙耳机高解析音质",
+            "brand": "华为",
+            "rank": 3,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_digital_016"
+      ],
+      "expected_category": "数码电子",
+      "expected_brand": "OPPO",
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "laptop_light_office",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_digital_023",
+          "title": "联想 ThinkBook 14+ 2026 全面屏高性能轻薄本商务学习笔记本电脑",
+          "brand": "联想",
+          "price": 6999.0,
+          "reason": "联想 ThinkBook 14+ 2026 全面屏高性能轻薄本商务学习笔记本电脑 与你的需求「推荐轻薄办公笔记本电脑」匹配，临时匹配：命中 电脑、笔记本、办公；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 电脑、笔记本、办公；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "笔记本电脑"
+        },
+        {
+          "product_id": "p_digital_020",
+          "title": "Apple MacBook Air 13英寸 M5 芯片 16GB 512GB 轻薄便携笔记本电脑",
+          "brand": "Apple 苹果",
+          "price": 8499.0,
+          "reason": "Apple MacBook Air 13英寸 M5 芯片 16GB 512GB 轻薄便携笔记本电脑 与你的需求「推荐轻薄办公笔记本电脑」匹配，临时匹配：命中 电脑、笔记本；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 电脑、笔记本；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "笔记本电脑"
+        },
+        {
+          "product_id": "p_digital_006",
+          "title": "Apple MacBook Pro 14英寸 M5 芯片 16GB 512GB 专业高性能笔记本电脑",
+          "brand": "Apple 苹果",
+          "price": 13499.0,
+          "reason": "Apple MacBook Pro 14英寸 M5 芯片 16GB 512GB 专业高性能笔记本电脑 与你的需求「推荐轻薄办公笔记本电脑」匹配，临时匹配：命中 电脑、笔记本；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 电脑、笔记本；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "笔记本电脑"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 11,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 25,
+        "negative_filtered_candidate_count": 25,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_digital_023",
+            "title": "联想 ThinkBook 14+ 2026 全面屏高性能轻薄本商务学习笔记本电脑",
+            "brand": "联想",
+            "rank": 1,
+            "score": 13.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 电脑、笔记本、办公；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_020",
+            "title": "Apple MacBook Air 13英寸 M5 芯片 16GB 512GB 轻薄便携笔记本电脑",
+            "brand": "Apple 苹果",
+            "rank": 2,
+            "score": 12.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 电脑、笔记本；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_006",
+            "title": "Apple MacBook Pro 14英寸 M5 芯片 16GB 512GB 专业高性能笔记本电脑",
+            "brand": "Apple 苹果",
+            "rank": 3,
+            "score": 12.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 电脑、笔记本；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_digital_020",
+        "p_digital_023"
+      ],
+      "expected_category": "数码电子",
+      "expected_brand": null,
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "tablet_study_office",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_digital_011",
+          "title": "小米平板 8 Pro 12.1英寸高刷大屏影音娱乐学习办公平板电脑",
+          "brand": "小米",
+          "price": 3299.0,
+          "reason": "小米平板 8 Pro 12.1英寸高刷大屏影音娱乐学习办公平板电脑 与你的需求「学习办公用平板电脑推荐」匹配，临时匹配：命中 电脑、平板、办公；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 电脑、平板、办公；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "平板电脑"
+        },
+        {
+          "product_id": "p_digital_019",
+          "title": "vivo Pad 6 Pro 12.1英寸高刷全面屏学习娱乐多任务办公平板电脑",
+          "brand": "vivo",
+          "price": 3299.0,
+          "reason": "vivo Pad 6 Pro 12.1英寸高刷全面屏学习娱乐多任务办公平板电脑 与你的需求「学习办公用平板电脑推荐」匹配，临时匹配：命中 电脑、平板、办公；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 电脑、平板、办公；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "平板电脑"
+        },
+        {
+          "product_id": "p_digital_005",
+          "title": "华为HUAWEI MatePad Pro Max 12.6英寸高刷屏多任务办公平板电脑",
+          "brand": "华为",
+          "price": 4999.0,
+          "reason": "华为HUAWEI MatePad Pro Max 12.6英寸高刷屏多任务办公平板电脑 与你的需求「学习办公用平板电脑推荐」匹配，临时匹配：命中 电脑、平板、办公；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 电脑、平板、办公；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "平板电脑"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 11,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 25,
+        "negative_filtered_candidate_count": 25,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_digital_011",
+            "title": "小米平板 8 Pro 12.1英寸高刷大屏影音娱乐学习办公平板电脑",
+            "brand": "小米",
+            "rank": 1,
+            "score": 17.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 电脑、平板、办公；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_019",
+            "title": "vivo Pad 6 Pro 12.1英寸高刷全面屏学习娱乐多任务办公平板电脑",
+            "brand": "vivo",
+            "rank": 2,
+            "score": 17.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 电脑、平板、办公；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_005",
+            "title": "华为HUAWEI MatePad Pro Max 12.6英寸高刷屏多任务办公平板电脑",
+            "brand": "华为",
+            "rank": 3,
+            "score": 17.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 电脑、平板、办公；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_digital_011"
+      ],
+      "expected_category": "数码电子",
+      "expected_brand": "小米",
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "earbuds_huawei_noise_cancel",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_digital_007",
+          "title": "华为HUAWEI FreeBuds Pro 5 主动降噪真无线蓝牙耳机高解析音质",
+          "brand": "华为",
+          "price": 1699.0,
+          "reason": "华为HUAWEI FreeBuds Pro 5 主动降噪真无线蓝牙耳机高解析音质 与你的需求「华为主动降噪真无线耳机」匹配，临时匹配：命中 耳机、降噪；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 耳机、降噪；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "真无线耳机"
+        },
+        {
+          "product_id": "p_digital_021",
+          "title": "华为 MatePad Pro 13.2英寸 柔性OLED高刷屏轻办公创作旗舰平板电脑",
+          "brand": "华为",
+          "price": 5199.0,
+          "reason": "华为 MatePad Pro 13.2英寸 柔性OLED高刷屏轻办公创作旗舰平板电脑 与你的需求「华为主动降噪真无线耳机」匹配，临时匹配：命中 耳机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 耳机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "平板电脑"
+        },
+        {
+          "product_id": "p_digital_005",
+          "title": "华为HUAWEI MatePad Pro Max 12.6英寸高刷屏多任务办公平板电脑",
+          "brand": "华为",
+          "price": 4999.0,
+          "reason": "华为HUAWEI MatePad Pro Max 12.6英寸高刷屏多任务办公平板电脑 与你的需求「华为主动降噪真无线耳机」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "平板电脑"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 11,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 5,
+        "negative_filtered_candidate_count": 5,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_digital_007",
+            "title": "华为HUAWEI FreeBuds Pro 5 主动降噪真无线蓝牙耳机高解析音质",
+            "brand": "华为",
+            "rank": 1,
+            "score": 11.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 耳机、降噪；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_021",
+            "title": "华为 MatePad Pro 13.2英寸 柔性OLED高刷屏轻办公创作旗舰平板电脑",
+            "brand": "华为",
+            "rank": 2,
+            "score": 1.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 耳机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_005",
+            "title": "华为HUAWEI MatePad Pro Max 12.6英寸高刷屏多任务办公平板电脑",
+            "brand": "华为",
+            "rank": 3,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_digital_007"
+      ],
+      "expected_category": "数码电子",
+      "expected_brand": "华为",
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "earbuds_apple_noise_cancel",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_digital_018",
+          "title": "Apple AirPods Pro 3 主动降噪真无线蓝牙耳机 心率监测版",
+          "brand": "Apple 苹果",
+          "price": 1899.0,
+          "reason": "Apple AirPods Pro 3 主动降噪真无线蓝牙耳机 心率监测版 与你的需求「苹果主动降噪耳机通勤用」匹配，临时匹配：命中 耳机、降噪；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 耳机、降噪；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "真无线耳机"
+        },
+        {
+          "product_id": "p_digital_020",
+          "title": "Apple MacBook Air 13英寸 M5 芯片 16GB 512GB 轻薄便携笔记本电脑",
+          "brand": "Apple 苹果",
+          "price": 8499.0,
+          "reason": "Apple MacBook Air 13英寸 M5 芯片 16GB 512GB 轻薄便携笔记本电脑 与你的需求「苹果主动降噪耳机通勤用」匹配，临时匹配：命中 耳机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 耳机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "笔记本电脑"
+        },
+        {
+          "product_id": "p_digital_025",
+          "title": "Apple iPad Air 11英寸 2026款 M4 芯片 128GB Wi‑Fi 轻薄学习娱乐平板电脑",
+          "brand": "Apple 苹果",
+          "price": 4799.0,
+          "reason": "Apple iPad Air 11英寸 2026款 M4 芯片 128GB Wi‑Fi 轻薄学习娱乐平板电脑 与你的需求「苹果主动降噪耳机通勤用」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "平板电脑"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 11,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 9,
+        "negative_filtered_candidate_count": 9,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_digital_018",
+            "title": "Apple AirPods Pro 3 主动降噪真无线蓝牙耳机 心率监测版",
+            "brand": "Apple 苹果",
+            "rank": 1,
+            "score": 11.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 耳机、降噪；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_020",
+            "title": "Apple MacBook Air 13英寸 M5 芯片 16GB 512GB 轻薄便携笔记本电脑",
+            "brand": "Apple 苹果",
+            "rank": 2,
+            "score": 1.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 耳机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_025",
+            "title": "Apple iPad Air 11英寸 2026款 M4 芯片 128GB Wi‑Fi 轻薄学习娱乐平板电脑",
+            "brand": "Apple 苹果",
+            "rank": 3,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_digital_018"
+      ],
+      "expected_category": "数码电子",
+      "expected_brand": "Apple",
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "skin_sensitive_moisturizer",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_beauty_007",
+          "title": "薇诺娜舒敏保湿特护霜敏感肌修护屏障舒缓干痒保湿面霜50g",
+          "brand": "薇诺娜",
+          "price": 268.0,
+          "reason": "薇诺娜舒敏保湿特护霜敏感肌修护屏障舒缓干痒保湿面霜50g 与你的需求「敏感肌保湿面霜推荐」匹配，临时匹配：命中 敏感肌、面霜、保湿；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 敏感肌、面霜、保湿；来自结构化筛选结果。",
+          "category": "美妆护肤",
+          "sub_category": "面霜"
+        },
+        {
+          "product_id": "p_beauty_012",
+          "title": "理肤泉特安舒缓修复霜滋润型敏感肌保湿修护屏障面霜40ml",
+          "brand": "理肤泉",
+          "price": 260.0,
+          "reason": "理肤泉特安舒缓修复霜滋润型敏感肌保湿修护屏障面霜40ml 与你的需求「敏感肌保湿面霜推荐」匹配，临时匹配：命中 敏感肌、面霜、保湿；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 敏感肌、面霜、保湿；来自结构化筛选结果。",
+          "category": "美妆护肤",
+          "sub_category": "面霜"
+        },
+        {
+          "product_id": "p_beauty_008",
+          "title": "玉兰油新生塑颜金纯面霜紧致提拉淡纹保湿抗初老大红瓶50g",
+          "brand": "玉兰油",
+          "price": 239.0,
+          "reason": "玉兰油新生塑颜金纯面霜紧致提拉淡纹保湿抗初老大红瓶50g 与你的需求「敏感肌保湿面霜推荐」匹配，临时匹配：命中 敏感肌、面霜、保湿；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 敏感肌、面霜、保湿；来自结构化筛选结果。",
+          "category": "美妆护肤",
+          "sub_category": "面霜"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 9,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 25,
+        "negative_filtered_candidate_count": 25,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_beauty_007",
+            "title": "薇诺娜舒敏保湿特护霜敏感肌修护屏障舒缓干痒保湿面霜50g",
+            "brand": "薇诺娜",
+            "rank": 1,
+            "score": 15.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 敏感肌、面霜、保湿；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_beauty_012",
+            "title": "理肤泉特安舒缓修复霜滋润型敏感肌保湿修护屏障面霜40ml",
+            "brand": "理肤泉",
+            "rank": 2,
+            "score": 14.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 敏感肌、面霜、保湿；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_beauty_008",
+            "title": "玉兰油新生塑颜金纯面霜紧致提拉淡纹保湿抗初老大红瓶50g",
+            "brand": "玉兰油",
+            "rank": 3,
+            "score": 12.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 敏感肌、面霜、保湿；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_beauty_007",
+        "p_beauty_012"
+      ],
+      "expected_category": "美妆护肤",
+      "expected_brand": null,
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "skin_laroche_repair",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_beauty_012",
+          "title": "理肤泉特安舒缓修复霜滋润型敏感肌保湿修护屏障面霜40ml",
+          "brand": "理肤泉",
+          "price": 260.0,
+          "reason": "理肤泉特安舒缓修复霜滋润型敏感肌保湿修护屏障面霜40ml 与你的需求「理肤泉敏感肌修复霜」匹配，临时匹配：命中 敏感肌；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 敏感肌；来自结构化筛选结果。",
+          "category": "美妆护肤",
+          "sub_category": "面霜"
+        },
+        {
+          "product_id": "p_beauty_007",
+          "title": "薇诺娜舒敏保湿特护霜敏感肌修护屏障舒缓干痒保湿面霜50g",
+          "brand": "薇诺娜",
+          "price": 268.0,
+          "reason": "薇诺娜舒敏保湿特护霜敏感肌修护屏障舒缓干痒保湿面霜50g 与你的需求「理肤泉敏感肌修复霜」匹配，临时匹配：命中 敏感肌；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 敏感肌；来自结构化筛选结果。",
+          "category": "美妆护肤",
+          "sub_category": "面霜"
+        },
+        {
+          "product_id": "p_beauty_011",
+          "title": "珊珂洗颜专科绵润泡沫洁面乳细腻丰富泡沫温和清洁洁面120g",
+          "brand": "珊珂",
+          "price": 52.0,
+          "reason": "珊珂洗颜专科绵润泡沫洁面乳细腻丰富泡沫温和清洁洁面120g 与你的需求「理肤泉敏感肌修复霜」匹配，临时匹配：命中 敏感肌；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 敏感肌；来自结构化筛选结果。",
+          "category": "美妆护肤",
+          "sub_category": "洁面"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 9,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 25,
+        "negative_filtered_candidate_count": 25,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_beauty_012",
+            "title": "理肤泉特安舒缓修复霜滋润型敏感肌保湿修护屏障面霜40ml",
+            "brand": "理肤泉",
+            "rank": 1,
+            "score": 4.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 敏感肌；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_beauty_007",
+            "title": "薇诺娜舒敏保湿特护霜敏感肌修护屏障舒缓干痒保湿面霜50g",
+            "brand": "薇诺娜",
+            "rank": 2,
+            "score": 4.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 敏感肌；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_beauty_011",
+            "title": "珊珂洗颜专科绵润泡沫洁面乳细腻丰富泡沫温和清洁洁面120g",
+            "brand": "珊珂",
+            "rank": 3,
+            "score": 1.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 敏感肌；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_beauty_012"
+      ],
+      "expected_category": "美妆护肤",
+      "expected_brand": "理肤泉",
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "coffee_office_refresh",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_food_022",
+          "title": "三顿半 冷萃超即溶 黑咖啡 6颗装 冷泡即溶精品速溶咖啡",
+          "brand": "三顿半",
+          "price": 58.0,
+          "reason": "三顿半 冷萃超即溶 黑咖啡 6颗装 冷泡即溶精品速溶咖啡 与你的需求「办公室提神精品速溶咖啡」匹配，临时匹配：命中 咖啡、速溶、办公室、精品；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 咖啡、速溶、办公室、精品；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "咖啡"
+        },
+        {
+          "product_id": "p_food_001",
+          "title": "三顿半 数字星球系列 超即溶精品咖啡1-6号 18颗装精品速溶咖啡",
+          "brand": "三顿半",
+          "price": 138.0,
+          "reason": "三顿半 数字星球系列 超即溶精品咖啡1-6号 18颗装精品速溶咖啡 与你的需求「办公室提神精品速溶咖啡」匹配，临时匹配：命中 咖啡、速溶、精品；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 咖啡、速溶、精品；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "咖啡"
+        },
+        {
+          "product_id": "p_food_023",
+          "title": "雀巢 金牌 冻干速溶咖啡 100g 瓶装 黑咖啡",
+          "brand": "雀巢",
+          "price": 42.0,
+          "reason": "雀巢 金牌 冻干速溶咖啡 100g 瓶装 黑咖啡 与你的需求「办公室提神精品速溶咖啡」匹配，临时匹配：命中 咖啡、速溶、办公室；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 咖啡、速溶、办公室；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "咖啡"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 11,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 25,
+        "negative_filtered_candidate_count": 25,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_food_022",
+            "title": "三顿半 冷萃超即溶 黑咖啡 6颗装 冷泡即溶精品速溶咖啡",
+            "brand": "三顿半",
+            "rank": 1,
+            "score": 16.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 咖啡、速溶、办公室、精品；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_food_001",
+            "title": "三顿半 数字星球系列 超即溶精品咖啡1-6号 18颗装精品速溶咖啡",
+            "brand": "三顿半",
+            "rank": 2,
+            "score": 14.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 咖啡、速溶、精品；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_food_023",
+            "title": "雀巢 金牌 冻干速溶咖啡 100g 瓶装 黑咖啡",
+            "brand": "雀巢",
+            "rank": 3,
+            "score": 12.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 咖啡、速溶、办公室；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_food_001"
+      ],
+      "expected_category": "食品饮料",
+      "expected_brand": null,
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "drink_low_sugar_tea",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_food_003",
+          "title": "农夫山泉 东方树叶 无糖乌龙茶饮料500ml 瓶装茶饮低糖替代方案",
+          "brand": "东方树叶",
+          "price": 4.0,
+          "reason": "农夫山泉 东方树叶 无糖乌龙茶饮料500ml 瓶装茶饮低糖替代方案 与你的需求「低糖无糖乌龙茶饮料」匹配，临时匹配：命中 低糖；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 低糖；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "茶饮"
+        },
+        {
+          "product_id": "p_food_004",
+          "title": "元气森林 0糖0脂0卡 白桃味气泡水480ml 碳酸饮料即饮苏打型饮品",
+          "brand": "元气森林",
+          "price": 4.5,
+          "reason": "元气森林 0糖0脂0卡 白桃味气泡水480ml 碳酸饮料即饮苏打型饮品 与你的需求「低糖无糖乌龙茶饮料」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "碳酸饮料"
+        },
+        {
+          "product_id": "p_food_005",
+          "title": "东鹏特饮 维生素功能饮料500ml 经典瓶装补充能量含牛磺酸咖啡因",
+          "brand": "东鹏",
+          "price": 5.0,
+          "reason": "东鹏特饮 维生素功能饮料500ml 经典瓶装补充能量含牛磺酸咖啡因 与你的需求「低糖无糖乌龙茶饮料」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "功能饮料"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 9,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 25,
+        "negative_filtered_candidate_count": 25,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_food_003",
+            "title": "农夫山泉 东方树叶 无糖乌龙茶饮料500ml 瓶装茶饮低糖替代方案",
+            "brand": "东方树叶",
+            "rank": 1,
+            "score": 4.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 低糖；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_food_004",
+            "title": "元气森林 0糖0脂0卡 白桃味气泡水480ml 碳酸饮料即饮苏打型饮品",
+            "brand": "元气森林",
+            "rank": 2,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_food_005",
+            "title": "东鹏特饮 维生素功能饮料500ml 经典瓶装补充能量含牛磺酸咖啡因",
+            "brand": "东鹏",
+            "rank": 3,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_food_003"
+      ],
+      "expected_category": "食品饮料",
+      "expected_brand": "东方树叶",
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "drink_zero_sugar_soda",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_food_003",
+          "title": "农夫山泉 东方树叶 无糖乌龙茶饮料500ml 瓶装茶饮低糖替代方案",
+          "brand": "东方树叶",
+          "price": 4.0,
+          "reason": "农夫山泉 东方树叶 无糖乌龙茶饮料500ml 瓶装茶饮低糖替代方案 与你的需求「0糖0脂气泡水解腻」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "茶饮"
+        },
+        {
+          "product_id": "p_food_004",
+          "title": "元气森林 0糖0脂0卡 白桃味气泡水480ml 碳酸饮料即饮苏打型饮品",
+          "brand": "元气森林",
+          "price": 4.5,
+          "reason": "元气森林 0糖0脂0卡 白桃味气泡水480ml 碳酸饮料即饮苏打型饮品 与你的需求「0糖0脂气泡水解腻」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "碳酸饮料"
+        },
+        {
+          "product_id": "p_food_005",
+          "title": "东鹏特饮 维生素功能饮料500ml 经典瓶装补充能量含牛磺酸咖啡因",
+          "brand": "东鹏",
+          "price": 5.0,
+          "reason": "东鹏特饮 维生素功能饮料500ml 经典瓶装补充能量含牛磺酸咖啡因 与你的需求「0糖0脂气泡水解腻」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "功能饮料"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 9,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 100,
+        "negative_filtered_candidate_count": 100,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_food_003",
+            "title": "农夫山泉 东方树叶 无糖乌龙茶饮料500ml 瓶装茶饮低糖替代方案",
+            "brand": "东方树叶",
+            "rank": 1,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_food_004",
+            "title": "元气森林 0糖0脂0卡 白桃味气泡水480ml 碳酸饮料即饮苏打型饮品",
+            "brand": "元气森林",
+            "rank": 2,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_food_005",
+            "title": "东鹏特饮 维生素功能饮料500ml 经典瓶装补充能量含牛磺酸咖啡因",
+            "brand": "东鹏",
+            "rank": 3,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_food_004"
+      ],
+      "expected_category": "食品饮料",
+      "expected_brand": "元气森林",
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "energy_drink_refresh",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [
+        {
+          "product_id": "p_food_003",
+          "title": "农夫山泉 东方树叶 无糖乌龙茶饮料500ml 瓶装茶饮低糖替代方案",
+          "brand": "东方树叶",
+          "price": 4.0,
+          "reason": "农夫山泉 东方树叶 无糖乌龙茶饮料500ml 瓶装茶饮低糖替代方案 与你的需求「熬夜加班提神功能饮料」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "茶饮"
+        },
+        {
+          "product_id": "p_food_004",
+          "title": "元气森林 0糖0脂0卡 白桃味气泡水480ml 碳酸饮料即饮苏打型饮品",
+          "brand": "元气森林",
+          "price": 4.5,
+          "reason": "元气森林 0糖0脂0卡 白桃味气泡水480ml 碳酸饮料即饮苏打型饮品 与你的需求「熬夜加班提神功能饮料」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "碳酸饮料"
+        },
+        {
+          "product_id": "p_food_005",
+          "title": "东鹏特饮 维生素功能饮料500ml 经典瓶装补充能量含牛磺酸咖啡因",
+          "brand": "东鹏",
+          "price": 5.0,
+          "reason": "东鹏特饮 维生素功能饮料500ml 经典瓶装补充能量含牛磺酸咖啡因 与你的需求「熬夜加班提神功能饮料」匹配，临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+          "category": "食品饮料",
+          "sub_category": "功能饮料"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 10,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 100,
+        "negative_filtered_candidate_count": 100,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": false,
+        "items": [
+          {
+            "product_id": "p_food_003",
+            "title": "农夫山泉 东方树叶 无糖乌龙茶饮料500ml 瓶装茶饮低糖替代方案",
+            "brand": "东方树叶",
+            "rank": 1,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_food_004",
+            "title": "元气森林 0糖0脂0卡 白桃味气泡水480ml 碳酸饮料即饮苏打型饮品",
+            "brand": "元气森林",
+            "rank": 2,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_food_005",
+            "title": "东鹏特饮 维生素功能饮料500ml 经典瓶装补充能量含牛磺酸咖啡因",
+            "brand": "东鹏",
+            "rank": 3,
+            "score": 0.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 结构化筛选；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_food_005"
+      ],
+      "expected_category": "食品饮料",
+      "expected_brand": "东鹏",
+      "must_not_return_product_ids": [],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "negative_exclude_huawei_phone",
+      "passed": false,
+      "skipped": false,
+      "failures": [
+        "unexpected no results",
+        "expected product not returned",
+        "expected category not returned"
+      ],
+      "items": [],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 13,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 5,
+        "negative_filtered_candidate_count": 0,
+        "retrieved_count": 0,
+        "final_count": 0,
+        "negative_filter_applied": true,
+        "items": [],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_digital_008",
+        "p_digital_016"
+      ],
+      "expected_category": "数码电子",
+      "expected_brand": null,
+      "must_not_return_product_ids": [
+        "p_digital_002"
+      ],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "negative_exclude_specific_xiaomi",
+      "passed": false,
+      "skipped": false,
+      "failures": [
+        "expected product not returned"
+      ],
+      "items": [
+        {
+          "product_id": "p_digital_010",
+          "title": "小米 MIX Fold 5 内折大屏旗舰折叠屏手机多任务办公影音利器",
+          "brand": "小米",
+          "price": 9999.0,
+          "reason": "小米 MIX Fold 5 内折大屏旗舰折叠屏手机多任务办公影音利器 与你的需求「推荐拍照旗舰手机，不要上一款小米」匹配，临时匹配：命中 手机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "智能手机"
+        },
+        {
+          "product_id": "p_digital_009",
+          "title": "小米 17 Max 大屏长续航高性能影音游戏5G智能手机12+256GB",
+          "brand": "小米",
+          "price": 6499.0,
+          "reason": "小米 17 Max 大屏长续航高性能影音游戏5G智能手机12+256GB 与你的需求「推荐拍照旗舰手机，不要上一款小米」匹配，临时匹配：命中 手机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "智能手机"
+        },
+        {
+          "product_id": "p_digital_011",
+          "title": "小米平板 8 Pro 12.1英寸高刷大屏影音娱乐学习办公平板电脑",
+          "brand": "小米",
+          "price": 3299.0,
+          "reason": "小米平板 8 Pro 12.1英寸高刷大屏影音娱乐学习办公平板电脑 与你的需求「推荐拍照旗舰手机，不要上一款小米」匹配，临时匹配：命中 手机；来自结构化筛选结果。",
+          "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+          "category": "数码电子",
+          "sub_category": "平板电脑"
+        }
+      ],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 16,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 4,
+        "negative_filtered_candidate_count": 3,
+        "retrieved_count": 3,
+        "final_count": 3,
+        "negative_filter_applied": true,
+        "items": [
+          {
+            "product_id": "p_digital_010",
+            "title": "小米 MIX Fold 5 内折大屏旗舰折叠屏手机多任务办公影音利器",
+            "brand": "小米",
+            "rank": 1,
+            "score": 10.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_009",
+            "title": "小米 17 Max 大屏长续航高性能影音游戏5G智能手机12+256GB",
+            "brand": "小米",
+            "rank": 2,
+            "score": 9.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          },
+          {
+            "product_id": "p_digital_011",
+            "title": "小米平板 8 Pro 12.1英寸高刷大屏影音娱乐学习办公平板电脑",
+            "brand": "小米",
+            "rank": 3,
+            "score": 1.0,
+            "score_type": "keyword_weighted_match",
+            "source": "keyword",
+            "evidence": "临时匹配：命中 手机；来自结构化筛选结果。",
+            "retriever_mode": "keyword"
+          }
+        ],
+        "dropped": []
+      },
+      "expected_product_ids": [
+        "p_digital_002",
+        "p_digital_016"
+      ],
+      "expected_category": "数码电子",
+      "expected_brand": null,
+      "must_not_return_product_ids": [
+        "p_digital_008"
+      ],
+      "allow_no_results": false
+    },
+    {
+      "case_id": "no_results_strict_budget_phone",
+      "passed": true,
+      "skipped": false,
+      "failures": [],
+      "items": [],
+      "trace": {
+        "retriever_mode": "keyword",
+        "query_length": 13,
+        "top_k": 3,
+        "source_count": 100,
+        "structured_candidate_count": 0,
+        "negative_filtered_candidate_count": 0,
+        "retrieved_count": 0,
+        "final_count": 0,
+        "negative_filter_applied": false,
+        "items": [],
+        "dropped": []
+      },
+      "expected_product_ids": [],
+      "expected_category": "数码电子",
+      "expected_brand": null,
+      "must_not_return_product_ids": [],
+      "allow_no_results": true
+    }
+  ]
+}

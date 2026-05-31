@@ -29,7 +29,10 @@ def create_conversation_store(config: AppConfig) -> ConversationStore:
     if mode == "sqlite":
         from agent.sqlite_memory import SQLiteConversationStore
 
-        return SQLiteConversationStore(config.conversation_store_path)
+        return SQLiteConversationStore(
+            config.conversation_store_path,
+            update_retries=config.conversation_store_update_retries,
+        )
     raise ValueError("CONVERSATION_STORE_MODE 仅支持 memory 或 sqlite")
 
 

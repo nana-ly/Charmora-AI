@@ -2,7 +2,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api.deps as api_deps
-import api.rag as api_rag
 import api.recommend as api_recommend
 import services.recommendation_service as recommendation_service_module
 import services.retriever_factory as retriever_factory
@@ -56,6 +55,11 @@ class FakeVectorRetriever:
                 product=product,
                 evidence=f"向量召回：匹配“{query}”。",
                 score=0.91,
+                rank=1,
+                source="vector",
+                retriever_mode="vector",
+                score_type="vector_similarity",
+                metadata={"document_preview": "RAG 拍照旗舰手机 摘要"},
             )
         ][:top_k]
 
@@ -196,11 +200,10 @@ def test_recommend_returns_three_product_cards_from_loaded_products(monkeypatch)
 
 
 def test_rag_search_returns_vector_retrieval_debug_results(monkeypatch):
-    monkeypatch.setattr(api_rag, "create_vector_retriever", lambda: FakeVectorRetriever())
     monkeypatch.setattr(
-        retriever_factory,
-        "create_vector_retriever",
-        lambda config=None: FakeVectorRetriever(),
+        api_deps.recommendation_service,
+        "search",
+        lambda query, top_k=5: FakeVectorRetriever().search(query, top_k=top_k),
     )
 
     response = client.post(
@@ -217,9 +220,40 @@ def test_rag_search_returns_vector_retrieval_debug_results(monkeypatch):
             "title": "RAG 拍照旗舰手机",
             "brand": "Apple",
             "score": 0.91,
+            "rank": 1,
+            "source": "vector",
+            "retriever_mode": "vector",
+            "score_type": "vector_similarity",
             "evidence": "向量召回：匹配“预算9000以内，想买拍照好的手机”。",
+            "metadata": {"document_preview": "RAG 拍照旗舰手机 摘要"},
         }
     ]
+
+
+def test_recommend_debug_trace_requires_server_flag(monkeypatch):
+    monkeypatch.setenv("RETRIEVER_MODE", "keyword")
+    monkeypatch.setenv("RECOMMEND_TRACE_ENABLED", "false")
+    refresh_api_recommendation_service()
+
+    disabled = client.post(
+        "/recommend",
+        json={"query": "预算9000以内，想买拍照手机", "debug": True},
+    )
+
+    monkeypatch.setenv("RECOMMEND_TRACE_ENABLED", "true")
+    refresh_api_recommendation_service()
+    enabled = client.post(
+        "/recommend?debug=true",
+        json={"query": "预算9000以内，想买拍照手机"},
+        headers={"X-Debug-Trace": "true"},
+    )
+
+    assert disabled.status_code == 200
+    assert "trace" not in disabled.json()
+    assert enabled.status_code == 200
+    payload = enabled.json()
+    assert payload["trace"]["query_length"] == len("预算9000以内，想买拍照手机")
+    assert payload["trace"]["items"][0]["source"] == "keyword"
 
 
 def test_recommend_uses_vector_retriever_by_default(monkeypatch):

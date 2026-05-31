@@ -9,6 +9,7 @@ class RecommendRequest(BaseModel):
     """推荐接口请求体，接收用户的自然语言需求。"""
 
     query: str
+    debug: bool = False
 
 
 class ExcludedPriceRange(BaseModel):
@@ -38,10 +39,41 @@ class RecommendFilters(BaseModel):
     keywords: list[str] = Field(default_factory=list)
 
 
+class RecommendationTraceItem(BaseModel):
+    """单个推荐结果的脱敏检索 trace。"""
+
+    product_id: str
+    title: str | None = None
+    brand: str | None = None
+    rank: int | None = None
+    score: float | None = None
+    score_type: str | None = None
+    source: str | None = None
+    evidence: str | None = None
+    retriever_mode: str | None = None
+
+
+class RecommendationTrace(BaseModel):
+    """推荐链路内部调试 trace，默认不向普通响应暴露。"""
+
+    retriever_mode: str | None = None
+    query_length: int
+    top_k: int
+    source_count: int
+    structured_candidate_count: int
+    negative_filtered_candidate_count: int
+    retrieved_count: int
+    final_count: int
+    negative_filter_applied: bool
+    items: list[RecommendationTraceItem] = Field(default_factory=list)
+    dropped: list[dict[str, str]] = Field(default_factory=list)
+
+
 class RecommendResponse(BaseModel):
     """推荐接口响应体。"""
 
     query: str
     filters: RecommendFilters
     items: list[ProductCard] = Field(default_factory=list)
+    trace: RecommendationTrace | None = None
 

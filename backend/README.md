@@ -59,7 +59,9 @@ DEFAULT_TOP_K=3
 LOG_LEVEL=INFO
 CONVERSATION_STORE_MODE=memory
 CONVERSATION_STORE_PATH=data/conversations.sqlite3
+CONVERSATION_STORE_UPDATE_RETRIES=3
 AGENT_SESSION_LOCK_ENABLED=true
+RECOMMEND_TRACE_ENABLED=false
 
 embedding_url=https://dashscope.aliyuncs.com/compatible-mode/v1
 embedding_api=
@@ -73,7 +75,7 @@ LLM_MODEL=gpt-4o-mini
 LLM_TIMEOUT_SECONDS=8
 ```
 
-`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`CONVERSATION_STORE_MODE=memory` 使用进程内会话状态；设置为 `sqlite` 时会通过 `CONVERSATION_STORE_PATH` 持久化完整 `ConversationState`，用于本地演示服务重启后恢复同一 `session_id` 的多轮上下文。`AGENT_SESSION_LOCK_ENABLED=true` 会在单个 Python 进程内按 `session_id` 串行化 `/chat` 与 `/chat/stream` 的完整 LangGraph 执行，避免当前 `get_or_create -> mutate -> save` 链路并发覆盖；多 worker、多实例仍需要外部一致性机制。`DEFAULT_TOP_K` 控制推荐默认返回数量。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。
+`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`CONVERSATION_STORE_MODE=memory` 使用进程内会话状态；设置为 `sqlite` 时会通过 `CONVERSATION_STORE_PATH` 持久化完整 `ConversationState`，用于本地演示服务重启后恢复同一 `session_id` 的多轮上下文。`ConversationState.version` 会随 `save()` 或 `update()` 递增；SQLite 会自动为旧表补 `version` 列，并用 `CONVERSATION_STORE_UPDATE_RETRIES` 控制乐观更新重试次数。`AGENT_SESSION_LOCK_ENABLED=true` 会在单个 Python 进程内按 `session_id` 串行化 `/chat` 与 `/chat/stream` 的完整 LangGraph 执行，避免当前 `get_or_create -> mutate -> save` 链路并发覆盖；多 worker、多实例仍需要 Redis/Postgres 等外部一致性机制。`DEFAULT_TOP_K` 控制推荐默认返回数量。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。`RECOMMEND_TRACE_ENABLED=true` 只打开服务端 trace 资格，请求仍需传 `debug=true` 或 `X-Debug-Trace: true` 才会返回脱敏 trace。
 
 理解 Prompt 已外置到 `agent/prompts/understanding_v1.md`，由 `agent.prompt_loader` 按版本读取；读取失败时回退到内置默认 Prompt，并在日志中记录 `prompt_version`。品类、品牌和关键词规则统一从 `agent.catalog_taxonomy` 读取，旧的 `category_rules.py`、`negative_feedback_rules.py` 和 `recommendation_core.filters` 仍保留原 public 函数外观。
 
@@ -106,6 +108,9 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 - `RETRIEVER_MODE=vector` 只使用向量检索；`RETRIEVER_MODE=keyword` 才使用关键词检索。
 - 推荐服务在当前 Python 进程内缓存 `AppConfig`、retriever 和 reason service，`/recommend` 与 Agent 推荐工具共用同一入口。
 - `/ready` 表示推荐依赖是否可用；retriever 初始化失败时返回 `status="not_ready"` 和 HTTP 503，而 `/health` 仍只表示进程存活。
+- `recommend_products(include_trace=True)` 会返回内部 trace；默认响应不含 `trace`。
+- `/recommend` 只有在 `RECOMMEND_TRACE_ENABLED=true` 且请求显式开启 debug 时才返回脱敏 trace。
+- `/rag/search` 复用应用级 `RecommendationService` 的 retriever，输出与推荐链路一致的 `rank/source/retriever_mode/score_type/metadata` 调试字段。
 
 允许保留的可用性处理包括：LLM 推荐理由使用模板理由、Agent 理解层对不可信 LLM 输出做保守兜底、`/chat` 推荐工具异常返回 `tool_error`、`/chat/stream` 在流开始后的未处理异常转换为 SSE `error` 事件。
 
@@ -216,4 +221,12 @@ Agent resilience 相关的确定性测试不需要真实 LLM 凭证。常用定�
 cd backend
 uv run pytest tests/test_agent.py tests/test_main.py -q
 uv run pytest tests/test_main.py::test_chat_tool_error_keeps_response_shape tests/test_main.py::test_chat_stream_tool_error_returns_success_events -q
+```
+
+离线 RAG 检索评估：
+
+```powershell
+cd backend
+uv run pytest tests/test_eval_cases.py tests/test_rag_eval_runner.py -q
+uv run python ..\eval\rag_retrieval_runner.py --retriever-mode keyword --top-k 3
 ```

@@ -104,7 +104,7 @@ class KeywordRetriever(Retriever):
         )
 
         results: list[RetrievalResult] = []
-        for product in ranked_products[:top_k]:
+        for rank, product in enumerate(ranked_products[:top_k], start=1):
             matched_terms = _matched_query_terms(product, query_terms)
             evidence_terms = "、".join(matched_terms) if matched_terms else "结构化筛选"
             results.append(
@@ -112,6 +112,11 @@ class KeywordRetriever(Retriever):
                     product=product,
                     evidence=f"临时匹配：命中 {evidence_terms}；来自结构化筛选结果。",
                     score=float(_score_product(product, query_terms)),
+                    rank=rank,
+                    source="keyword",
+                    retriever_mode="keyword",
+                    score_type="keyword_weighted_match",
+                    metadata={"matched_terms": matched_terms},
                 )
             )
 

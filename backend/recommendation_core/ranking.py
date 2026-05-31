@@ -3,6 +3,11 @@
 from typing import Any
 
 
+_CATEGORY_ALIASES = {
+    "食品生活": {"食品生活", "食品饮料"},
+}
+
+
 def get_product_price(product: dict[str, Any]) -> float:
     """统一读取商品价格，兼容数据中的 base_price 和 price 字段。"""
     if "base_price" in product:
@@ -24,7 +29,10 @@ def structured_filter(
         product_brand = product.get("brand", "")
         product_price = get_product_price(product)
 
-        if filters.get("category") and product_category != filters["category"]:
+        if filters.get("category") and not _same_category(
+            product_category,
+            filters["category"],
+        ):
             continue
 
         if filters.get("max_price") and product_price > filters["max_price"]:
@@ -44,4 +52,12 @@ def choose_candidates(
 ) -> list[dict[str, Any]]:
     """选择候选商品；无结果时返回空列表，不放宽用户给出的约束。"""
     return structured_filter(products, filters)
+
+
+def _same_category(product_category: Any, requested_category: Any) -> bool:
+    """兼容 taxonomy 与历史商品数据中的食品类目命名差异。"""
+    if product_category == requested_category:
+        return True
+    aliases = _CATEGORY_ALIASES.get(str(requested_category), set())
+    return str(product_category) in aliases
 

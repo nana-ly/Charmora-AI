@@ -27,6 +27,11 @@ def test_retriever_interface_returns_retrieval_results():
     assert results[0].product["product_id"] == "p_dummy"
     assert results[0].evidence == "测试检索器返回。"
     assert results[0].score == 1.0
+    assert results[0].rank is None
+    assert results[0].source is None
+    assert results[0].retriever_mode is None
+    assert results[0].score_type is None
+    assert results[0].metadata == {}
 
 
 def test_keyword_retriever_searches_candidates_with_evidence():
@@ -105,6 +110,11 @@ def test_keyword_retriever_returns_retrieval_results():
     assert results[0].product["product_id"] == "p_1"
     assert results[0].evidence == "临时匹配：命中 手机、拍照；来自结构化筛选结果。"
     assert results[0].score >= 1
+    assert results[0].rank == 1
+    assert results[0].source == "keyword"
+    assert results[0].retriever_mode == "keyword"
+    assert results[0].score_type == "keyword_weighted_match"
+    assert results[0].metadata["matched_terms"] == ["手机", "拍照"]
 
 
 def test_build_searchable_text_includes_product_fields():
@@ -156,6 +166,11 @@ def test_vector_retriever_maps_rag_results_to_retrieval_results():
     assert results[0].product == product
     assert results[0].evidence.startswith("向量召回")
     assert results[0].score == 0.92
+    assert results[0].rank == 1
+    assert results[0].source == "vector"
+    assert results[0].retriever_mode == "vector"
+    assert results[0].score_type == "vector_similarity"
+    assert results[0].metadata["document_preview"] == "标题：拍照旗舰手机 营销描述：适合拍照和剪视频。"
 
 
 def test_vector_retriever_returns_empty_results_for_empty_candidates():

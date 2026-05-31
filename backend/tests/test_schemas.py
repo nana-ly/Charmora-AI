@@ -7,6 +7,8 @@ from schemas.recommend import (
     RecommendFilters,
     RecommendRequest,
     RecommendResponse,
+    RecommendationTrace,
+    RecommendationTraceItem,
 )
 
 
@@ -14,6 +16,7 @@ def test_recommend_request_accepts_query():
     request = RecommendRequest(query="预算9000以内，想买拍照好的手机")
 
     assert request.query == "预算9000以内，想买拍照好的手机"
+    assert request.debug is False
 
 
 def test_product_card_contains_android_stable_fields():
@@ -55,6 +58,40 @@ def test_recommend_response_wraps_filters_and_items():
     assert response.filters.category == "数码电子"
     assert response.filters.max_price is None
     assert response.items[0].product_id == "p_digital_001"
+    assert response.trace is None
+
+
+def test_recommendation_trace_schema_keeps_debug_fields_optional():
+    trace = RecommendationTrace(
+        retriever_mode="keyword",
+        query_length=5,
+        top_k=3,
+        source_count=10,
+        structured_candidate_count=4,
+        negative_filtered_candidate_count=3,
+        retrieved_count=2,
+        final_count=1,
+        negative_filter_applied=True,
+        items=[
+            RecommendationTraceItem(
+                product_id="p_1",
+                title="测试商品",
+                brand="测试品牌",
+                rank=1,
+                score=0.8,
+                score_type="keyword_weighted_match",
+                source="keyword",
+                evidence="命中手机。",
+                retriever_mode="keyword",
+            )
+        ],
+        dropped=[{"product_id": "p_2", "reason": "negative_filter"}],
+    )
+
+    dumped = trace.model_dump()
+
+    assert dumped["items"][0]["product_id"] == "p_1"
+    assert dumped["dropped"] == [{"product_id": "p_2", "reason": "negative_filter"}]
 
 
 def test_negative_filters_defaults_are_empty_lists():

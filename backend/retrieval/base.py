@@ -10,11 +10,21 @@ class RetrievalResult:
     """检索结果。
 
     product 保存原始商品字典；evidence 用于解释召回依据；score 方便后续调试排序。
+    trace 字段均有默认值，保证旧测试和轻量 fake retriever 可继续只填核心字段。
     """
 
     product: dict[str, Any]
     evidence: str
     score: float = 0.0
+    rank: int | None = None
+    source: str | None = None
+    retriever_mode: str | None = None
+    score_type: str | None = None
+    metadata: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        if self.metadata is None:
+            object.__setattr__(self, "metadata", {})
 
 
 class Retriever(ABC):

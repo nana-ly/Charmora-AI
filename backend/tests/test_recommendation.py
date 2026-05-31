@@ -22,6 +22,10 @@ class FakeResultRetriever:
                 product=candidates[0],
                 evidence="测试 evidence",
                 score=1.0,
+                rank=1,
+                source="fake",
+                retriever_mode="fake",
+                score_type="fake_score",
             )
         ][:top_k]
 
@@ -42,8 +46,12 @@ class CapturingRetriever:
                 product=product,
                 evidence="test evidence",
                 score=1.0,
+                rank=index,
+                source="fake",
+                retriever_mode="fake",
+                score_type="fake_score",
             )
-            for product in self.candidates[:top_k]
+            for index, product in enumerate(self.candidates[:top_k], start=1)
         ]
 
 
@@ -57,8 +65,12 @@ class IgnoringCandidateRetriever:
                 product=product,
                 evidence="test evidence",
                 score=1.0,
+                rank=index,
+                source="fake",
+                retriever_mode="fake",
+                score_type="fake_score",
             )
-            for product in self.products[:top_k]
+            for index, product in enumerate(self.products[:top_k], start=1)
         ]
 
 
@@ -135,6 +147,27 @@ def test_structured_filter_filters_by_category_budget_and_brand():
     results = structured_filter(products, filters)
 
     assert [product["product_id"] for product in results] == ["p_1"]
+
+
+def test_structured_filter_accepts_food_life_category_alias():
+    products = [
+        {
+            "product_id": "p_food",
+            "category": "食品饮料",
+            "brand": "三顿半",
+            "price": 99,
+        }
+    ]
+    filters = {
+        "category": "食品生活",
+        "max_price": None,
+        "brand": None,
+        "keywords": ["咖啡"],
+    }
+
+    results = structured_filter(products, filters)
+
+    assert [product["product_id"] for product in results] == ["p_food"]
 
 
 def test_choose_candidates_applies_filters_without_relaxing_constraints():
@@ -316,6 +349,50 @@ def test_recommend_products_consumes_retriever_results_directly():
 
     assert response["items"][0]["product_id"] == "p_1"
     assert response["items"][0]["evidence"] == "测试 evidence"
+    assert "trace" not in response
+
+
+def test_recommend_products_include_trace_returns_sanitized_trace():
+    response = recommend_products(
+        "预算9000以内的测试商品",
+        product_source=[
+            {
+                "product_id": "p_1",
+                "title": "测试商品",
+                "brand": "测试品牌",
+                "category": "数码电子",
+                "base_price": 100,
+            }
+        ],
+        top_k=1,
+        retriever=FakeResultRetriever(),
+        include_trace=True,
+    )
+
+    assert response["query"] == "预算9000以内的测试商品"
+    trace = response["trace"]
+    assert trace["query_length"] == len("预算9000以内的测试商品")
+    assert trace["top_k"] == 1
+    assert trace["source_count"] == 1
+    assert trace["structured_candidate_count"] == 1
+    assert trace["negative_filtered_candidate_count"] == 1
+    assert trace["retrieved_count"] == 1
+    assert trace["final_count"] == 1
+    assert trace["negative_filter_applied"] is False
+    assert trace["items"] == [
+        {
+            "product_id": "p_1",
+            "title": "测试商品",
+            "brand": "测试品牌",
+            "rank": 1,
+            "score": 1.0,
+            "score_type": "fake_score",
+            "source": "fake",
+            "evidence": "测试 evidence",
+            "retriever_mode": "fake",
+        }
+    ]
+    assert "query" not in trace
 
 
 def test_recommend_products_filters_excluded_product_ids_before_retrieval():
@@ -412,6 +489,46 @@ def test_recommend_products_final_filter_removes_retriever_violations():
     )
 
     assert [item["product_id"] for item in response["items"]] == ["p_2"]
+
+
+def test_recommend_products_trace_records_final_negative_filter_drop():
+    product_source = [
+        {
+            "product_id": "p_2",
+            "title": "Apple camera phone",
+            "brand": "苹果",
+            "category": "数码电子",
+            "base_price": 5999,
+        }
+    ]
+    retriever = IgnoringCandidateRetriever(
+        [
+            {
+                "product_id": "p_1",
+                "title": "Huawei camera phone",
+                "brand": "华为",
+                "category": "数码电子",
+                "base_price": 4999,
+            },
+            product_source[0],
+        ]
+    )
+
+    response = recommend_products(
+        "camera phone under 7000",
+        product_source=product_source,
+        top_k=2,
+        retriever=retriever,
+        negative_filters=NegativeFilters(excluded_product_ids=["p_1"]),
+        include_trace=True,
+    )
+
+    assert response["trace"]["negative_filter_applied"] is True
+    assert response["trace"]["retrieved_count"] == 2
+    assert response["trace"]["final_count"] == 1
+    assert response["trace"]["dropped"] == [
+        {"product_id": "p_1", "reason": "negative_filter"}
+    ]
 
 
 def test_recommend_products_returns_no_results_after_final_negative_filter():

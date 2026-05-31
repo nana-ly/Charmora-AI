@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from schemas.recommend import NegativeFilters
+
 
 REQUIRED_FIELDS = {
     "id",
@@ -16,6 +18,21 @@ REQUIRED_FIELDS = {
     "expected_result_status",
     "expected_pending_restore_category",
     "expected_keeps_last_successful_items",
+}
+
+RAG_REQUIRED_FIELDS = {
+    "id",
+    "query",
+    "retriever_mode",
+    "top_k",
+    "expected_product_ids",
+    "expected_category",
+    "expected_brand",
+    "expected_excluded_product_ids",
+    "negative_filters",
+    "must_not_return_product_ids",
+    "allow_no_results",
+    "notes",
 }
 
 
@@ -123,3 +140,57 @@ def test_eval_runner_writes_report(tmp_path):
     report_text = report_path.read_text(encoding="utf-8")
     assert "# Shopping Agent Eval Report" in report_text
     assert "case-1" in report_text
+
+
+def test_rag_retrieval_eval_cases_have_required_fields_and_valid_ids():
+    from recommendation_core.data import products
+
+    cases_path = Path(__file__).resolve().parents[2] / "eval" / "rag_retrieval_cases.jsonl"
+    lines = [line for line in cases_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    product_ids = {str(product.get("product_id")) for product in products}
+
+    assert len(lines) >= 15
+
+    seen_ids = set()
+    for line in lines:
+        case = json.loads(line)
+        assert RAG_REQUIRED_FIELDS <= case.keys()
+        assert case["id"] not in seen_ids
+        seen_ids.add(case["id"])
+        assert isinstance(case["query"], str) and case["query"]
+        assert case["retriever_mode"] in {"keyword", "vector", "configured"}
+        assert isinstance(case["top_k"], int) and case["top_k"] > 0
+        assert isinstance(case["allow_no_results"], bool)
+        assert isinstance(case["expected_product_ids"], list)
+        assert isinstance(case["expected_excluded_product_ids"], list)
+        assert isinstance(case["must_not_return_product_ids"], list)
+        NegativeFilters(**case["negative_filters"])
+
+        referenced_ids = (
+            case["expected_product_ids"]
+            + case["expected_excluded_product_ids"]
+            + case["must_not_return_product_ids"]
+        )
+        assert all(product_id in product_ids for product_id in referenced_ids)
+
+
+def _load_rag_eval_runner():
+    import importlib.util
+
+    runner_path = Path(__file__).resolve().parents[2] / "eval" / "rag_retrieval_runner.py"
+    spec = importlib.util.spec_from_file_location("rag_retrieval_runner", runner_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_rag_eval_runner_loads_cases():
+    module = _load_rag_eval_runner()
+
+    cases = module.load_cases(
+        Path(__file__).resolve().parents[2] / "eval" / "rag_retrieval_cases.jsonl"
+    )
+
+    assert len(cases) >= 15
+    assert cases[0]["id"] == "phone_huawei_camera"

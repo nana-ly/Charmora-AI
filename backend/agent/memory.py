@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
@@ -129,6 +129,7 @@ class ConversationState(BaseModel):
     """
 
     session_id: str
+    version: int = 0
     messages: list[ChatMessage] = Field(default_factory=list)
     purchase_need: str | None = None
     preferences: dict[str, Any] = Field(default_factory=dict)
@@ -181,6 +182,22 @@ class ConversationStore(Protocol):
         ...
 
 
+@runtime_checkable
+class VersionedConversationStore(ConversationStore, Protocol):
+    """支持原子更新契约的会话存储。
+
+    mutator 可返回新 state，也可以原地修改后返回 None；实现负责递增版本。
+    """
+
+    def update(
+        self,
+        session_id: str,
+        mutator: Callable[[ConversationState], ConversationState | None],
+    ) -> ConversationState:
+        """原子读取、修改并保存会话状态。"""
+        ...
+
+
 @dataclass(frozen=True)
 class SessionLockInfo:
     """一次会话锁获取结果，用于观测等待耗时。"""
@@ -228,13 +245,31 @@ class InMemoryConversationStore:
 
     def __init__(self):
         self._states: dict[str, ConversationState] = {}
+        self._lock = threading.RLock()
 
     def get_or_create(self, session_id: str) -> ConversationState:
         """获取会话状态；不存在时创建空状态。"""
-        if session_id not in self._states:
-            self._states[session_id] = ConversationState(session_id=session_id)
-        return self._states[session_id]
+        with self._lock:
+            if session_id not in self._states:
+                self._states[session_id] = ConversationState(session_id=session_id)
+            return self._states[session_id]
 
     def save(self, state: ConversationState) -> None:
         """保存会话状态。"""
-        self._states[state.session_id] = state
+        with self._lock:
+            state.version += 1
+            self._states[state.session_id] = state
+
+    def update(
+        self,
+        session_id: str,
+        mutator: Callable[[ConversationState], ConversationState | None],
+    ) -> ConversationState:
+        """在进程内锁保护下更新状态，避免并发写入丢失。"""
+        with self._lock:
+            state = self.get_or_create(session_id)
+            mutated = mutator(state)
+            next_state = state if mutated is None else mutated
+            next_state.version = state.version + 1
+            self._states[session_id] = next_state
+            return next_state

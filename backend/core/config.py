@@ -55,6 +55,8 @@ class AppConfig:
     conversation_store_mode: str = "memory"
     conversation_store_path: str = "data/conversations.sqlite3"
     agent_session_lock_enabled: bool = True
+    conversation_store_update_retries: int = 3
+    recommend_trace_enabled: bool = False
     llm: LLMConfig = field(default_factory=LLMConfig)
     rag: RAGConfig = field(default_factory=RAGConfig)
 
@@ -77,6 +79,12 @@ def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] 
         ),
         agent_session_lock_enabled=(
             os.getenv("AGENT_SESSION_LOCK_ENABLED", "true").lower() == "true"
+        ),
+        conversation_store_update_retries=int(
+            os.getenv("CONVERSATION_STORE_UPDATE_RETRIES", "3")
+        ),
+        recommend_trace_enabled=(
+            os.getenv("RECOMMEND_TRACE_ENABLED", "false").lower() == "true"
         ),
         llm=LLMConfig(
             enabled=os.getenv("LLM_ENABLED", "false").lower() == "true",
