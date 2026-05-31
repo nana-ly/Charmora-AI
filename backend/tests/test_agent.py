@@ -4243,7 +4243,7 @@ def test_legacy_reset_without_canonical_understanding_current_target_still_clear
     runner.run("legacy-reset-without-canonical", "我要看一个新东西")
     saved = store.get_or_create("legacy-reset-without-canonical")
 
-    assert saved.preferences["focus"] == "拍照"
+    assert saved.preferences["focus"] == ["拍照"]
     assert "canonical_target_key" not in saved.preferences
     assert "target_category" not in saved.preferences
     assert "budget" not in saved.preferences

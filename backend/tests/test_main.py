@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 import api.deps as api_deps
 import api.rag as api_rag
 import api.recommend as api_recommend
+import services.recommendation_service as recommendation_service_module
 import services.retriever_factory as retriever_factory
 from agent.memory import InMemoryConversationStore, PurchaseContext
 from agent.runner import create_agent_runner
@@ -17,6 +18,26 @@ from services.recommendation_service import run_recommendation
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def reset_recommendation_service_dependency():
+    recommendation_service_module.reset_recommendation_service_for_tests()
+    api_deps.recommendation_service = (
+        recommendation_service_module.get_recommendation_service()
+    )
+    yield
+    recommendation_service_module.reset_recommendation_service_for_tests()
+    api_deps.recommendation_service = (
+        recommendation_service_module.get_recommendation_service()
+    )
+
+
+def refresh_api_recommendation_service():
+    recommendation_service_module.reset_recommendation_service_for_tests()
+    api_deps.recommendation_service = (
+        recommendation_service_module.get_recommendation_service()
+    )
 
 
 class FakeVectorRetriever:
@@ -99,8 +120,46 @@ def test_health_returns_ok_status():
     assert response.json() == {"status": "ok"}
 
 
+def test_ready_returns_ok_when_recommendation_dependencies_are_ready(monkeypatch):
+    monkeypatch.setattr(
+        api_deps.recommendation_service,
+        "ready",
+        lambda: {"status": "ready", "retriever_mode": "keyword"},
+    )
+
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready", "retriever_mode": "keyword"}
+
+
+def test_ready_returns_503_when_recommendation_dependencies_fail(monkeypatch):
+    monkeypatch.setattr(
+        api_deps.recommendation_service,
+        "ready",
+        lambda: {
+            "status": "not_ready",
+            "retriever_mode": "vector",
+            "error": "missing embedding config",
+        },
+    )
+
+    ready_response = client.get("/ready")
+    health_response = client.get("/health")
+
+    assert ready_response.status_code == 503
+    assert ready_response.json() == {
+        "status": "not_ready",
+        "retriever_mode": "vector",
+        "error": "missing embedding config",
+    }
+    assert health_response.status_code == 200
+    assert health_response.json() == {"status": "ok"}
+
+
 def test_recommend_returns_three_product_cards_from_loaded_products(monkeypatch):
     monkeypatch.setenv("RETRIEVER_MODE", "keyword")
+    refresh_api_recommendation_service()
     response = client.post(
         "/recommend",
         json={"query": "预算9000以内，想买拍照和剪视频好的手机"},
@@ -170,6 +229,7 @@ def test_recommend_uses_vector_retriever_by_default(monkeypatch):
         "create_vector_retriever",
         lambda config=None: FakeVectorRetriever(),
     )
+    refresh_api_recommendation_service()
 
     response = client.post(
         "/recommend",
@@ -192,6 +252,7 @@ def test_recommend_returns_500_when_vector_retriever_fails(monkeypatch):
         "create_vector_retriever",
         fail_create_vector_retriever,
     )
+    refresh_api_recommendation_service()
 
     with pytest.raises(RuntimeError, match="missing embedding config"):
         client.post(
@@ -207,6 +268,7 @@ def test_recommend_returns_500_when_vector_search_fails(monkeypatch):
         "create_vector_retriever",
         lambda config=None: FailingVectorSearchRetriever(),
     )
+    refresh_api_recommendation_service()
 
     with pytest.raises(RuntimeError, match="embedding api failed"):
         client.post(
@@ -249,6 +311,7 @@ def test_chat_uses_vector_retriever_by_default(monkeypatch):
         "create_vector_retriever",
         lambda config=None: FakeVectorRetriever(),
     )
+    refresh_api_recommendation_service()
     inject_recommend_chat_runner(monkeypatch)
 
     response = client.post(
@@ -265,7 +328,10 @@ def test_chat_uses_vector_retriever_by_default(monkeypatch):
     assert payload["items"][0]["evidence"].startswith("向量召回")
 
 
-def test_recommend_supports_budget_without_suffix():
+def test_recommend_supports_budget_without_suffix(monkeypatch):
+    monkeypatch.setenv("RETRIEVER_MODE", "keyword")
+    refresh_api_recommendation_service()
+
     response = client.post(
         "/recommend",
         json={"query": "预算9000想买续航好的学生手机"},
@@ -282,6 +348,8 @@ def test_recommend_supports_budget_without_suffix():
 
 
 def test_chat_returns_agent_response_and_state(monkeypatch):
+    monkeypatch.setenv("RETRIEVER_MODE", "keyword")
+    refresh_api_recommendation_service()
     inject_recommend_chat_runner(monkeypatch)
 
     response = client.post(
@@ -303,6 +371,8 @@ def test_chat_returns_agent_response_and_state(monkeypatch):
 
 
 def test_chat_keeps_response_contract_with_langgraph_runner(monkeypatch):
+    monkeypatch.setenv("RETRIEVER_MODE", "keyword")
+    refresh_api_recommendation_service()
     inject_recommend_chat_runner(
         monkeypatch,
         recommendation_tool=RecommendationTool(

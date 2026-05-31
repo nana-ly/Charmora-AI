@@ -5,69 +5,17 @@
 """
 
 import re
-from collections.abc import Sequence
 from typing import Any
 
+from agent.catalog_taxonomy import (
+    brand_terms,
+    category_keywords,
+    detect_catalog_category,
+)
 
-CATEGORY_KEYWORDS: dict[str, Sequence[str]] = {
-    "数码电子": (
-        "手机",
-        "耳机",
-        "电脑",
-        "拍照",
-        "剪视频",
-        "平板",
-        "笔记本",
-        "续航",
-        "游戏",
-        "办公",
-        "学生",
-        "降噪",
-    ),
-    "美妆护肤": (
-        "护肤产品",
-        "护肤品",
-        "化妆品",
-        "美妆",
-        "精华",
-        "敏感肌",
-        "护肤",
-        "抗初老",
-        "面霜",
-        "防晒",
-        "保湿",
-        "修护",
-        "美白",
-        "油皮",
-        "干皮",
-    ),
-    "服饰运动": (
-        "T恤",
-        "通勤",
-        "运动",
-        "凉快",
-        "速干",
-        "外套",
-        "夏天",
-        "跑步",
-        "健身",
-        "防晒衣",
-    ),
-    "食品生活": (
-        "咖啡",
-        "速溶",
-        "饮品",
-        "新手",
-        "拿铁",
-        "冷萃",
-        "低糖",
-        "早餐",
-        "办公室",
-        "精品",
-    ),
-}
+CATEGORY_KEYWORDS = category_keywords()
 CATEGORY_RULES = CATEGORY_KEYWORDS
-BRAND_RULES = ["Apple", "苹果", "小米", "华为", "雅诗兰黛", "优衣库", "三顿半"]
+BRAND_RULES = list(brand_terms())
 EMPTY_FILTERS: dict[str, Any] = {
     "category": None,
     "max_price": None,
@@ -77,10 +25,7 @@ EMPTY_FILTERS: dict[str, Any] = {
 
 
 def _detect_category(query: str) -> str | None:
-    for category, keywords in CATEGORY_KEYWORDS.items():
-        if any(keyword in query for keyword in keywords):
-            return category
-    return None
+    return detect_catalog_category(query)
 
 
 def create_empty_filters() -> dict[str, Any]:

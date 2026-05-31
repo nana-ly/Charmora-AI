@@ -9,6 +9,7 @@
 
 - `GET /`：服务基本信息。
 - `GET /health`：健康检查。
+- `GET /ready`：推荐依赖就绪检查。
 - `POST /rag/search`：RAG 向量检索调试接口。
 - `POST /recommend`：单轮商品推荐。
 - `POST /chat`：多轮导购对话，使用 LangGraph Runner 维护会话状态并调用推荐工具。
@@ -58,6 +59,7 @@ DEFAULT_TOP_K=3
 LOG_LEVEL=INFO
 CONVERSATION_STORE_MODE=memory
 CONVERSATION_STORE_PATH=data/conversations.sqlite3
+AGENT_SESSION_LOCK_ENABLED=true
 
 embedding_url=https://dashscope.aliyuncs.com/compatible-mode/v1
 embedding_api=
@@ -71,7 +73,9 @@ LLM_MODEL=gpt-4o-mini
 LLM_TIMEOUT_SECONDS=8
 ```
 
-`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`CONVERSATION_STORE_MODE=memory` 使用进程内会话状态；设置为 `sqlite` 时会通过 `CONVERSATION_STORE_PATH` 持久化完整 `ConversationState`，用于本地演示服务重启后恢复同一 `session_id` 的多轮上下文。`DEFAULT_TOP_K` 控制推荐默认返回数量。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。
+`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`CONVERSATION_STORE_MODE=memory` 使用进程内会话状态；设置为 `sqlite` 时会通过 `CONVERSATION_STORE_PATH` 持久化完整 `ConversationState`，用于本地演示服务重启后恢复同一 `session_id` 的多轮上下文。`AGENT_SESSION_LOCK_ENABLED=true` 会在单个 Python 进程内按 `session_id` 串行化 `/chat` 与 `/chat/stream` 的完整 LangGraph 执行，避免当前 `get_or_create -> mutate -> save` 链路并发覆盖；多 worker、多实例仍需要外部一致性机制。`DEFAULT_TOP_K` 控制推荐默认返回数量。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。
+
+理解 Prompt 已外置到 `agent/prompts/understanding_v1.md`，由 `agent.prompt_loader` 按版本读取；读取失败时回退到内置默认 Prompt，并在日志中记录 `prompt_version`。品类、品牌和关键词规则统一从 `agent.catalog_taxonomy` 读取，旧的 `category_rules.py`、`negative_feedback_rules.py` 和 `recommendation_core.filters` 仍保留原 public 函数外观。
 
 ## 日志级别
 
@@ -83,6 +87,7 @@ LLM_TIMEOUT_SECONDS=8
 - `ERROR`：只输出错误。
 
 日志不会记录 API Key、完整用户消息、完整用户 query、完整对话历史或外部服务完整响应。
+每条日志会补充 `request_id`、`session_id`、`turn_id` 字段；`/chat` 支持读取 `X-Request-ID`，Runner 会为每轮对话生成 `turn_id`，并记录六个 LangGraph 节点的 `duration_ms`、`result_count` 和 `fallback_reason`。
 
 本地调试时可临时开启 DEBUG：
 
@@ -99,6 +104,8 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 - 检索结果为空时，`items` 返回空数组。
 - 推荐链路异常时，异常向上抛出，由测试或 API 层暴露错误。
 - `RETRIEVER_MODE=vector` 只使用向量检索；`RETRIEVER_MODE=keyword` 才使用关键词检索。
+- 推荐服务在当前 Python 进程内缓存 `AppConfig`、retriever 和 reason service，`/recommend` 与 Agent 推荐工具共用同一入口。
+- `/ready` 表示推荐依赖是否可用；retriever 初始化失败时返回 `status="not_ready"` 和 HTTP 503，而 `/health` 仍只表示进程存活。
 
 允许保留的可用性处理包括：LLM 推荐理由使用模板理由、Agent 理解层对不可信 LLM 输出做保守兜底、`/chat` 推荐工具异常返回 `tool_error`、`/chat/stream` 在流开始后的未处理异常转换为 SSE `error` 事件。
 
@@ -106,6 +113,7 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 
 `/chat` 和 `/chat/stream` 使用 LangGraph Runner，LLM 理解是主路径，规则只作为安全护栏：
 
+- Runner 只负责编排 LangGraph 节点和保存时机；状态归约、动作执行和对外 `state` 构造分别由 `ConversationStateReducer`、`ActionExecutor`、`ResponseStateBuilder` 承担。
 - 明显完整的购买请求在 LLM 不可用、输出缺字段、JSON 无法解析或校验失败时，会通过保守 fallback 转成 `recommend`。
 - 用户切换购物目标时，当前购买上下文会先归档，再清空活跃推荐状态，避免新旧品类偏好混在一起。
 - 用户疑似回到旧品类时，后端先询问是否恢复之前需求；确认后恢复归档上下文，拒绝后按新约束推荐。
@@ -176,6 +184,14 @@ backend/
   retrieval/               检索抽象、关键词检索、RAG 向量检索适配器
   llm/                     LLM 客户端、Agent 意图解析适配、推荐理由生成
   agent/                   多轮 Agent、Runner 工厂和 LangGraph 编排器
+    catalog_taxonomy.py     统一品类、品牌和关键词规则来源
+    state_models.py         preferences/negative updates/result state typed helper
+    prompt_loader.py        版本化 Prompt 加载和 fallback
+    prompts/                理解 Prompt markdown 模板
+    graph/
+      state_reducer.py      会话状态归约和负反馈应用
+      action_executor.py    推荐、解释、对比等动作执行
+      response_state_builder.py ChatResponse.state 构造
     tools/                 Agent 工具包，保留 from agent.tools import ... 兼容导入
       recommendation.py    RecommendationTool，封装推荐链调用
       explain.py           ExplainTool，只解释上一轮真实商品

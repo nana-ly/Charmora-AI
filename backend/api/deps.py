@@ -3,7 +3,19 @@
 from agent.runner import create_agent_runner
 from agent.tools import RecommendationTool
 from schemas.chat import ChatResponse
-from services.recommendation_service import run_recommendation
+from services.recommendation_service import get_recommendation_service
+
+
+recommendation_service = get_recommendation_service()
+
+
+def run_recommendation(query, top_k=None, negative_filters=None):
+    """共享推荐服务入口，供 API 和 Agent 工具复用同一份缓存。"""
+    return recommendation_service.recommend(
+        query,
+        top_k=top_k,
+        negative_filters=negative_filters,
+    )
 
 
 agent_runner = create_agent_runner(

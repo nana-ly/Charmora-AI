@@ -13,6 +13,7 @@ http://127.0.0.1:8000
 ```http
 GET  /
 GET  /health
+GET  /ready
 POST /recommend
 POST /rag/search
 POST /chat
@@ -30,6 +31,33 @@ Response:
 ```json
 {
   "status": "ok"
+}
+```
+
+`/health` 只表示 FastAPI 进程存活，不初始化或检查推荐依赖。
+
+## Ready
+
+```http
+GET /ready
+```
+
+推荐依赖可用时：
+
+```json
+{
+  "status": "ready",
+  "retriever_mode": "vector"
+}
+```
+
+retriever 初始化失败时返回 HTTP 503：
+
+```json
+{
+  "status": "not_ready",
+  "retriever_mode": "vector",
+  "error": "missing embedding config"
 }
 ```
 
@@ -102,6 +130,7 @@ Response:
 | `items[].evidence` | `string` | 中文匹配依据。 |
 
 推荐链路不会为无结果或异常伪造商品。检索结果为空时 `items` 是 `[]`；推荐链路异常时异常向上暴露。
+后端会在当前 Python 进程内缓存推荐服务的配置、retriever 和 reason service；`/recommend` 与 `/chat` 中的推荐工具共用同一个推荐入口。
 
 ## RAG Search
 
@@ -254,10 +283,10 @@ start -> error -> done
 
 ```text
 api.recommend
-  -> services.recommendation_service.run_recommendation
-  -> services.retriever_factory.select_retriever
+  -> api.deps.run_recommendation
+  -> services.recommendation_service.RecommendationService.recommend
+  -> cached Retriever.search
   -> recommendation_core.pipeline.recommend_products
-  -> Retriever.search
   -> recommendation_core.response_builder.build_response_item
   -> return {"query", "filters", "items"}
 ```

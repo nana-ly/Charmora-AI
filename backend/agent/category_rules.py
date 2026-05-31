@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
 
 from pydantic import BaseModel
 
+from agent.catalog_taxonomy import (
+    brand_terms,
+    canonical_key_for,
+    catalog_category_for_target,
+    target_category_aliases,
+)
 
 class TargetCategoryMatch(BaseModel):
     target_category: str
@@ -15,30 +20,7 @@ class TargetCategoryMatch(BaseModel):
     canonical_target_key: str
 
 
-TARGET_CATEGORY_ALIASES: Sequence[tuple[str, str, str, str]] = tuple(
-    sorted(
-        (
-            ("护肤产品", "护肤产品", "美妆护肤", "skin_care"),
-            ("护肤品", "护肤品", "美妆护肤", "skin_care"),
-            ("化妆品", "护肤品", "美妆护肤", "skin_care"),
-            ("笔记本", "笔记本", "数码电子", "laptop"),
-            ("防晒", "防晒", "美妆护肤", "skin_care"),
-            ("面霜", "面霜", "美妆护肤", "skin_care"),
-            ("护肤", "护肤", "美妆护肤", "skin_care"),
-            ("美妆", "护肤品", "美妆护肤", "skin_care"),
-            ("手机", "手机", "数码电子", "phone"),
-            ("耳机", "耳机", "数码电子", "headphones"),
-            ("电脑", "电脑", "数码电子", "computer"),
-            ("平板", "平板", "数码电子", "tablet"),
-            ("咖啡", "咖啡", "食品生活", "coffee"),
-            ("饮品", "饮品", "食品生活", "beverage"),
-            ("T恤", "T恤", "服饰运动", "t_shirt"),
-            ("外套", "外套", "服饰运动", "jacket"),
-        ),
-        key=lambda item: len(item[0]),
-        reverse=True,
-    )
-)
+TARGET_CATEGORY_ALIASES = target_category_aliases()
 
 PURCHASE_SIGNALS = (
     "想买",
@@ -75,7 +57,7 @@ FOCUS_TERMS = (
     "凉快",
 )
 
-BRAND_TERMS = ("华为", "小米", "苹果", "荣耀", "OPPO", "vivo", "三星")
+BRAND_TERMS = brand_terms()
 RESTORE_CONTEXT_TERMS = ("之前", "恢复", "按之前", "就之前")
 RESTORE_ACTION_TERMS = ("恢复之前", "按之前", "就之前")
 CONFIRMATION_PREFIXES = ("对", "是的", "可以")
@@ -105,23 +87,11 @@ def canonical_target_key(
     target_category: str | None,
     catalog_category: str | None = None,
 ) -> str | None:
-    if not target_category and not catalog_category:
-        return None
-    for _, canonical, catalog, key in TARGET_CATEGORY_ALIASES:
-        if target_category == canonical:
-            return key
-    if target_category:
-        for alias, _, _, key in TARGET_CATEGORY_ALIASES:
-            if target_category == alias:
-                return key
-    return None
+    return canonical_key_for(target_category, catalog_category)
 
 
 def catalog_category_for(target_category: str) -> str | None:
-    for _, canonical, catalog_category, _ in TARGET_CATEGORY_ALIASES:
-        if canonical == target_category:
-            return catalog_category
-    return None
+    return catalog_category_for_target(target_category)
 
 
 def has_purchase_signal(message: str) -> bool:

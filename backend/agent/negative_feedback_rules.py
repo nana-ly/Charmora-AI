@@ -6,7 +6,9 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
-from agent.category_rules import BRAND_TERMS
+from agent.catalog_taxonomy import brand_terms
+
+BRAND_TERMS = brand_terms()
 
 _CHINESE_INDEX_NUMBER = "一二三四五六七八九十两"
 NegativeFeedbackUpdates = dict[str, Any]

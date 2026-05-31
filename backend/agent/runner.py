@@ -6,7 +6,7 @@ API 层只依赖 AgentRunner 协议，不关心 LangGraph Runner 的内部编排
 
 from typing import Protocol
 
-from agent.memory import ConversationStore, InMemoryConversationStore
+from agent.memory import ConversationStore, InMemoryConversationStore, SessionLockManager
 from agent.tools import RecommendationTool
 from agent.understanding import LLMUserUnderstandingService, UserUnderstandingService
 from core.config import AppConfig, load_app_config
@@ -61,6 +61,8 @@ def create_agent_runner(
             recommendation_tool=shared_tool,
             understanding_service=shared_understanding_service,
             llm_config=selected_config.llm,
+            session_lock_manager=SessionLockManager(),
+            session_lock_enabled=selected_config.agent_session_lock_enabled,
         )
 
     raise ValueError("AGENT_RUNNER 仅支持 langgraph")

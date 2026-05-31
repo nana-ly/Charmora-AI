@@ -1,12 +1,18 @@
 """对话状态存储模块。"""
 
+from contextlib import contextmanager
 from copy import deepcopy
+from dataclasses import dataclass
+import threading
+import time
+from collections.abc import Iterator
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
 from agent.category_rules import canonical_target_key
 from agent.negative_feedback_models import NegativeFeedbackItem
+from agent.state_models import PurchasePreferences
 from schemas.chat import ChatMessage
 from schemas.product import ProductCard
 from schemas.recommend import ExcludedPriceRange, RecommendFilters
@@ -150,6 +156,14 @@ class ConversationState(BaseModel):
     pending_restore_category: str | None = None
     pending_restore_display_target: str | None = None
 
+    def preferences_model(self) -> PurchasePreferences:
+        """以 typed helper 读取偏好，持久化层仍保留 dict 兼容旧会话。"""
+        return PurchasePreferences.from_dict(self.preferences)
+
+    def apply_preferences_model(self, model: PurchasePreferences) -> None:
+        """把 typed helper 写回 dict，确保旧 JSON 字段不会被意外丢掉。"""
+        self.preferences = model.to_dict()
+
 
 @runtime_checkable
 class ConversationStore(Protocol):
@@ -165,6 +179,45 @@ class ConversationStore(Protocol):
     def save(self, state: ConversationState) -> None:
         """保存会话状态。"""
         ...
+
+
+@dataclass(frozen=True)
+class SessionLockInfo:
+    """一次会话锁获取结果，用于观测等待耗时。"""
+
+    session_id: str
+    wait_ms: float
+
+
+class SessionLockManager:
+    """按 session_id 维护进程内锁。
+
+    这层锁只保护当前 Python 进程内的并发 Runner 调用；多 worker、多实例仍需要
+    Redis/Postgres 等外部一致性机制，不能把它视为分布式锁。
+    """
+
+    def __init__(self):
+        self._locks: dict[str, threading.RLock] = {}
+        self._locks_guard = threading.Lock()
+
+    @contextmanager
+    def locked(self, session_id: str) -> Iterator[SessionLockInfo]:
+        """获取指定会话的可重入锁，并返回本次等待耗时。"""
+        lock = self._get_lock(session_id)
+        started_at = time.perf_counter()
+        lock.acquire()
+        wait_ms = (time.perf_counter() - started_at) * 1000
+        try:
+            yield SessionLockInfo(session_id=session_id, wait_ms=wait_ms)
+        finally:
+            lock.release()
+
+    def _get_lock(self, session_id: str) -> threading.RLock:
+        # 锁表创建本身需要单独保护，避免同一个 session 并发创建出两把锁。
+        with self._locks_guard:
+            if session_id not in self._locks:
+                self._locks[session_id] = threading.RLock()
+            return self._locks[session_id]
 
 
 class InMemoryConversationStore:
