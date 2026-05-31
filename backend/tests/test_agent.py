@@ -626,7 +626,7 @@ def test_compare_tool_clarifies_without_previous_items():
     assert "上一轮推荐结果" in result.clarifying_question
 
 
-def test_compare_tool_clarifies_when_indexes_are_insufficient():
+def test_compare_tool_clarifies_when_missing_two_indexes():
     from agent.tools import CompareTool
     from agent.understanding import AgentAction
 
@@ -641,7 +641,7 @@ def test_compare_tool_clarifies_when_indexes_are_insufficient():
     assert "两个商品序号" in result.clarifying_question
 
 
-def test_compare_tool_clarifies_when_indexes_are_duplicate():
+def test_compare_tool_clarifies_same_item_compare():
     from agent.tools import CompareTool
     from agent.understanding import AgentAction
 
@@ -656,7 +656,7 @@ def test_compare_tool_clarifies_when_indexes_are_duplicate():
     assert "两个不同" in result.clarifying_question
 
 
-def test_compare_tool_clarifies_when_indexes_are_out_of_range():
+def test_compare_tool_clarifies_out_of_range_indexes():
     from agent.tools import CompareTool
     from agent.understanding import AgentAction
 
@@ -1622,6 +1622,86 @@ def test_recommendation_tool_wraps_recommendation_pipeline():
     assert result.query == "预算9000以内的拍照手机"
     assert len(result.items) == 2
     assert result.filters.category == "数码电子"
+
+
+def test_agent_tools_facade_exports_split_tool_classes():
+    from agent.tools import CompareTool, ExplainTool, RecommendationTool
+    from agent.tools.compare import CompareTool as CompareToolFromModule
+    from agent.tools.explain import ExplainTool as ExplainToolFromModule
+    from agent.tools.recommendation import RecommendationTool as RecommendationToolFromModule
+
+    assert RecommendationTool is RecommendationToolFromModule
+    assert ExplainTool is ExplainToolFromModule
+    assert CompareTool is CompareToolFromModule
+
+
+def test_recommendation_tool_does_not_pass_negative_filters_to_legacy_callables():
+    from schemas.recommend import NegativeFilters
+
+    captured = {}
+
+    def legacy_recommendation(query: str, top_k: int = 3):
+        captured["query"] = query
+        captured["top_k"] = top_k
+        return {
+            "query": query,
+            "filters": {
+                "category": None,
+                "max_price": None,
+                "brand": None,
+                "keywords": [],
+            },
+            "items": [],
+        }
+
+    result = RecommendationTool(recommend_func=legacy_recommendation).run(
+        "phone",
+        top_k=2,
+        negative_filters=NegativeFilters(excluded_brands=["Apple"]),
+    )
+
+    assert result.query == "phone"
+    assert captured == {"query": "phone", "top_k": 2}
+
+
+def test_recommendation_tool_passes_negative_filters_when_supported():
+    from schemas.recommend import NegativeFilters
+
+    captured = {}
+
+    def recommendation_with_negative_filters(
+        query: str,
+        top_k: int = 3,
+        negative_filters: NegativeFilters | None = None,
+    ):
+        captured["query"] = query
+        captured["top_k"] = top_k
+        captured["negative_filters"] = negative_filters
+        return {
+            "query": query,
+            "filters": {
+                "category": None,
+                "max_price": None,
+                "brand": None,
+                "keywords": [],
+            },
+            "items": [],
+        }
+
+    negative_filters = NegativeFilters(excluded_brands=["Apple"])
+
+    result = RecommendationTool(recommend_func=recommendation_with_negative_filters).run(
+        "phone",
+        top_k=2,
+        negative_filters=negative_filters,
+    )
+
+    assert result.query == "phone"
+    assert captured == {
+        "query": "phone",
+        "top_k": 2,
+        "negative_filters": negative_filters,
+    }
 
 
 def test_build_recommendation_query_adds_structured_target_and_budget():
@@ -4555,7 +4635,7 @@ def test_reply_builder_negative_noop_already_excluded_copy():
     assert reply == "已经排除过这个条件了，我会继续按当前排除条件筛选。"
 
 
-def test_explain_tool_selects_valid_previous_item():
+def test_explain_tool_selects_existing_item():
     from agent.tools import ExplainTool
 
     items = [

@@ -176,6 +176,10 @@ backend/
   retrieval/               检索抽象、关键词检索、RAG 向量检索适配器
   llm/                     LLM 客户端、Agent 意图解析适配、推荐理由生成
   agent/                   多轮 Agent、Runner 工厂和 LangGraph 编排器
+    tools/                 Agent 工具包，保留 from agent.tools import ... 兼容导入
+      recommendation.py    RecommendationTool，封装推荐链调用
+      explain.py           ExplainTool，只解释上一轮真实商品
+      compare.py           CompareTool，只对比上一轮真实商品
     sqlite_memory.py       SQLiteConversationStore，会话状态持久化实现
   tests/                   后端测试
 ```
