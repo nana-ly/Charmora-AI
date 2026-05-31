@@ -18,7 +18,7 @@ def extract_negative_updates(message: str) -> dict[str, Any]:
         return {}
 
     if any(term in text for term in ("这几个都不要", "这些都不要")):
-        return {"unsupported_negative_type": "bulk_item_exclusion"}
+        return {"exclude_all_last_items": True}
 
     cancel_item_removal = _extract_cancel_item_index_removal(text)
     if cancel_item_removal:
@@ -27,12 +27,16 @@ def extract_negative_updates(message: str) -> dict[str, Any]:
             "unsupported_negative_type": "remove_item_index",
         }
 
-    if _has_chinese_item_index_exclusion(text):
-        return {"unsupported_negative_type": "item_index_chinese_number"}
+    chinese_item_exclusion = _extract_chinese_item_index_exclusion(text)
+    if chinese_item_exclusion:
+        return {"excluded_item_indexes": [chinese_item_exclusion]}
 
     item_exclusion = _extract_item_index_exclusion(text)
     if item_exclusion:
         return {"excluded_item_indexes": [item_exclusion]}
+
+    if _extract_current_item_reference_exclusion(text):
+        return {"excluded_item_reference": "current"}
 
     item_removal = _extract_item_index_removal(text)
     if item_removal:
@@ -61,6 +65,11 @@ def _negative_phrase_patterns() -> Sequence[str]:
     return (
         r"(?:不要|不买|不考虑|排除)\s*第\s*\d+\s*[个款]?",
         r"第\s*\d+\s*[个款]?\s*(?:不要|不买|不考虑|排除)",
+        rf"(?:不要|排除|不考虑)\s*第\s*[{_CHINESE_INDEX_NUMBER}]+\s*[个款]?",
+        rf"第\s*[{_CHINESE_INDEX_NUMBER}]+\s*[个款]?\s*(?:不要|排除|不考虑)",
+        r"(?:不要|排除|不考虑)\s*(?:这个|这个商品|刚才那个|刚刚那个)",
+        r"(?:这个|这个商品|刚才那个|刚刚那个)\s*(?:不要|排除|不考虑)",
+        r"(?:这几个都不要|这些都不要)",
         rf"(?:不要|不买|不考虑|排除|别要|避开)\s*(?:{brand_names})",
         rf"(?:{brand_names})\s*(?:(?:也)?(?:可以|行)\s*)?(?:不要|不买|不考虑|排除)",
     )
@@ -96,12 +105,49 @@ def _extract_cancel_item_index_removal(text: str) -> int | None:
     return _first_index_match(text, (r"取消排除\s*第\s*(\d+)\s*[个款]?",))
 
 
-def _has_chinese_item_index_exclusion(text: str) -> bool:
-    chinese_index = rf"第\s*[{_CHINESE_INDEX_NUMBER}]+\s*[个款]?"
-    return bool(
-        re.search(rf"(?:不要|排除|不考虑)\s*{chinese_index}", text)
-        or re.search(rf"{chinese_index}\s*(?:不要|排除|不考虑)", text)
+_CHINESE_INDEX_VALUES = {
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
+
+
+def _parse_chinese_index(value: str) -> int | None:
+    value = value.strip()
+    if value in _CHINESE_INDEX_VALUES:
+        return _CHINESE_INDEX_VALUES[value]
+    if value.startswith("十") and len(value) == 2:
+        suffix = _CHINESE_INDEX_VALUES.get(value[1])
+        return 10 + suffix if suffix else None
+    if value.endswith("十") and len(value) == 2:
+        prefix = _CHINESE_INDEX_VALUES.get(value[0])
+        return prefix * 10 if prefix else None
+    if "十" in value and len(value) == 3:
+        prefix = _CHINESE_INDEX_VALUES.get(value[0])
+        suffix = _CHINESE_INDEX_VALUES.get(value[2])
+        return prefix * 10 + suffix if prefix and suffix else None
+    return None
+
+
+def _extract_chinese_item_index_exclusion(text: str) -> int | None:
+    chinese_index = rf"第\s*([{_CHINESE_INDEX_NUMBER}]+)\s*[个款]?"
+    patterns = (
+        rf"(?:不要|排除|不考虑)\s*{chinese_index}",
+        rf"{chinese_index}\s*(?:不要|排除|不考虑)",
     )
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return _parse_chinese_index(match.group(1))
+    return None
 
 
 def _extract_item_index_exclusion(text: str) -> int | None:
@@ -110,6 +156,13 @@ def _extract_item_index_exclusion(text: str) -> int | None:
         r"第\s*(\d+)\s*[个款]?\s*(?:不要|排除|不考虑)",
     )
     return _first_index_match(text, patterns)
+
+
+def _extract_current_item_reference_exclusion(text: str) -> bool:
+    return bool(
+        re.search(r"(?:不要|排除|不考虑)\s*(?:这个|这个商品|刚才那个|刚刚那个)", text)
+        or re.search(r"(?:这个|这个商品|刚才那个|刚刚那个)\s*(?:不要|排除|不考虑)", text)
+    )
 
 
 def _first_index_match(text: str, patterns: tuple[str, ...]) -> int | None:

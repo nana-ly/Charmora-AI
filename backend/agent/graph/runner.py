@@ -26,8 +26,18 @@ from agent.negative_feedback import (
 )
 from agent.negative_feedback_models import NegativeFeedbackApplicationResult
 from agent.negative_feedback_rules import extract_negative_updates
+from agent.policy import decide_next_action
 from agent.query_builder import build_recommendation_query
-from agent.tools import RecommendationTool
+from agent.reply_builder import (
+    build_clarify_reply,
+    build_compare_reply,
+    build_explain_reply,
+    build_negative_feedback_noop_reply,
+    build_no_results_reply,
+    build_recommendation_reply,
+    build_tool_error_reply,
+)
+from agent.tools import CompareTool, ExplainTool, RecommendationTool
 from agent.understanding import (
     ActionResult,
     AgentAction,
@@ -45,6 +55,13 @@ from schemas.product import ProductCard
 from schemas.recommend import RecommendResponse
 
 logger = logging.getLogger(__name__)
+
+# 这些负反馈都依赖“上一轮商品列表”，模型未显式给出目标时应沿用当前活跃目标。
+ITEM_SCOPED_NEGATIVE_UPDATE_KEYS = {
+    "excluded_item_indexes",
+    "excluded_item_reference",
+    "exclude_all_last_items",
+}
 
 
 class ShoppingAgentState(TypedDict, total=False):
@@ -74,22 +91,14 @@ class LangGraphAgentRunner:
     ):
         self.store = store
         self.recommendation_tool = recommendation_tool
+        self.explain_tool = ExplainTool()
+        self.compare_tool = CompareTool()
         self.llm_config = llm_config or load_app_config().llm
         self.understanding_service = understanding_service or LLMUserUnderstandingService(
             config=self.llm_config
         )
 
         self.graph = self._build_graph()
-
-    def _build_negative_feedback_noop_reply(
-        self,
-        negative_feedback: NegativeFeedbackApplicationResult | None,
-    ) -> str:
-        if negative_feedback and negative_feedback.noop_reason == "already_excluded":
-            return "已经排除过这个条件了，我会继续按当前排除条件筛选。"
-        if negative_feedback and negative_feedback.ack_message:
-            return negative_feedback.ack_message
-        return "收到，我会继续按当前条件筛选。"
 
     def run(self, session_id: str, message: str) -> ChatResponse:
         logger.info("agent run started session_id=%s", session_id)
@@ -203,9 +212,11 @@ class LangGraphAgentRunner:
         current_target_key = updates.get("canonical_target_key")
         if not isinstance(current_target_key, str):
             current_target_key = None
+        negative_update_keys = set(understanding.negative_updates)
         if (
             current_target_key is None
-            and set(understanding.negative_updates) == {"excluded_item_indexes"}
+            and negative_update_keys
+            and negative_update_keys.issubset(ITEM_SCOPED_NEGATIVE_UPDATE_KEYS)
         ):
             current_target_key = active_key_before
 
@@ -266,30 +277,13 @@ class LangGraphAgentRunner:
         }
 
     def _decide_next_action(self, state: ShoppingAgentState) -> dict[str, AgentAction]:
-        understanding = state["understanding"]
-        conversation = state["conversation"]
-        negative_feedback = state.get("negative_feedback_result")
-
-        if negative_feedback and negative_feedback.needs_clarification:
-            return {"action": AgentAction.CLARIFY}
-        if negative_feedback and negative_feedback.noop:
-            return {"action": AgentAction.REPLY_ONLY}
-        if negative_feedback and (
-            negative_feedback.applied or negative_feedback.removed
-        ):
-            if conversation.purchase_need:
-                return {"action": AgentAction.RECOMMEND}
-            return {"action": AgentAction.CLARIFY}
-        if negative_feedback and negative_feedback.detected and not conversation.purchase_need:
-            return {"action": AgentAction.CLARIFY}
-
-        if understanding.intent == UserIntent.EXPLAIN:
-            return {"action": AgentAction.EXPLAIN}
-        if understanding.intent == UserIntent.CLARIFY:
-            return {"action": AgentAction.CLARIFY}
-        if conversation.purchase_need:
-            return {"action": AgentAction.RECOMMEND}
-        return {"action": AgentAction.CLARIFY}
+        return {
+            "action": decide_next_action(
+                state["understanding"],
+                state["conversation"],
+                state.get("negative_feedback_result"),
+            )
+        }
 
     def _execute_action(self, state: ShoppingAgentState) -> dict[str, ActionResult]:
         action = state["action"]
@@ -310,6 +304,14 @@ class LangGraphAgentRunner:
                 "action_result": self._execute_explain(
                     conversation,
                     understanding.target_item_index,
+                )
+            }
+
+        if action == AgentAction.COMPARE:
+            return {
+                "action_result": self.compare_tool.run(
+                    items=conversation.last_items,
+                    compare_item_indexes=understanding.compare_item_indexes,
                 )
             }
 
@@ -343,45 +345,32 @@ class LangGraphAgentRunner:
 
         if action_result.reply_type == "negative_feedback_noop_reply":
             return {
-                "reply": self._build_negative_feedback_noop_reply(
+                "reply": build_negative_feedback_noop_reply(
                     action_result.negative_feedback
                 ),
                 "items": action_result.items,
             }
 
-        if (
-            action_result.reply_type == "recommendation_reply"
-            and action_result.negative_feedback
-            and action_result.negative_feedback.ack_message
-        ):
-            return {
-                "reply": (
-                    f"{action_result.negative_feedback.ack_message}"
-                    "我根据你的需求筛选了这几款商品，可以先看第一款的匹配理由。"
-                ),
-                "items": action_result.items,
-            }
-
-        if (
-            action_result.reply_type == "recommendation_reply"
-            and state.get("current_turn_is_broad") is True
-        ):
-            target = state["conversation"].preferences.get("target_category") or "这个品类"
-            return {
-                "reply": f"我先按{target}这个品类给你挑几款代表商品，你可以再告诉我预算、品牌或使用场景。",
-                "items": action_result.items,
-            }
-
         if action_result.reply_type == "recommendation_reply":
-            reply = "我根据你的需求筛选了这几款商品，可以先看第一款的匹配理由。"
+            target_category = state["conversation"].preferences.get("target_category")
+            reply = build_recommendation_reply(
+                items=action_result.items,
+                negative_feedback=action_result.negative_feedback,
+                current_turn_is_broad=state.get("current_turn_is_broad") is True,
+                target_category=(
+                    target_category if isinstance(target_category, str) else None
+                ),
+            )
         elif action_result.reply_type == "explain_reply":
-            reply = self._build_explain_reply(action_result)
+            reply = build_explain_reply(action_result)
+        elif action_result.reply_type == "compare_reply":
+            reply = build_compare_reply(action_result)
         elif action_result.reply_type == "no_results_reply":
-            reply = self._build_no_results_reply(action_result.no_results)
+            reply = build_no_results_reply(action_result.no_results)
         elif action_result.reply_type == "tool_error_reply":
-            reply = "推荐服务暂时不可用，可以稍后重试或放宽条件。"
+            reply = build_tool_error_reply()
         else:
-            reply = action_result.clarifying_question or "可以告诉我想买的品类、预算和最在意的点吗？"
+            reply = build_clarify_reply(action_result.clarifying_question)
 
         return {"reply": reply, "items": action_result.items}
 
@@ -479,31 +468,14 @@ class LangGraphAgentRunner:
         conversation: ConversationState,
         target_item_index: int | None,
     ) -> ActionResult:
-        if not conversation.last_items:
-            return ActionResult(
-                action=AgentAction.CLARIFY,
-                reply_type="clarify_reply",
-                items=[],
-                clarifying_question="我还没有上一轮推荐结果，可以先告诉我品类、预算和偏好。",
-            )
-
-        selected_index = target_item_index or conversation.target_item_index or 1
-        zero_based_index = selected_index - 1
-        if zero_based_index < 0 or zero_based_index >= len(conversation.last_items):
-            return ActionResult(
-                action=AgentAction.CLARIFY,
-                reply_type="clarify_reply",
-                items=conversation.last_items,
-                clarifying_question="你想了解第几款商品？可以告诉我对应序号。",
-            )
-
-        conversation.target_item_index = selected_index
-        return ActionResult(
-            action=AgentAction.EXPLAIN,
-            reply_type="explain_reply",
+        result = self.explain_tool.run(
             items=conversation.last_items,
-            target_item_index=selected_index,
+            target_item_index=target_item_index,
+            fallback_item_index=conversation.target_item_index,
         )
+        if result.reply_type == "explain_reply":
+            conversation.target_item_index = result.target_item_index
+        return result
 
     def _merge_preferences(
         self,
@@ -640,27 +612,3 @@ class LangGraphAgentRunner:
         if not options:
             options = ["放宽预算", "放宽品牌或品类", "告诉我哪个条件最重要"]
         return options[:3]
-
-    def _build_explain_reply(self, action_result: ActionResult) -> str:
-        index = action_result.target_item_index or 1
-        item = action_result.items[index - 1]
-        return f"因为{item.evidence}，所以我优先推荐 {item.title}。"
-
-    def _build_no_results_reply(
-        self,
-        suggestion: NoResultsSuggestion | None,
-    ) -> str:
-        if suggestion is None:
-            return "我暂时没有找到完全匹配的商品。你可以放宽预算、品牌或品类条件。"
-
-        options = "、".join(suggestion.relax_options)
-        blockers = "、".join(suggestion.blocking_constraints)
-        if blockers:
-            return (
-                f"我暂时没有找到完全满足“{suggestion.purchase_need}”的商品。"
-                f"主要限制可能是{blockers}。你可以选择{options}。"
-            )
-        return (
-            f"我暂时没有找到完全满足“{suggestion.purchase_need}”的商品。"
-            f"你可以选择{options}。"
-        )

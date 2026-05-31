@@ -21,6 +21,18 @@ class AgentRunner(Protocol):
         ...
 
 
+def create_conversation_store(config: AppConfig) -> ConversationStore:
+    """按配置创建会话存储；显式注入 store 时不会调用这里。"""
+    mode = config.conversation_store_mode.strip().lower()
+    if mode == "memory":
+        return InMemoryConversationStore()
+    if mode == "sqlite":
+        from agent.sqlite_memory import SQLiteConversationStore
+
+        return SQLiteConversationStore(config.conversation_store_path)
+    raise ValueError("CONVERSATION_STORE_MODE 仅支持 memory 或 sqlite")
+
+
 def create_agent_runner(
     *,
     config: AppConfig | None = None,
@@ -35,7 +47,7 @@ def create_agent_runner(
     """
     selected_config = config or load_app_config()
     runner_name = selected_config.agent_runner.strip().lower()
-    shared_store = store or InMemoryConversationStore()
+    shared_store = store or create_conversation_store(selected_config)
     shared_tool = recommendation_tool or RecommendationTool()
     shared_understanding_service = understanding_service or LLMUserUnderstandingService(
         config=selected_config.llm

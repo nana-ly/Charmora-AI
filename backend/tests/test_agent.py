@@ -38,6 +38,7 @@ def make_understanding(
     preference_updates=None,
     negative_updates=None,
     target_item_index=None,
+    compare_item_indexes=None,
     clarifying_question=None,
     confidence=0.9,
     reset_context=False,
@@ -52,6 +53,7 @@ def make_understanding(
         preference_updates=preference_updates or {},
         negative_updates=negative_updates or {},
         target_item_index=target_item_index,
+        compare_item_indexes=compare_item_indexes or [],
         clarifying_question=clarifying_question,
         reset_context=reset_context,
         restore_context_category=restore_context_category,
@@ -342,6 +344,99 @@ def test_fallback_understanding_does_not_invent_context_for_too_expensive():
     assert understanding is None
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "第一个和第二个哪个好？",
+        "第1个和第2个哪个好？",
+        "第1款和第2款有什么区别？",
+    ],
+)
+def test_fallback_understanding_detects_compare_indexes_with_existing_items(message):
+    from agent.fallback_understanding import fallback_understanding
+    from agent.understanding import UserIntent
+
+    state = _conversation_with_compare_items()
+
+    understanding = fallback_understanding(
+        message=message,
+        conversation=state,
+        reason="test",
+    )
+
+    assert understanding is not None
+    assert understanding.intent == UserIntent.COMPARE
+    assert understanding.compare_item_indexes == [1, 2]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "推荐手机",
+        "不要第二个",
+        "太贵了",
+        "第一个和第一个哪个好？",
+    ],
+)
+def test_fallback_understanding_does_not_misclassify_compare_with_existing_items(
+    message,
+):
+    from agent.fallback_understanding import fallback_understanding
+    from agent.understanding import UserIntent
+
+    state = _conversation_with_compare_items()
+    state.purchase_need = "推荐手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+
+    understanding = fallback_understanding(
+        message=message,
+        conversation=state,
+        reason="test",
+    )
+
+    assert understanding is None or understanding.intent != UserIntent.COMPARE
+
+
+def test_fallback_understanding_does_not_compare_indexes_without_existing_items():
+    from agent.fallback_understanding import fallback_understanding
+    from agent.understanding import UserIntent
+
+    understanding = fallback_understanding(
+        message="第一个和第二个哪个好？",
+        conversation=ConversationState(session_id="compare-fallback-empty"),
+        reason="test",
+    )
+
+    assert understanding is None or understanding.intent != UserIntent.COMPARE
+
+
+def _conversation_with_compare_items():
+    state = ConversationState(session_id="compare-fallback")
+    state.last_items = [
+        ProductCard(
+            product_id="p1",
+            title="手机 A",
+            brand="A",
+            price=2999,
+            reason="r",
+            evidence="e",
+        ),
+        ProductCard(
+            product_id="p2",
+            title="手机 B",
+            brand="B",
+            price=1999,
+            reason="r",
+            evidence="e",
+        ),
+    ]
+    return state
+
+
 def test_fallback_understanding_updates_budget_with_existing_context():
     from agent.fallback_understanding import fallback_understanding
     from agent.understanding import UserIntent
@@ -463,6 +558,227 @@ def test_conversation_state_tracks_shopping_memory_defaults():
     assert state.last_no_results_relax_options == []
     assert state.previous_purchase_contexts == []
     assert state.pending_restore_category is None
+
+
+def test_user_understanding_accepts_compare_intent_and_indexes():
+    from agent.understanding import UserIntent, UserUnderstanding
+
+    understanding = UserUnderstanding(
+        intent=UserIntent.COMPARE,
+        confidence=0.9,
+        compare_item_indexes=[1, 2],
+    )
+
+    assert understanding.intent == UserIntent.COMPARE
+    assert understanding.compare_item_indexes == [1, 2]
+
+
+@pytest.mark.parametrize("compare_item_indexes", ["2", (1, 2), [0], [-1], [True], ["2"]])
+def test_user_understanding_rejects_invalid_compare_item_indexes(compare_item_indexes):
+    from pydantic import ValidationError
+
+    from agent.understanding import UserIntent, UserUnderstanding
+
+    with pytest.raises(ValidationError):
+        UserUnderstanding(
+            intent=UserIntent.COMPARE,
+            confidence=0.9,
+            compare_item_indexes=compare_item_indexes,
+        )
+
+
+def test_action_result_accepts_compare_item_indexes():
+    from agent.understanding import AgentAction, ActionResult
+
+    result = ActionResult(
+        action=AgentAction.COMPARE,
+        reply_type="compare",
+        compare_item_indexes=[1, 2],
+    )
+
+    assert result.compare_item_indexes == [1, 2]
+
+
+def test_compare_tool_compares_existing_items_only():
+    from agent.tools import CompareTool
+    from agent.understanding import AgentAction
+
+    items = _sample_compare_items()
+
+    result = CompareTool().run(items=items, compare_item_indexes=[1, 2])
+
+    assert result.action == AgentAction.COMPARE
+    assert result.reply_type == "compare_reply"
+    assert result.items == items
+    assert result.compare_item_indexes == [1, 2]
+
+
+def test_compare_tool_clarifies_without_previous_items():
+    from agent.tools import CompareTool
+    from agent.understanding import AgentAction
+
+    result = CompareTool().run(items=[], compare_item_indexes=[1, 2])
+
+    assert result.action == AgentAction.CLARIFY
+    assert result.reply_type == "clarify_reply"
+    assert result.items == []
+    assert result.clarifying_question is not None
+    assert "上一轮推荐结果" in result.clarifying_question
+
+
+def test_compare_tool_clarifies_when_indexes_are_insufficient():
+    from agent.tools import CompareTool
+    from agent.understanding import AgentAction
+
+    items = _sample_compare_items()
+
+    result = CompareTool().run(items=items, compare_item_indexes=[1])
+
+    assert result.action == AgentAction.CLARIFY
+    assert result.reply_type == "clarify_reply"
+    assert result.items == items
+    assert result.clarifying_question is not None
+    assert "两个商品序号" in result.clarifying_question
+
+
+def test_compare_tool_clarifies_when_indexes_are_duplicate():
+    from agent.tools import CompareTool
+    from agent.understanding import AgentAction
+
+    items = _sample_compare_items()
+
+    result = CompareTool().run(items=items, compare_item_indexes=[1, 1])
+
+    assert result.action == AgentAction.CLARIFY
+    assert result.reply_type == "clarify_reply"
+    assert result.items == items
+    assert result.clarifying_question is not None
+    assert "两个不同" in result.clarifying_question
+
+
+def test_compare_tool_clarifies_when_indexes_are_out_of_range():
+    from agent.tools import CompareTool
+    from agent.understanding import AgentAction
+
+    items = _sample_compare_items()
+
+    result = CompareTool().run(items=items, compare_item_indexes=[1, 3])
+
+    assert result.action == AgentAction.CLARIFY
+    assert result.reply_type == "clarify_reply"
+    assert result.items == items
+    assert result.clarifying_question is not None
+    assert "上一轮只有 2 款商品" in result.clarifying_question
+
+
+def test_langgraph_runner_compares_first_two_items():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    def fail_if_recommendation_is_called(query: str, top_k: int = 3):
+        raise AssertionError("compare should not call recommendation")
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("compare-session")
+    state.last_items = [
+        ProductCard(
+            product_id="p1",
+            title="手机 A",
+            brand="A",
+            price=2999,
+            reason="拍照好",
+            evidence="主摄强",
+        ),
+        ProductCard(
+            product_id="p2",
+            title="手机 B",
+            brand="B",
+            price=1999,
+            reason="价格低",
+            evidence="价格更低",
+        ),
+    ]
+    store.save(state)
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(
+            recommend_func=fail_if_recommendation_is_called
+        ),
+        understanding_service=FakeUnderstandingService(
+            [make_understanding(intent=UserIntent.COMPARE, compare_item_indexes=[1, 2])]
+        ),
+    )
+
+    response = runner.run("compare-session", "第一个和第二个哪个好？")
+
+    assert response.state["action"] == "compare"
+    assert "手机 A" in response.reply
+    assert "手机 B" in response.reply
+    assert response.items == state.last_items
+
+
+def test_langgraph_runner_clarifies_same_item_compare():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    def fail_if_recommendation_is_called(query: str, top_k: int = 3):
+        raise AssertionError("compare should not call recommendation")
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("compare-same-item")
+    state.last_items = _sample_compare_items()
+    store.save(state)
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(
+            recommend_func=fail_if_recommendation_is_called
+        ),
+        understanding_service=FakeUnderstandingService(
+            [make_understanding(intent=UserIntent.COMPARE, compare_item_indexes=[1, 1])]
+        ),
+    )
+
+    response = runner.run("compare-same-item", "第一个和第一个哪个好？")
+
+    assert "两个不同" in response.reply
+    assert response.items == state.last_items
+
+
+def _sample_compare_items():
+    return [
+        ProductCard(
+            product_id="p1",
+            title="手机 A",
+            brand="A",
+            price=2999,
+            reason="拍照好",
+            evidence="主摄强",
+        ),
+        ProductCard(
+            product_id="p2",
+            title="手机 B",
+            brand="B",
+            price=1999,
+            reason="价格低",
+            evidence="价格更低",
+        ),
+    ]
+
+
+@pytest.mark.parametrize("compare_item_indexes", ["2", (1, 2), [0], [-1], [True], ["2"]])
+def test_action_result_rejects_invalid_compare_item_indexes(compare_item_indexes):
+    from pydantic import ValidationError
+
+    from agent.understanding import AgentAction, ActionResult
+
+    with pytest.raises(ValidationError):
+        ActionResult(
+            action=AgentAction.COMPARE,
+            reply_type="compare",
+            compare_item_indexes=compare_item_indexes,
+        )
 
 
 def test_conversation_state_tracks_negative_feedback_defaults():
@@ -942,6 +1258,40 @@ def test_normalize_understanding_payload_sanitizes_bool_target_item_index():
     )
 
     assert normalized["target_item_index"] is None
+
+
+def test_normalize_understanding_payload_keeps_valid_compare_item_indexes():
+    from agent.understanding import normalize_understanding_payload
+
+    normalized = normalize_understanding_payload(
+        {
+            "intent": "compare",
+            "confidence": 0.8,
+            "compare_item_indexes": [1, 2],
+        }
+    )
+
+    assert normalized["compare_item_indexes"] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    "compare_item_indexes",
+    ["2", (1, 2), [0], [-1], [True], ["2"]],
+)
+def test_normalize_understanding_payload_drops_invalid_compare_item_indexes(
+    compare_item_indexes,
+):
+    from agent.understanding import normalize_understanding_payload
+
+    normalized = normalize_understanding_payload(
+        {
+            "intent": "compare",
+            "confidence": 0.8,
+            "compare_item_indexes": compare_item_indexes,
+        }
+    )
+
+    assert normalized["compare_item_indexes"] == []
 
 
 def test_normalize_understanding_payload_sanitizes_non_dict_preference_updates():
@@ -3635,6 +3985,151 @@ def test_pure_item_index_negative_feedback_keeps_existing_list_semantics():
     assert response.state["excluded_product_ids"] == ["p_phone_2"]
 
 
+def test_pure_item_reference_negative_feedback_keeps_existing_list_semantics():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("pure-item-reference")
+    state.purchase_need = "推荐手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    state.last_successful_items = [
+        ProductCard(
+            product_id="p_phone_1",
+            title="第一款手机",
+            brand="A",
+            price=1,
+            reason="r",
+            evidence="e",
+        ),
+        ProductCard(
+            product_id="p_phone_2",
+            title="第二款手机",
+            brand="B",
+            price=2,
+            reason="r",
+            evidence="e",
+        ),
+    ]
+    state.last_items = list(state.last_successful_items)
+    state.target_item_index = 2
+    store.save(state)
+    captured = {}
+
+    def capture_recommendation(query: str, top_k: int = 3, negative_filters=None):
+        captured["negative_filters"] = negative_filters
+        return {
+            "query": query,
+            "filters": {
+                "category": "数码电子",
+                "max_price": None,
+                "brand": None,
+                "keywords": ["手机"],
+            },
+            "items": [
+                {
+                    "product_id": "p_phone_3",
+                    "title": "第三款手机",
+                    "brand": "C",
+                    "price": 3,
+                    "reason": "r",
+                    "evidence": "e",
+                }
+            ],
+        }
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=capture_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.UPDATE_PREFERENCE,
+                    negative_updates={"excluded_item_reference": "current"},
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("pure-item-reference", "不要这个")
+
+    assert captured["negative_filters"].excluded_product_ids == ["p_phone_2"]
+    assert response.state["excluded_product_ids"] == ["p_phone_2"]
+
+
+def test_batch_negative_feedback_keeps_existing_list_semantics():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import UserIntent
+
+    store = InMemoryConversationStore()
+    state = store.get_or_create("batch-negative")
+    state.purchase_need = "推荐手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    state.last_successful_items = [
+        ProductCard(
+            product_id="p_phone_1",
+            title="第一款手机",
+            brand="A",
+            price=1,
+            reason="r",
+            evidence="e",
+        ),
+        ProductCard(
+            product_id="p_phone_2",
+            title="第二款手机",
+            brand="B",
+            price=2,
+            reason="r",
+            evidence="e",
+        ),
+    ]
+    state.last_items = list(state.last_successful_items)
+    store.save(state)
+    captured = {}
+
+    def capture_recommendation(query: str, top_k: int = 3, negative_filters=None):
+        captured["negative_filters"] = negative_filters
+        return {
+            "query": query,
+            "filters": {
+                "category": "数码电子",
+                "max_price": None,
+                "brand": None,
+                "keywords": ["手机"],
+            },
+            "items": [],
+        }
+
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=capture_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent=UserIntent.UPDATE_PREFERENCE,
+                    negative_updates={"exclude_all_last_items": True},
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("batch-negative", "这几个都不要")
+
+    assert captured["negative_filters"].excluded_product_ids == [
+        "p_phone_1",
+        "p_phone_2",
+    ]
+    assert response.state["excluded_product_ids"] == ["p_phone_1", "p_phone_2"]
+
+
 def test_legacy_reset_without_canonical_understanding_current_target_still_clears_legacy_state():
     from agent.graph.runner import LangGraphAgentRunner
     from agent.understanding import UserIntent
@@ -3763,6 +4258,28 @@ def test_langgraph_runner_contextual_budget_refinement_uses_fallback():
     assert second.state["preferences"]["budget"] == 3000
     assert second.state["preferences"]["is_broad_category_request"] is False
     assert "我先按" not in second.reply
+
+
+def test_langgraph_runner_contextual_price_feedback_for_not_so_expensive():
+    from agent.graph.runner import LangGraphAgentRunner
+    from agent.understanding import LLMUserUnderstandingService
+
+    store = InMemoryConversationStore()
+    runner = LangGraphAgentRunner(
+        store=store,
+        recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
+        understanding_service=LLMUserUnderstandingService(
+            config=LLMConfig(enabled=False, api_key="")
+        ),
+    )
+
+    runner.run("not-so-expensive", "推荐手机")
+    response = runner.run("not-so-expensive", "不要这么贵")
+
+    assert response.state["intent"] == "update_preference"
+    assert response.state["action"] == "recommend"
+    assert response.state["preferences"]["price_direction"] == "lower"
+    assert response.state["preferences"]["avoid_current_price_band"] is True
 
 
 def test_langgraph_runner_tool_error_keeps_contract_state_and_hidden_relax_options():
@@ -3992,3 +4509,221 @@ def test_purchase_context_round_trips_architecture_fields_and_clears_target_item
     assert target.last_result_status == "no_results"
     assert target.last_no_results_need == "严格需求"
     assert target.last_no_results_relax_options == ["放宽品牌"]
+
+
+def test_policy_recommends_after_applied_negative_feedback_with_purchase_need():
+    from agent.negative_feedback_models import NegativeFeedbackApplicationResult
+    from agent.policy import decide_next_action
+    from agent.understanding import AgentAction, UserIntent
+
+    conversation = ConversationState(session_id="policy-negative")
+    conversation.purchase_need = "推荐手机"
+    understanding = make_understanding(intent=UserIntent.UPDATE_PREFERENCE)
+    negative_feedback = NegativeFeedbackApplicationResult(detected=True, applied=True)
+
+    assert (
+        decide_next_action(understanding, conversation, negative_feedback)
+        == AgentAction.RECOMMEND
+    )
+
+
+def test_reply_builder_preserves_no_results_copy():
+    from agent.reply_builder import build_no_results_reply
+    from agent.understanding import NoResultsSuggestion
+
+    reply = build_no_results_reply(
+        NoResultsSuggestion(
+            purchase_need="100 元以内的旗舰手机",
+            blocking_constraints=["预算100以内"],
+            relax_options=["提高预算", "放宽品牌"],
+        )
+    )
+
+    assert "100 元以内的旗舰手机" in reply
+    assert "预算100以内" in reply
+    assert "提高预算、放宽品牌" in reply
+
+
+def test_reply_builder_negative_noop_already_excluded_copy():
+    from agent.negative_feedback_models import NegativeFeedbackApplicationResult
+    from agent.reply_builder import build_negative_feedback_noop_reply
+
+    reply = build_negative_feedback_noop_reply(
+        NegativeFeedbackApplicationResult(noop=True, noop_reason="already_excluded")
+    )
+
+    assert reply == "已经排除过这个条件了，我会继续按当前排除条件筛选。"
+
+
+def test_explain_tool_selects_valid_previous_item():
+    from agent.tools import ExplainTool
+
+    items = [
+        ProductCard(
+            product_id="p1",
+            title="第一款",
+            brand="A",
+            price=1,
+            reason="r",
+            evidence="e1",
+        ),
+        ProductCard(
+            product_id="p2",
+            title="第二款",
+            brand="B",
+            price=2,
+            reason="r",
+            evidence="e2",
+        ),
+    ]
+
+    result = ExplainTool().run(items=items, target_item_index=2)
+
+    assert result.action.value == "explain"
+    assert result.reply_type == "explain_reply"
+    assert result.target_item_index == 2
+    assert result.items == items
+
+
+def test_sqlite_conversation_store_round_trips_state(tmp_path):
+    from agent.sqlite_memory import SQLiteConversationStore
+
+    db_path = tmp_path / "conversation.sqlite3"
+    store = SQLiteConversationStore(db_path)
+    state = store.get_or_create("sqlite-session")
+    state.purchase_need = "3000 元以内的手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    state.last_items = [
+        ProductCard(
+            product_id="p_sqlite_1",
+            title="SQLite 手机",
+            brand="SQLiteBrand",
+            price=2999,
+            reason="测试",
+            evidence="测试证据",
+        )
+    ]
+    state.last_successful_items = list(state.last_items)
+    store.save(state)
+
+    reloaded_store = SQLiteConversationStore(db_path)
+    reloaded = reloaded_store.get_or_create("sqlite-session")
+
+    assert reloaded.purchase_need == "3000 元以内的手机"
+    assert reloaded.preferences["canonical_target_key"] == "phone"
+    assert reloaded.last_items[0].product_id == "p_sqlite_1"
+    assert reloaded.last_successful_items[0].product_id == "p_sqlite_1"
+
+
+def test_create_agent_runner_uses_sqlite_store_from_config(tmp_path):
+    from agent.runner import create_agent_runner
+    from agent.sqlite_memory import SQLiteConversationStore
+
+    db_path = tmp_path / "factory.sqlite3"
+    runner = create_agent_runner(
+        config=AppConfig(
+            agent_runner="langgraph",
+            conversation_store_mode="sqlite",
+            conversation_store_path=str(db_path),
+            llm=LLMConfig(enabled=False, api_key=""),
+        ),
+        recommendation_tool=RecommendationTool(recommend_func=single_recommendation),
+        understanding_service=FakeUnderstandingService(
+            [
+                make_understanding(
+                    intent="recommend",
+                    purchase_need="推荐手机",
+                    preference_updates={
+                        "target_category": "手机",
+                        "category": "数码电子",
+                        "canonical_target_key": "phone",
+                    },
+                )
+            ]
+        ),
+    )
+
+    response = runner.run("sqlite-factory", "推荐手机")
+
+    assert response.state["purchase_need"] == "推荐手机"
+    assert isinstance(runner.store, SQLiteConversationStore)
+    assert db_path.exists()
+
+
+def test_sqlite_conversation_store_recovers_previous_purchase_contexts(tmp_path):
+    from agent.memory import PurchaseContext
+    from agent.sqlite_memory import SQLiteConversationStore
+
+    db_path = tmp_path / "restart.sqlite3"
+    first_store = SQLiteConversationStore(db_path)
+    state = first_store.get_or_create("restart-session")
+    state.purchase_need = "推荐手机"
+    state.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+    }
+    state.previous_purchase_contexts = [
+        PurchaseContext(
+            purchase_need="推荐咖啡",
+            preferences={
+                "target_category": "咖啡",
+                "category": "食品生活",
+                "canonical_target_key": "coffee",
+            },
+            target_category="咖啡",
+            category="食品生活",
+            canonical_target_key="coffee",
+        )
+    ]
+    first_store.save(state)
+
+    second_store = SQLiteConversationStore(db_path)
+    recovered = second_store.get_or_create("restart-session")
+
+    assert recovered.purchase_need == "推荐手机"
+    assert recovered.previous_purchase_contexts[0].canonical_target_key == "coffee"
+
+
+def test_sqlite_conversation_store_recovers_compare_context(tmp_path):
+    from agent.sqlite_memory import SQLiteConversationStore
+
+    db_path = tmp_path / "compare-context.sqlite3"
+    first_store = SQLiteConversationStore(db_path)
+    state = first_store.get_or_create("compare-restart")
+    state.last_items = [
+        ProductCard(
+            product_id="phone_a",
+            title="手机 A",
+            brand="A",
+            price=2999,
+            reason="拍照好",
+            evidence="主摄强",
+        ),
+        ProductCard(
+            product_id="phone_b",
+            title="手机 B",
+            brand="B",
+            price=1999,
+            reason="价格低",
+            evidence="价格更低",
+        ),
+    ]
+    state.last_successful_items = list(state.last_items)
+    first_store.save(state)
+
+    second_store = SQLiteConversationStore(db_path)
+    recovered = second_store.get_or_create("compare-restart")
+
+    assert [item.product_id for item in recovered.last_items] == [
+        "phone_a",
+        "phone_b",
+    ]
+    assert [item.product_id for item in recovered.last_successful_items] == [
+        "phone_a",
+        "phone_b",
+    ]

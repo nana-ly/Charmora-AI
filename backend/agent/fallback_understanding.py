@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from agent.category_rules import (
     catalog_category_for,
@@ -44,6 +45,31 @@ HIGHER_PRICE_ALLOWANCE_TERMS = (
     "高一点没关系",
 )
 
+INDEX_TOKEN_TO_VALUE = {
+    "一": 1,
+    "1": 1,
+    "二": 2,
+    "两": 2,
+    "2": 2,
+    "三": 3,
+    "3": 3,
+    "四": 4,
+    "4": 4,
+    "五": 5,
+    "5": 5,
+    "六": 6,
+    "6": 6,
+    "七": 7,
+    "7": 7,
+    "八": 8,
+    "8": 8,
+    "九": 9,
+    "9": 9,
+}
+
+COMPARE_TERMS = ("哪个好", "哪一个好", "哪款好", "哪个更好", "区别", "差别", "对比", "比较")
+COMPARE_INDEX_PATTERN = re.compile(r"第\s*([一二两三四五六七八九1-9])\s*[个款台件]?")
+
 
 def _has_active_purchase_context(conversation: ConversationState) -> bool:
     return bool(
@@ -57,6 +83,26 @@ def _is_lower_price_feedback(message: str) -> bool:
     if any(term in message for term in HIGHER_PRICE_ALLOWANCE_TERMS):
         return False
     return any(term in message for term in LOWER_PRICE_FEEDBACK_TERMS)
+
+
+def _parse_index_token(token: str) -> int | None:
+    return INDEX_TOKEN_TO_VALUE.get(token)
+
+
+def _extract_compare_indexes(message: str) -> list[int]:
+    # 只接受含比较词且明确提到两个“第 N 个/款”的表达，避免把价格反馈或购买请求误判为对比。
+    if not any(term in message for term in COMPARE_TERMS):
+        return []
+
+    indexes: list[int] = []
+    for match in COMPARE_INDEX_PATTERN.finditer(message):
+        index = _parse_index_token(match.group(1))
+        if index is not None:
+            indexes.append(index)
+
+    if len(indexes) != 2 or indexes[0] == indexes[1]:
+        return []
+    return indexes
 
 
 def _contextual_price_feedback(
@@ -199,6 +245,19 @@ def fallback_understanding(
     reason: str,
 ) -> UserUnderstanding | None:
     negative_updates = extract_negative_updates(message)
+
+    compare_indexes = _extract_compare_indexes(message)
+    if conversation.last_items and compare_indexes:
+        logger.info(
+            "understanding source=fallback reason=%s intent=compare indexes=%s",
+            reason,
+            compare_indexes,
+        )
+        return UserUnderstanding(
+            intent=UserIntent.COMPARE,
+            confidence=0.8,
+            compare_item_indexes=compare_indexes,
+        )
 
     purchase_request = _purchase_request_understanding(
         message=message,

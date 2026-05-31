@@ -66,8 +66,12 @@ def filter_item_index_negative_updates_for_current_target(
         return filtered
     if current_target_key is None and active_target_key is None and active_last_successful_items:
         return filtered
-    if "excluded_item_indexes" in filtered:
-        filtered.pop("excluded_item_indexes", None)
+    for item_scoped_key in (
+        "excluded_item_indexes",
+        "excluded_item_reference",
+        "exclude_all_last_items",
+    ):
+        filtered.pop(item_scoped_key, None)
     return filtered
 
 
@@ -89,6 +93,22 @@ def apply_negative_feedback(
             noop_reason="unsupported_negative_type",
             ack_message="暂不支持这种排除方式，我会继续按当前需求筛选。",
         )
+
+    if negative_updates.get("excluded_item_reference") == "current":
+        if conversation.target_item_index is None:
+            return NegativeFeedbackApplicationResult(
+                detected=True,
+                needs_clarification=True,
+                invalid_reason="missing_item_reference",
+                clarifying_question="你想排除第几款？可以告诉我对应序号。",
+            )
+        return _apply_item_index_exclusion(
+            conversation,
+            {"excluded_item_indexes": [conversation.target_item_index]},
+        )
+
+    if negative_updates.get("exclude_all_last_items") is True:
+        return _apply_all_last_items_exclusion(conversation)
 
     if "excluded_item_indexes" in negative_updates:
         return _apply_item_index_exclusion(conversation, negative_updates)
@@ -161,6 +181,50 @@ def _apply_item_index_exclusion(
         ack_message=f"已排除第 {index} 款，我按你的需求重新筛选。",
         changed_fields=["excluded_product_ids", "negative_feedback_items"],
         target_product_ids=[item.product_id],
+    )
+
+
+def _apply_all_last_items_exclusion(
+    conversation: ConversationState,
+) -> NegativeFeedbackApplicationResult:
+    items = conversation.last_successful_items or conversation.last_items
+    if not items:
+        return NegativeFeedbackApplicationResult(
+            detected=True,
+            needs_clarification=True,
+            invalid_reason="missing_last_successful_items",
+            clarifying_question="我还没有上一轮可排除的推荐结果，可以先告诉我想买什么。",
+        )
+
+    added_ids: list[str] = []
+    for item in items:
+        if item.product_id in conversation.excluded_product_ids:
+            continue
+        conversation.excluded_product_ids.append(item.product_id)
+        conversation.negative_feedback_items.append(
+            NegativeFeedbackItem(
+                product_id=item.product_id,
+                title=item.title,
+                brand=item.brand,
+                price=item.price,
+            )
+        )
+        added_ids.append(item.product_id)
+
+    if not added_ids:
+        return NegativeFeedbackApplicationResult(
+            detected=True,
+            noop=True,
+            noop_reason="already_excluded",
+            target_product_ids=[item.product_id for item in items],
+        )
+
+    return NegativeFeedbackApplicationResult(
+        detected=True,
+        applied=True,
+        ack_message="已排除刚才这几款，我按你的需求重新筛选。",
+        changed_fields=["excluded_product_ids", "negative_feedback_items"],
+        target_product_ids=added_ids,
     )
 
 

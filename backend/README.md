@@ -56,6 +56,8 @@ AGENT_RUNNER=langgraph
 RETRIEVER_MODE=vector
 DEFAULT_TOP_K=3
 LOG_LEVEL=INFO
+CONVERSATION_STORE_MODE=memory
+CONVERSATION_STORE_PATH=data/conversations.sqlite3
 
 embedding_url=https://dashscope.aliyuncs.com/compatible-mode/v1
 embedding_api=
@@ -69,7 +71,7 @@ LLM_MODEL=gpt-4o-mini
 LLM_TIMEOUT_SECONDS=8
 ```
 
-`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`DEFAULT_TOP_K` 控制推荐默认返回数量。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。
+`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`CONVERSATION_STORE_MODE=memory` 使用进程内会话状态；设置为 `sqlite` 时会通过 `CONVERSATION_STORE_PATH` 持久化完整 `ConversationState`，用于本地演示服务重启后恢复同一 `session_id` 的多轮上下文。`DEFAULT_TOP_K` 控制推荐默认返回数量。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。
 
 ## 日志级别
 
@@ -108,6 +110,7 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 - 用户切换购物目标时，当前购买上下文会先归档，再清空活跃推荐状态，避免新旧品类偏好混在一起。
 - 用户疑似回到旧品类时，后端先询问是否恢复之前需求；确认后恢复归档上下文，拒绝后按新约束推荐。
 - 明确负反馈会写入当前购买上下文：`不要第 2 个` 写入 `excluded_product_ids`，`不要苹果` 写入顶层 `excluded_brands`。这些字段随购买上下文归档和恢复，不作为跨品类全局偏好。
+- 中文序号、当前商品指代和批量排除也走同一安全路径：`不要第二个` 等价于排除第 2 款，`不要这个` 需要已有解释目标，`这几个都不要` 只排除当前成功推荐结果。
 - 负反馈不会拼进推荐 query。Agent 会把 `ConversationState` 转成 `NegativeFilters` 传给推荐工具，推荐链路在检索前和构建商品卡片前各执行一次 product_id/brand 硬过滤。
 - `/chat.state` 会额外返回 `excluded_product_ids`、`excluded_brands`、`latest_attempt_status`，本轮识别到负反馈时返回 `negative_feedback`。
 - 推荐工具异常会返回稳定 `tool_error` 对话响应：`items=[]`、`state.result_status="tool_error"`、`state.tool_error="recommendation_failed"`。这不会覆盖上一轮成功商品，也不会伪造商品。
@@ -173,6 +176,7 @@ backend/
   retrieval/               检索抽象、关键词检索、RAG 向量检索适配器
   llm/                     LLM 客户端、Agent 意图解析适配、推荐理由生成
   agent/                   多轮 Agent、Runner 工厂和 LangGraph 编排器
+    sqlite_memory.py       SQLiteConversationStore，会话状态持久化实现
   tests/                   后端测试
 ```
 

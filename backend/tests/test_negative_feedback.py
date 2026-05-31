@@ -41,10 +41,22 @@ def test_negative_rules_detect_arabic_item_index_exclusion():
     assert extract_negative_updates("不要第2个也可以") == {"excluded_item_indexes": [2]}
 
 
-def test_negative_rules_do_not_parse_chinese_item_index():
-    assert extract_negative_updates("排除第二款") == {
-        "unsupported_negative_type": "item_index_chinese_number"
+def test_negative_rules_detect_chinese_item_index_exclusion():
+    assert extract_negative_updates("排除第二款") == {"excluded_item_indexes": [2]}
+    assert extract_negative_updates("不要第一个") == {"excluded_item_indexes": [1]}
+    assert extract_negative_updates("第三个不要") == {"excluded_item_indexes": [3]}
+
+
+def test_negative_rules_detect_current_item_reference_exclusion():
+    assert extract_negative_updates("不要这个") == {"excluded_item_reference": "current"}
+    assert extract_negative_updates("刚才那个不要") == {
+        "excluded_item_reference": "current"
     }
+
+
+def test_negative_rules_detect_batch_item_exclusion():
+    assert extract_negative_updates("这几个都不要") == {"exclude_all_last_items": True}
+    assert extract_negative_updates("这些都不要") == {"exclude_all_last_items": True}
 
 
 def test_negative_rules_detect_brand_exclusion_and_removal_text():
@@ -139,6 +151,47 @@ def test_apply_negative_feedback_excludes_item_by_last_successful_index():
     assert result.target_product_ids == ["p_huawei"]
     assert state.excluded_product_ids == ["p_huawei"]
     assert result.ack_message == "已排除第 2 款，我按你的需求重新筛选。"
+
+
+def test_apply_negative_feedback_current_reference_uses_target_item_index():
+    state = make_phone_state()
+    state.target_item_index = 2
+
+    result = apply_negative_feedback(
+        state,
+        {"excluded_item_reference": "current"},
+        catalog_products=[],
+    )
+
+    assert result.applied is True
+    assert state.excluded_product_ids == ["p_huawei"]
+
+
+def test_apply_negative_feedback_current_reference_clarifies_without_target():
+    state = make_phone_state()
+
+    result = apply_negative_feedback(
+        state,
+        {"excluded_item_reference": "current"},
+        catalog_products=[],
+    )
+
+    assert result.needs_clarification is True
+    assert state.excluded_product_ids == []
+
+
+def test_apply_negative_feedback_excludes_all_last_successful_items():
+    state = make_phone_state()
+
+    result = apply_negative_feedback(
+        state,
+        {"exclude_all_last_items": True},
+        catalog_products=[],
+    )
+
+    assert result.applied is True
+    assert state.excluded_product_ids == ["p_apple", "p_huawei"]
+    assert result.target_product_ids == ["p_apple", "p_huawei"]
 
 
 def test_apply_negative_feedback_keeps_mvp_item_index_priority_for_mixed_updates():
@@ -440,3 +493,15 @@ def test_filter_item_index_negative_updates_drops_indexes_before_apply_negative_
         active_target_key="phone",
         active_last_successful_items=items,
     ) == {"excluded_item_indexes": [1], "excluded_brands": ["苹果"]}
+    assert filter_item_index_negative_updates_for_current_target(
+        {"excluded_item_reference": "current"},
+        current_target_key="headphones",
+        active_target_key="phone",
+        active_last_successful_items=items,
+    ) == {}
+    assert filter_item_index_negative_updates_for_current_target(
+        {"exclude_all_last_items": True},
+        current_target_key="headphones",
+        active_target_key="phone",
+        active_last_successful_items=items,
+    ) == {}
