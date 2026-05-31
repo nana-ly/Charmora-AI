@@ -52,6 +52,9 @@ class AppConfig:
     retriever_mode: str = "vector"
     default_top_k: int = 3
     log_level: str = "INFO"
+    conversation_store_mode: str = "memory"
+    conversation_store_path: str = "data/conversations.sqlite3"
+    agent_session_lock_enabled: bool = True
     llm: LLMConfig = field(default_factory=LLMConfig)
     rag: RAGConfig = field(default_factory=RAGConfig)
 
@@ -67,6 +70,14 @@ def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] 
         retriever_mode=os.getenv("RETRIEVER_MODE", "vector"),
         default_top_k=int(os.getenv("DEFAULT_TOP_K", "3")),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        conversation_store_mode=os.getenv("CONVERSATION_STORE_MODE", "memory"),
+        conversation_store_path=os.getenv(
+            "CONVERSATION_STORE_PATH",
+            "data/conversations.sqlite3",
+        ),
+        agent_session_lock_enabled=(
+            os.getenv("AGENT_SESSION_LOCK_ENABLED", "true").lower() == "true"
+        ),
         llm=LLMConfig(
             enabled=os.getenv("LLM_ENABLED", "false").lower() == "true",
             api_key=os.getenv("LLM_API_KEY", ""),

@@ -13,6 +13,7 @@ http://127.0.0.1:8000
 ```http
 GET  /
 GET  /health
+GET  /ready
 POST /recommend
 POST /rag/search
 POST /chat
@@ -30,6 +31,33 @@ Response:
 ```json
 {
   "status": "ok"
+}
+```
+
+`/health` 只表示 FastAPI 进程存活，不初始化或检查推荐依赖。
+
+## Ready
+
+```http
+GET /ready
+```
+
+推荐依赖可用时：
+
+```json
+{
+  "status": "ready",
+  "retriever_mode": "vector"
+}
+```
+
+retriever 初始化失败时返回 HTTP 503：
+
+```json
+{
+  "status": "not_ready",
+  "retriever_mode": "vector",
+  "error": "missing embedding config"
 }
 ```
 
@@ -102,6 +130,7 @@ Response:
 | `items[].evidence` | `string` | 中文匹配依据。 |
 
 推荐链路不会为无结果或异常伪造商品。检索结果为空时 `items` 是 `[]`；推荐链路异常时异常向上暴露。
+后端会在当前 Python 进程内缓存推荐服务的配置、retriever 和 reason service；`/recommend` 与 `/chat` 中的推荐工具共用同一个推荐入口。
 
 ## RAG Search
 
@@ -192,6 +221,7 @@ clarify
 recommend
 explain
 clarify
+reply_only
 ```
 
 `state.result_status` 只描述本轮推荐执行结果，当前取值：
@@ -201,6 +231,15 @@ success
 no_results
 tool_error
 ```
+
+`state` 还可能包含这些可选字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `excluded_product_ids` | `string[]` | 当前购买上下文中被用户明确排除的商品 ID，例如“不要第 2 个”。 |
+| `excluded_brands` | `string[]` | 当前购买上下文中被用户明确排除的品牌，例如“不要苹果”。 |
+| `latest_attempt_status` | `"success" \| "no_results" \| "tool_error" \| null` | 最近一次推荐尝试状态，随当前购买上下文归档和恢复。 |
+| `negative_feedback` | `object` | 本轮识别到负反馈时返回的应用结果，可能包含 `applied`、`removed`、`noop`、`needs_clarification`、`changed_fields`、`target_product_ids`、`target_brands`、`noop_reason` 等字段。 |
 
 无结果响应仍保持 `items=[]`，并可能在 `state.relax_options` 中返回可放宽的条件。推荐工具异常会返回稳定对话响应，而不是伪造商品：
 
@@ -244,10 +283,10 @@ start -> error -> done
 
 ```text
 api.recommend
-  -> services.recommendation_service.run_recommendation
-  -> services.retriever_factory.select_retriever
+  -> api.deps.run_recommendation
+  -> services.recommendation_service.RecommendationService.recommend
+  -> cached Retriever.search
   -> recommendation_core.pipeline.recommend_products
-  -> Retriever.search
   -> recommendation_core.response_builder.build_response_item
   -> return {"query", "filters", "items"}
 ```

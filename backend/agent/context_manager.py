@@ -6,7 +6,11 @@ from enum import Enum
 
 from pydantic import BaseModel
 
-from agent.category_rules import is_restore_confirmation, is_restore_rejection
+from agent.category_rules import (
+    canonical_target_key,
+    is_restore_confirmation,
+    is_restore_rejection,
+)
 from agent.fallback_understanding import fallback_understanding
 from agent.memory import ConversationState, PurchaseContext
 from agent.understanding import UserIntent, UserUnderstanding, clarify_understanding
@@ -42,6 +46,43 @@ def active_target_category(conversation: ConversationState) -> str | None:
     return None
 
 
+def active_target_key(conversation: ConversationState) -> str | None:
+    """返回当前目标的 canonical key，旧状态缺 key 时就地补齐。"""
+
+    key = conversation.preferences.get("canonical_target_key")
+    if isinstance(key, str) and key.strip():
+        return key
+    target = conversation.preferences.get("target_category")
+    category = conversation.preferences.get("category")
+    if isinstance(target, str):
+        derived = canonical_target_key(
+            target,
+            category if isinstance(category, str) else None,
+        )
+        if derived:
+            conversation.preferences["canonical_target_key"] = derived
+            return derived
+    return None
+
+
+def ensure_archived_target_fields(item: PurchaseContext) -> str | None:
+    """补齐旧归档的 canonical/display 目标字段。"""
+
+    target = item.target_category or item.preferences.get("target_category")
+    category = item.category or item.preferences.get("category")
+    if not item.display_target_category and isinstance(target, str):
+        item.display_target_category = target
+    if item.canonical_target_key:
+        return item.canonical_target_key
+    key = canonical_target_key(
+        target if isinstance(target, str) else None,
+        category if isinstance(category, str) else None,
+    )
+    if key:
+        item.canonical_target_key = key
+    return key
+
+
 def archive_active_context(conversation: ConversationState, max_contexts: int = 5) -> None:
     """归档当前购买需求，并按目标品类替换旧归档。"""
 
@@ -49,18 +90,24 @@ def archive_active_context(conversation: ConversationState, max_contexts: int = 
         return
 
     archived = PurchaseContext.from_conversation(conversation)
-    target_category = archived.target_category or active_target_category(conversation)
-    if target_category is None:
-        conversation.previous_purchase_contexts = [archived, *conversation.previous_purchase_contexts][
-            :max_contexts
+    key = archived.canonical_target_key or active_target_key(conversation)
+    if key:
+        archived.canonical_target_key = key
+    target = archived.target_category or archived.preferences.get("target_category")
+    if key:
+        deduped = [
+            item
+            for item in conversation.previous_purchase_contexts
+            if ensure_archived_target_fields(item) != key
         ]
-        return
-
-    deduped = [
-        item
-        for item in conversation.previous_purchase_contexts
-        if item.target_category != target_category
-    ]
+    elif isinstance(target, str) and target.strip():
+        deduped = [
+            item
+            for item in conversation.previous_purchase_contexts
+            if (item.target_category or item.preferences.get("target_category")) != target
+        ]
+    else:
+        deduped = list(conversation.previous_purchase_contexts)
     conversation.previous_purchase_contexts = [archived, *deduped][:max_contexts]
 
 
@@ -69,7 +116,18 @@ def clear_active_context(conversation: ConversationState) -> None:
 
     conversation.purchase_need = None
     conversation.preferences = {}
+    conversation.excluded_product_ids = []
     conversation.excluded_brands = []
+    conversation.excluded_keywords = []
+    conversation.excluded_price_ranges = []
+    conversation.negative_feedback_items = []
+    conversation.latest_attempt_status = None
+    conversation.latest_attempt_error = None
+    conversation.latest_no_results_relax_options = []
+    conversation.last_successful_items = []
+    conversation.last_successful_result_id = None
+    conversation.last_successful_query = None
+    conversation.last_successful_filters = None
     conversation.target_item_index = None
     conversation.last_query = None
     conversation.last_filters = None
@@ -89,43 +147,69 @@ def reset_for_new_target(conversation: ConversationState) -> None:
 
 def find_archived_context(
     conversation: ConversationState,
-    target_category: str,
+    canonical_key: str,
 ) -> PurchaseContext | None:
-    """按具体目标品类查找已归档的购买上下文。"""
+    """按 canonical key 查找已归档的购买上下文。"""
 
+    lookup_key = canonical_target_key(canonical_key) or canonical_key
     for item in conversation.previous_purchase_contexts:
-        item_target = item.target_category or item.preferences.get("target_category")
-        if item_target == target_category:
+        item_key = ensure_archived_target_fields(item)
+        if item_key == lookup_key:
             return item
     return None
 
 
-def request_restore(conversation: ConversationState, target_category: str) -> bool:
+def request_restore(
+    conversation: ConversationState,
+    canonical_key: str,
+    display_target_category: str | None = None,
+) -> bool:
     """只有存在可恢复归档时，才进入待确认恢复状态。"""
 
-    if find_archived_context(conversation, target_category) is None:
+    pending_key = canonical_target_key(canonical_key) or canonical_key
+    archived = find_archived_context(conversation, pending_key)
+    if archived is None:
         return False
 
-    conversation.pending_restore_category = target_category
+    conversation.pending_restore_category = pending_key
+    conversation.pending_restore_display_target = (
+        display_target_category
+        or archived.display_target_category
+        or archived.target_category
+    )
     return True
+
+
+def clear_pending_restore(conversation: ConversationState) -> None:
+    conversation.pending_restore_category = None
+    conversation.pending_restore_display_target = None
+
+
+def _pending_restore_display_target(conversation: ConversationState) -> str:
+    if conversation.pending_restore_display_target:
+        return conversation.pending_restore_display_target
+    pending_key = conversation.pending_restore_category
+    if pending_key and canonical_target_key(pending_key):
+        return pending_key
+    return "之前的需求"
 
 
 def confirm_restore(conversation: ConversationState) -> UserUnderstanding:
     """执行恢复确认：归档当前需求，恢复旧需求，并清除待恢复标记。"""
 
-    target_category = conversation.pending_restore_category
+    pending_key = conversation.pending_restore_category
     archived = (
-        find_archived_context(conversation, target_category)
-        if target_category is not None
+        find_archived_context(conversation, pending_key)
+        if pending_key is not None
         else None
     )
     if archived is None:
-        conversation.pending_restore_category = None
+        clear_pending_restore(conversation)
         return clarify_understanding("没有找到之前的需求，可以重新说一下想买什么吗？")
 
     archive_active_context(conversation)
     archived.apply_to_conversation(conversation)
-    conversation.pending_restore_category = None
+    clear_pending_restore(conversation)
 
     return UserUnderstanding(
         intent=UserIntent.RECOMMEND,
@@ -138,19 +222,20 @@ def confirm_restore(conversation: ConversationState) -> UserUnderstanding:
 def reject_restore(conversation: ConversationState) -> None:
     """执行恢复拒绝：只清除待恢复标记。"""
 
-    conversation.pending_restore_category = None
+    clear_pending_restore(conversation)
 
 
 def build_restore_rejection_understanding(
-    target_category: str,
+    conversation: ConversationState,
     message: str,
 ) -> UserUnderstanding:
     """把拒绝恢复后的新需求转成理解结果；不修改会话状态。"""
 
+    display_target = _pending_restore_display_target(conversation)
     scratch = ConversationState(session_id="restore-rejection")
     candidates = [message]
-    if target_category not in message:
-        candidates.append(f"{target_category}，{message}")
+    if display_target and display_target not in message:
+        candidates.append(f"{display_target}，{message}")
 
     for candidate in candidates:
         fallback = fallback_understanding(
@@ -163,11 +248,11 @@ def build_restore_rejection_understanding(
 
         fallback.purchase_need = message
         fallback.reset_context = True
-        fallback.confidence = max(fallback.confidence, 0.6)
+        fallback.confidence = max(fallback.confidence, 0.65)
         return fallback
 
     return clarify_understanding(
-        f"不恢复之前的{target_category}需求。可以告诉我新的品类、预算和最在意的点吗？"
+        f"不恢复{display_target}。可以告诉我新的品类、预算和最在意的点吗？"
     )
 
 
@@ -177,15 +262,17 @@ def resolve_pending_restore(
 ) -> PendingRestoreResolution:
     """解析待恢复确认消息，但不直接修改会话状态。"""
 
-    target_category = conversation.pending_restore_category
-    if target_category is None:
+    pending_key = conversation.pending_restore_category
+    if pending_key is None:
         return PendingRestoreResolution(handled=False)
+
+    display_target = _pending_restore_display_target(conversation)
 
     if is_restore_rejection(message):
         return PendingRestoreResolution(
             handled=True,
             command=ConversationCommand.REJECT_RESTORE,
-            understanding=build_restore_rejection_understanding(target_category, message),
+            understanding=build_restore_rejection_understanding(conversation, message),
         )
 
     if is_restore_confirmation(message):
@@ -211,6 +298,6 @@ def resolve_pending_restore(
         handled=True,
         command=ConversationCommand.REJECT_RESTORE,
         understanding=clarify_understanding(
-            f"不恢复之前的{target_category}需求。可以告诉我新的品类、预算和最在意的点吗？"
+            f"不恢复{display_target}。可以告诉我新的品类、预算和最在意的点吗？"
         ),
     )

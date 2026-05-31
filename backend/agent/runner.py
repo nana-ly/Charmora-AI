@@ -6,7 +6,7 @@ API 层只依赖 AgentRunner 协议，不关心 LangGraph Runner 的内部编排
 
 from typing import Protocol
 
-from agent.memory import InMemoryConversationStore
+from agent.memory import ConversationStore, InMemoryConversationStore, SessionLockManager
 from agent.tools import RecommendationTool
 from agent.understanding import LLMUserUnderstandingService, UserUnderstandingService
 from core.config import AppConfig, load_app_config
@@ -21,10 +21,22 @@ class AgentRunner(Protocol):
         ...
 
 
+def create_conversation_store(config: AppConfig) -> ConversationStore:
+    """按配置创建会话存储；显式注入 store 时不会调用这里。"""
+    mode = config.conversation_store_mode.strip().lower()
+    if mode == "memory":
+        return InMemoryConversationStore()
+    if mode == "sqlite":
+        from agent.sqlite_memory import SQLiteConversationStore
+
+        return SQLiteConversationStore(config.conversation_store_path)
+    raise ValueError("CONVERSATION_STORE_MODE 仅支持 memory 或 sqlite")
+
+
 def create_agent_runner(
     *,
     config: AppConfig | None = None,
-    store: InMemoryConversationStore | None = None,
+    store: ConversationStore | None = None,
     recommendation_tool: RecommendationTool | None = None,
     understanding_service: UserUnderstandingService | None = None,
 ) -> AgentRunner:
@@ -35,7 +47,7 @@ def create_agent_runner(
     """
     selected_config = config or load_app_config()
     runner_name = selected_config.agent_runner.strip().lower()
-    shared_store = store or InMemoryConversationStore()
+    shared_store = store or create_conversation_store(selected_config)
     shared_tool = recommendation_tool or RecommendationTool()
     shared_understanding_service = understanding_service or LLMUserUnderstandingService(
         config=selected_config.llm
@@ -49,6 +61,8 @@ def create_agent_runner(
             recommendation_tool=shared_tool,
             understanding_service=shared_understanding_service,
             llm_config=selected_config.llm,
+            session_lock_manager=SessionLockManager(),
+            session_lock_enabled=selected_config.agent_session_lock_enabled,
         )
 
     raise ValueError("AGENT_RUNNER 仅支持 langgraph")

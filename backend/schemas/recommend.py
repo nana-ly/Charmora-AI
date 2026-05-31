@@ -11,6 +11,24 @@ class RecommendRequest(BaseModel):
     query: str
 
 
+class ExcludedPriceRange(BaseModel):
+    """预留的价格区间排除结构。"""
+
+    min_price: float | None = None
+    max_price: float | None = None
+    reason: str | None = None
+    source_product_id: str | None = None
+
+
+class NegativeFilters(BaseModel):
+    """推荐链使用的负向过滤条件。"""
+
+    excluded_product_ids: list[str] = Field(default_factory=list)
+    excluded_brands: list[str] = Field(default_factory=list)
+    excluded_keywords: list[str] = Field(default_factory=list)
+    excluded_price_ranges: list[ExcludedPriceRange] = Field(default_factory=list)
+
+
 class RecommendFilters(BaseModel):
     """从用户需求中解析出的结构化筛选条件。"""
 

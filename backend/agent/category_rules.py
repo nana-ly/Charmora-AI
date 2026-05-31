@@ -6,27 +6,21 @@ import re
 
 from pydantic import BaseModel
 
+from agent.catalog_taxonomy import (
+    brand_terms,
+    canonical_key_for,
+    catalog_category_for_target,
+    target_category_aliases,
+)
 
 class TargetCategoryMatch(BaseModel):
     target_category: str
     catalog_category: str | None = None
     matched_text: str
+    canonical_target_key: str
 
 
-TARGET_CATEGORY_ALIASES: dict[str, tuple[str, str]] = {
-    "手机": ("手机", "数码电子"),
-    "耳机": ("耳机", "数码电子"),
-    "电脑": ("电脑", "数码电子"),
-    "笔记本": ("电脑", "数码电子"),
-    "平板": ("平板", "数码电子"),
-    "咖啡": ("咖啡", "食品生活"),
-    "饮品": ("饮品", "食品生活"),
-    "防晒": ("防晒", "美妆护肤"),
-    "面霜": ("面霜", "美妆护肤"),
-    "护肤": ("护肤", "美妆护肤"),
-    "T恤": ("T恤", "服饰运动"),
-    "外套": ("外套", "服饰运动"),
-}
+TARGET_CATEGORY_ALIASES = target_category_aliases()
 
 PURCHASE_SIGNALS = (
     "想买",
@@ -42,6 +36,9 @@ PURCHASE_SIGNALS = (
     "主要",
     "适合",
 )
+
+BROAD_CATEGORY_SIGNALS = ("推荐", "看看", "有什么", "想买", "要买")
+RESTORE_SIGNAL_TERMS = ("还是", "之前", "恢复", "回到", "继续看")
 
 FOCUS_TERMS = (
     "拍照",
@@ -60,7 +57,7 @@ FOCUS_TERMS = (
     "凉快",
 )
 
-BRAND_TERMS = ("华为", "小米", "苹果", "荣耀", "OPPO", "vivo", "三星")
+BRAND_TERMS = brand_terms()
 RESTORE_CONTEXT_TERMS = ("之前", "恢复", "按之前", "就之前")
 RESTORE_ACTION_TERMS = ("恢复之前", "按之前", "就之前")
 CONFIRMATION_PREFIXES = ("对", "是的", "可以")
@@ -69,25 +66,48 @@ REJECTION_TERMS = ("不是", "不用", "不要之前", "不用之前", "算了",
 
 
 def detect_target_category(message: str) -> TargetCategoryMatch | None:
-    for alias, (target_category, catalog_category) in TARGET_CATEGORY_ALIASES.items():
+    for alias, target_category, catalog_category, key in TARGET_CATEGORY_ALIASES:
         if alias in message:
             return TargetCategoryMatch(
                 target_category=target_category,
                 catalog_category=catalog_category,
                 matched_text=alias,
+                canonical_target_key=key,
             )
     return None
 
 
+def detect_restore_target(message: str) -> TargetCategoryMatch | None:
+    if not any(term in message for term in RESTORE_SIGNAL_TERMS):
+        return None
+    return detect_target_category(message)
+
+
+def canonical_target_key(
+    target_category: str | None,
+    catalog_category: str | None = None,
+) -> str | None:
+    return canonical_key_for(target_category, catalog_category)
+
+
 def catalog_category_for(target_category: str) -> str | None:
-    for canonical, catalog_category in TARGET_CATEGORY_ALIASES.values():
-        if canonical == target_category:
-            return catalog_category
-    return None
+    return catalog_category_for_target(target_category)
 
 
 def has_purchase_signal(message: str) -> bool:
     return any(term in message for term in PURCHASE_SIGNALS)
+
+
+def has_broad_category_signal(message: str) -> bool:
+    return any(signal in message for signal in BROAD_CATEGORY_SIGNALS)
+
+
+def is_standalone_category_term(
+    message: str,
+    target: TargetCategoryMatch,
+) -> bool:
+    stripped = message.strip(" ，,。.!！？?")
+    return stripped == target.matched_text
 
 
 def extract_preference_hints(message: str) -> dict[str, object]:
@@ -101,7 +121,7 @@ def extract_preference_hints(message: str) -> dict[str, object]:
         hints["budget"] = int(budget_match.group(1))
 
     for brand in BRAND_TERMS:
-        if brand in message and f"不要{brand}" not in message and f"不买{brand}" not in message:
+        if brand in message and not _is_negative_brand_mention(message, brand):
             hints["brand"] = brand
             break
 
@@ -109,15 +129,20 @@ def extract_preference_hints(message: str) -> dict[str, object]:
     if focus:
         hints["focus"] = focus
 
-    excluded = [
-        brand
-        for brand in BRAND_TERMS
-        if f"不要{brand}" in message or f"不买{brand}" in message
-    ]
-    if excluded:
-        hints["excluded_brands"] = excluded
-
     return hints
+
+
+def _is_negative_brand_mention(message: str, brand: str) -> bool:
+    escaped = re.escape(brand)
+    negative_before_brand = any(
+        re.search(rf"{prefix}\s*{escaped}", message)
+        for prefix in ("不要", "不买", "不考虑", "排除")
+    )
+    brand_before_negative = re.search(
+        rf"{escaped}\s*(?:(?:也)?\s*(?:可以|行)\s*)?(?:也)?\s*(?:不要|不买|不考虑|排除)",
+        message,
+    )
+    return bool(negative_before_brand or brand_before_negative)
 
 
 def is_restore_confirmation(message: str) -> bool:

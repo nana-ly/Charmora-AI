@@ -7,13 +7,26 @@ import logging
 from enum import Enum
 from typing import Any, Protocol
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent.memory import ConversationState
+from agent.negative_feedback_models import NegativeFeedbackApplicationResult
+from agent.prompt_loader import PromptTemplate, load_prompt
 from core.config import LLMConfig
 from schemas.product import ProductCard
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_compare_item_indexes(value: Any) -> list[int]:
+    if not isinstance(value, list):
+        raise ValueError("compare_item_indexes must be a list")
+    if not all(
+        isinstance(index, int) and not isinstance(index, bool) and index >= 1
+        for index in value
+    ):
+        raise ValueError("compare_item_indexes must contain 1-based integer indexes")
+    return list(value)
 
 
 class UserIntent(str, Enum):
@@ -22,6 +35,7 @@ class UserIntent(str, Enum):
     RECOMMEND = "recommend"
     UPDATE_PREFERENCE = "update_preference"
     EXPLAIN = "explain"
+    COMPARE = "compare"
     CLARIFY = "clarify"
 
 
@@ -30,7 +44,9 @@ class AgentAction(str, Enum):
 
     RECOMMEND = "recommend"
     EXPLAIN = "explain"
+    COMPARE = "compare"
     CLARIFY = "clarify"
+    REPLY_ONLY = "reply_only"
 
 
 class UserUnderstanding(BaseModel):
@@ -40,17 +56,27 @@ class UserUnderstanding(BaseModel):
     confidence: float = Field(ge=0, le=1)
     purchase_need: str | None = None
     preference_updates: dict[str, Any] = Field(default_factory=dict)
+    negative_updates: dict[str, Any] = Field(default_factory=dict)
     target_item_index: int | None = Field(default=None, ge=1)
+    compare_item_indexes: list[int] = Field(default_factory=list)
     clarifying_question: str | None = None
     reset_context: bool = False
     restore_context_category: str | None = None
+
+    @field_validator("compare_item_indexes", mode="before")
+    @classmethod
+    def validate_compare_item_indexes(cls, value: Any) -> list[int]:
+        # 模型可能被测试或执行层直接构造；这里先于 Pydantic 类型转换校验，避免 True/"2" 被转成 1/2。
+        return _validate_compare_item_indexes(value)
 
 
 DEFAULT_UNDERSTANDING_FIELDS: dict[str, Any] = {
     "confidence": 0.5,
     "purchase_need": None,
     "preference_updates": {},
+    "negative_updates": {},
     "target_item_index": None,
+    "compare_item_indexes": [],
     "clarifying_question": None,
     "reset_context": False,
     "restore_context_category": None,
@@ -77,12 +103,21 @@ def normalize_understanding_payload(payload: Any) -> dict[str, Any]:
     if unknown_fields:
         logger.debug("understanding ignored_unknown_fields=%s", unknown_fields)
 
-    normalized = {**DEFAULT_UNDERSTANDING_FIELDS, "preference_updates": {}, **payload}
+    normalized = {
+        **DEFAULT_UNDERSTANDING_FIELDS,
+        "preference_updates": {},
+        "negative_updates": {},
+        **payload,
+    }
     invalid_fields: list[str] = []
 
     if not isinstance(normalized.get("preference_updates"), dict):
         normalized["preference_updates"] = {}
         invalid_fields.append("preference_updates")
+
+    if not isinstance(normalized.get("negative_updates"), dict):
+        normalized["negative_updates"] = {}
+        invalid_fields.append("negative_updates")
 
     target_item_index = normalized.get("target_item_index")
     if target_item_index is not None:
@@ -94,6 +129,20 @@ def normalize_understanding_payload(payload: Any) -> dict[str, Any]:
         if not is_valid_index:
             normalized["target_item_index"] = None
             invalid_fields.append("target_item_index")
+
+    compare_item_indexes = normalized.get("compare_item_indexes")
+    # 比较对象来自用户可见列表序号，必须严格保留 1-based 正整数，避免 bool 被 int 兼容性误收。
+    if not (
+        isinstance(compare_item_indexes, list)
+        and all(
+            isinstance(index, int) and not isinstance(index, bool) and index >= 1
+            for index in compare_item_indexes
+        )
+    ):
+        normalized["compare_item_indexes"] = []
+        invalid_fields.append("compare_item_indexes")
+    else:
+        normalized["compare_item_indexes"] = list(compare_item_indexes)
 
     if invalid_fields:
         logger.info(
@@ -122,7 +171,15 @@ class ActionResult(BaseModel):
     tool_error: str | None = None
     no_results: NoResultsSuggestion | None = None
     target_item_index: int | None = None
+    compare_item_indexes: list[int] = Field(default_factory=list)
     clarifying_question: str | None = None
+    negative_feedback: NegativeFeedbackApplicationResult | None = None
+
+    @field_validator("compare_item_indexes", mode="before")
+    @classmethod
+    def validate_compare_item_indexes(cls, value: Any) -> list[int]:
+        # 执行层结果也可能直接实例化，复用同一规则保证 compare 序号契约一致。
+        return _validate_compare_item_indexes(value)
 
 
 class InvokeChatClient(Protocol):
@@ -159,10 +216,15 @@ class LLMUserUnderstandingService:
         llm: InvokeChatClient | None = None,
         config: LLMConfig | None = None,
         max_tokens: int = 3000,
+        prompt_version: str = "understanding_v1",
+        prompt_loader=load_prompt,
     ) -> None:
         self.llm = llm
         self.config = config or LLMConfig()
         self.max_tokens = max_tokens
+        self.prompt_version = prompt_version
+        self._prompt_loader = prompt_loader
+        self._prompt_template: PromptTemplate | None = None
 
     def understand(
         self,
@@ -173,7 +235,10 @@ class LLMUserUnderstandingService:
         """调用模型并解析为 `UserUnderstanding`。"""
         llm = self._resolve_llm()
         if llm is None:
-            logger.debug("llm understanding skipped; returning clarify fallback")
+            logger.debug(
+                "llm understanding skipped prompt_version=%s; returning clarify fallback",
+                self.prompt_version,
+            )
             return self._fallback_or_clarify(
                 message=message,
                 conversation=conversation,
@@ -188,6 +253,19 @@ class LLMUserUnderstandingService:
             parsed = json.loads(getattr(response, "content", ""))
             normalized = normalize_understanding_payload(parsed)
             understanding = UserUnderstanding.model_validate(normalized)
+            fallback = self._fallback_understanding(
+                message=message,
+                conversation=conversation,
+                reason="deterministic_broad_overlay",
+            )
+            if (
+                fallback is not None
+                and fallback.intent == UserIntent.RECOMMEND
+                and fallback.preference_updates.get("is_broad_category_request") is True
+            ):
+                if understanding.intent == UserIntent.CLARIFY or not self._has_broad_target_fields(understanding):
+                    return fallback
+
             if understanding.intent == UserIntent.CLARIFY:
                 return (
                     self._fallback_understanding(
@@ -213,14 +291,20 @@ class LLMUserUnderstandingService:
                 )
             return understanding
         except (TypeError, json.JSONDecodeError, ValidationError):
-            logger.exception("LLM understanding response could not be parsed")
+            logger.exception(
+                "LLM understanding response could not be parsed prompt_version=%s",
+                self.prompt_version,
+            )
             return self._fallback_or_clarify(
                 message=message,
                 conversation=conversation,
                 reason="parse_validation_failure",
             )
         except Exception:
-            logger.exception("LLM understanding failed")
+            logger.exception(
+                "LLM understanding failed prompt_version=%s",
+                self.prompt_version,
+            )
             return self._fallback_or_clarify(
                 message=message,
                 conversation=conversation,
@@ -256,7 +340,16 @@ class LLMUserUnderstandingService:
             return False
         if understanding.preference_updates:
             return False
+        if understanding.negative_updates:
+            return False
         return self._has_active_purchase_context(conversation)
+
+    def _has_broad_target_fields(self, understanding: UserUnderstanding) -> bool:
+        updates = understanding.preference_updates
+        return all(
+            isinstance(updates.get(key), str) and updates[key].strip()
+            for key in ("target_category", "category", "canonical_target_key")
+        ) and updates.get("is_broad_category_request") is True
 
     def _needs_purchase_need(
         self,
@@ -307,29 +400,9 @@ class LLMUserUnderstandingService:
         ]
 
     def _system_prompt(self) -> str:
-        return (
-            "你是电商导购 Agent 的用户意图理解器。\n"
-            "Return one JSON object only. Do not use Markdown. Do not explain.\n"
-            "Do not invent product cards. Product recommendations come only from tools.\n"
-            "intent 只能是 recommend、update_preference、explain、clarify。\n"
-            "如果用户询问上一轮第几个商品，target_item_index 使用 1-based 序号。\n"
-            "如果需求不足以推荐，intent=clarify 并给出 clarifying_question。\n"
-            "category means catalog category, for example 数码电子 or 食品生活.\n"
-            "target_category means the concrete shopping target, for example 手机 or 咖啡.\n"
-            "Use reset_context=true only when the user starts a different shopping target.\n"
-            "Use restore_context_category only when the user may be returning to an archived target and needs confirmation.\n"
-            "Always include confidence, purchase_need, preference_updates, target_item_index, clarifying_question, "
-            "reset_context, restore_context_category.\n"
-            "Example complete request: 用户=我想买一台华为手机，预算6000以内，主要拍照和续航; "
-            "return intent=recommend, target_category=手机, category=数码电子.\n"
-            "Example contextual price feedback: 已有手机需求后，用户=太贵了; "
-            "return intent=update_preference, purchase_need=null, "
-            "preference_updates must be a JSON object such as "
-            "{\"price_direction\":\"lower\",\"avoid_current_price_band\":true}, "
-            "target_item_index must be null.\n"
-            "Example ambiguous restore: 用户=还是看手机吧; "
-            "return intent=clarify, restore_context_category=手机, clarifying_question=是否恢复之前的手机需求."
-        )
+        if self._prompt_template is None:
+            self._prompt_template = self._prompt_loader(self.prompt_version)
+        return self._prompt_template.content
 
     def _context_block(self, message: str, conversation: ConversationState) -> str:
         recent_messages = conversation.messages[-8:]

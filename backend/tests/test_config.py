@@ -23,3 +23,16 @@ def test_default_top_k_reads_environment_value(monkeypatch):
     config = load_app_config(env_file=None)
 
     assert config.default_top_k == 5
+
+
+def test_load_app_config_reads_conversation_store_settings(monkeypatch):
+    monkeypatch.setenv("CONVERSATION_STORE_MODE", "sqlite")
+    monkeypatch.setenv(
+        "CONVERSATION_STORE_PATH",
+        "data/test-conversations.sqlite3",
+    )
+
+    config = load_app_config(env_file=None)
+
+    assert config.conversation_store_mode == "sqlite"
+    assert config.conversation_store_path == "data/test-conversations.sqlite3"

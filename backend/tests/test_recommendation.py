@@ -7,6 +7,7 @@ from recommendation_core.ranking import choose_candidates, get_product_price, st
 from recommendation_core.response_builder import build_response_item
 from retrieval.base import RetrievalResult
 from retrieval.keyword import KeywordRetriever
+from schemas.recommend import NegativeFilters
 
 
 class FakeEmptyRetriever:
@@ -30,6 +31,37 @@ class FakeFailingRetriever:
         raise RuntimeError("检索模块不可用")
 
 
+class CapturingRetriever:
+    def __init__(self):
+        self.candidates = None
+
+    def search(self, query: str, candidates=None, top_k: int = 3):
+        self.candidates = list(candidates or [])
+        return [
+            RetrievalResult(
+                product=product,
+                evidence="test evidence",
+                score=1.0,
+            )
+            for product in self.candidates[:top_k]
+        ]
+
+
+class IgnoringCandidateRetriever:
+    def __init__(self, products):
+        self.products = products
+
+    def search(self, query: str, candidates=None, top_k: int = 3):
+        return [
+            RetrievalResult(
+                product=product,
+                evidence="test evidence",
+                score=1.0,
+            )
+            for product in self.products[:top_k]
+        ]
+
+
 def test_extract_filters_parses_category_budget_and_keywords():
     filters = extract_filters("预算9000以内，想买拍照和剪视频好的手机")
 
@@ -45,6 +77,14 @@ def test_extract_filters_parses_brand_preference():
     filters = extract_filters("想买苹果手机，预算9000以内")
 
     assert filters["brand"] == "苹果"
+
+
+def test_extract_filters_maps_skin_care_terms_to_beauty_category():
+    from recommendation_core.filters import extract_filters
+
+    for query in ("推荐护肤品", "推荐美妆", "推荐化妆品"):
+        filters = extract_filters(query)
+        assert filters["category"] == "美妆护肤"
 
 
 def test_extract_filters_supports_extended_keywords_and_budget_patterns():
@@ -276,6 +316,135 @@ def test_recommend_products_consumes_retriever_results_directly():
 
     assert response["items"][0]["product_id"] == "p_1"
     assert response["items"][0]["evidence"] == "测试 evidence"
+
+
+def test_recommend_products_filters_excluded_product_ids_before_retrieval():
+    product_source = [
+        {
+            "product_id": "p_1",
+            "title": "Huawei camera phone",
+            "brand": "华为",
+            "category": "数码电子",
+            "base_price": 4999,
+        },
+        {
+            "product_id": "p_2",
+            "title": "Apple camera phone",
+            "brand": "苹果",
+            "category": "数码电子",
+            "base_price": 5999,
+        },
+    ]
+    retriever = CapturingRetriever()
+
+    response = recommend_products(
+        "camera phone under 7000",
+        product_source=product_source,
+        top_k=2,
+        retriever=retriever,
+        negative_filters=NegativeFilters(excluded_product_ids=["p_1"]),
+    )
+
+    assert [product["product_id"] for product in retriever.candidates] == ["p_2"]
+    assert [item["product_id"] for item in response["items"]] == ["p_2"]
+
+
+def test_recommend_products_filters_excluded_brands_before_retrieval():
+    product_source = [
+        {
+            "product_id": "p_1",
+            "title": "Apple camera phone",
+            "brand": " Apple ",
+            "category": "数码电子",
+            "base_price": 4999,
+        },
+        {
+            "product_id": "p_2",
+            "title": "Huawei camera phone",
+            "brand": "苹果",
+            "category": "数码电子",
+            "base_price": 5999,
+        },
+    ]
+    retriever = CapturingRetriever()
+
+    response = recommend_products(
+        "camera phone under 7000",
+        product_source=product_source,
+        top_k=2,
+        retriever=retriever,
+        negative_filters=NegativeFilters(excluded_brands=["apple"]),
+    )
+
+    assert [product["product_id"] for product in retriever.candidates] == ["p_2"]
+    assert [item["product_id"] for item in response["items"]] == ["p_2"]
+
+
+def test_recommend_products_final_filter_removes_retriever_violations():
+    product_source = [
+        {
+            "product_id": "p_2",
+            "title": "Apple camera phone",
+            "brand": "苹果",
+            "category": "数码电子",
+            "base_price": 5999,
+        }
+    ]
+    retriever = IgnoringCandidateRetriever(
+        [
+            {
+                "product_id": "p_1",
+                "title": "Huawei camera phone",
+                "brand": "华为",
+                "category": "数码电子",
+                "base_price": 4999,
+            },
+            product_source[0],
+        ]
+    )
+
+    response = recommend_products(
+        "camera phone under 7000",
+        product_source=product_source,
+        top_k=2,
+        retriever=retriever,
+        negative_filters=NegativeFilters(excluded_product_ids=["p_1"]),
+    )
+
+    assert [item["product_id"] for item in response["items"]] == ["p_2"]
+
+
+def test_recommend_products_returns_no_results_after_final_negative_filter():
+    product_source = [
+        {
+            "product_id": "p_2",
+            "title": "Apple camera phone",
+            "brand": "苹果",
+            "category": "数码电子",
+            "base_price": 5999,
+        }
+    ]
+    retriever = IgnoringCandidateRetriever(
+        [
+            {
+                "product_id": "p_1",
+                "title": "Huawei camera phone",
+                "brand": " 华为 ",
+                "category": "数码电子",
+                "base_price": 4999,
+            }
+        ]
+    )
+
+    response = recommend_products(
+        "camera phone under 7000",
+        product_source=product_source,
+        top_k=1,
+        retriever=retriever,
+        negative_filters=NegativeFilters(excluded_brands=["华为"]),
+    )
+
+    assert response["items"] == []
 
 
 def test_recommend_products_returns_empty_items_when_retriever_returns_empty():

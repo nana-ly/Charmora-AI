@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from agent.memory import ConversationState
+from agent.negative_feedback_rules import clean_positive_purchase_need
+
+_NEGATIVE_BRAND_MARKERS = ("不要", "不买", "不考虑", "排除", "别要", "避开")
+_PURCHASE_NEED_SEPARATORS = ("，", ",", "。", "；", ";", "\n")
 
 
 def build_recommendation_query(conversation: ConversationState) -> str:
@@ -13,11 +17,21 @@ def build_recommendation_query(conversation: ConversationState) -> str:
         return ""
 
     preferences = conversation.preferences
+    purchase_need = clean_positive_purchase_need(conversation.purchase_need)
+    purchase_need = _clean_negative_brand_fragments(
+        purchase_need,
+        conversation.excluded_brands,
+    )
+    if not purchase_need:
+        target = preferences.get("target_category")
+        category = preferences.get("category")
+        purchase_need = str(target or category or "").strip()
     structured_price_limit = _format_price_limit(preferences)
-    if structured_price_limit and structured_price_limit not in conversation.purchase_need:
-        query_parts = [structured_price_limit, conversation.purchase_need]
-    else:
-        query_parts = [conversation.purchase_need]
+    query_parts: list[str] = []
+    if structured_price_limit and structured_price_limit not in purchase_need:
+        query_parts.append(structured_price_limit)
+    if purchase_need:
+        query_parts.append(purchase_need)
     query = _join_query(query_parts)
 
     _append_missing(query_parts, query, preferences.get("target_category"))
@@ -33,16 +47,6 @@ def build_recommendation_query(conversation: ConversationState) -> str:
     _append_values(query_parts, query, preferences.get("focus"))
     query = _join_query(query_parts)
 
-    excluded = _unique_values(
-        [
-            *conversation.excluded_brands,
-            *_as_values(preferences.get("excluded_brands")),
-        ]
-    )
-    if excluded:
-        _append_missing(query_parts, query, "不要" + "、".join(excluded))
-        query = _join_query(query_parts)
-
     has_lower_price_direction = (
         preferences.get("price_direction") == "lower"
         or preferences.get("price_preference") == "lower"
@@ -57,6 +61,36 @@ def build_recommendation_query(conversation: ConversationState) -> str:
         )
 
     return _join_query(query_parts)
+
+
+def _clean_negative_brand_fragments(purchase_need: str, excluded_brands: list[str]) -> str:
+    brands = [brand.strip() for brand in excluded_brands if brand.strip()]
+    if not brands:
+        return purchase_need
+
+    fragments = _split_purchase_need(purchase_need)
+    kept = [
+        fragment
+        for fragment in fragments
+        if not _is_negative_brand_fragment(fragment, brands)
+    ]
+    return _join_query(kept)
+
+
+def _split_purchase_need(purchase_need: str) -> list[str]:
+    fragments = [purchase_need]
+    for separator in _PURCHASE_NEED_SEPARATORS:
+        next_fragments: list[str] = []
+        for fragment in fragments:
+            next_fragments.extend(fragment.split(separator))
+        fragments = next_fragments
+    return [fragment.strip() for fragment in fragments if fragment.strip()]
+
+
+def _is_negative_brand_fragment(fragment: str, brands: list[str]) -> bool:
+    return any(marker in fragment for marker in _NEGATIVE_BRAND_MARKERS) and any(
+        brand in fragment for brand in brands
+    )
 
 
 def _format_budget(value: Any) -> str | None:

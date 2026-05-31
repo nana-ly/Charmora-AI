@@ -1,7 +1,13 @@
 from core.config import AppConfig, LLMConfig, RAGConfig
 from schemas.chat import ChatRequest, ChatResponse
 from schemas.product import ProductCard
-from schemas.recommend import RecommendFilters, RecommendRequest, RecommendResponse
+from schemas.recommend import (
+    ExcludedPriceRange,
+    NegativeFilters,
+    RecommendFilters,
+    RecommendRequest,
+    RecommendResponse,
+)
 
 
 def test_recommend_request_accepts_query():
@@ -49,6 +55,29 @@ def test_recommend_response_wraps_filters_and_items():
     assert response.filters.category == "数码电子"
     assert response.filters.max_price is None
     assert response.items[0].product_id == "p_digital_001"
+
+
+def test_negative_filters_defaults_are_empty_lists():
+    filters = NegativeFilters()
+
+    assert filters.excluded_product_ids == []
+    assert filters.excluded_brands == []
+    assert filters.excluded_keywords == []
+    assert filters.excluded_price_ranges == []
+
+
+def test_excluded_price_range_is_reserved_schema():
+    price_range = ExcludedPriceRange(
+        min_price=1000,
+        max_price=2000,
+        reason="测试区间",
+        source_product_id="p_1",
+    )
+
+    assert price_range.min_price == 1000
+    assert price_range.max_price == 2000
+    assert price_range.reason == "测试区间"
+    assert price_range.source_product_id == "p_1"
 
 
 def test_chat_request_and_response_keep_session_shape():

@@ -1,45 +1,62 @@
 """LangGraph 版导购 Agent Runner。"""
 
 import logging
+import time
+from collections.abc import Callable
 from typing import Any, TypedDict
+from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
+from agent.category_rules import detect_restore_target
 from agent.context_manager import (
     ConversationCommand,
-    confirm_restore,
-    reject_restore,
+    active_target_key,
+    clear_pending_restore,
     request_restore,
-    reset_for_new_target,
     resolve_pending_restore,
 )
-from agent.memory import ConversationState, InMemoryConversationStore
-from agent.query_builder import build_recommendation_query
+from agent.graph.action_executor import ActionExecutor
+from agent.graph.response_state_builder import ResponseStateBuilder
+from agent.graph.state_reducer import ConversationStateReducer
+from agent.memory import ConversationState, ConversationStore, SessionLockManager
+from agent.negative_feedback_models import NegativeFeedbackApplicationResult
+from agent.negative_feedback_rules import extract_negative_updates
+from agent.policy import decide_next_action
+from agent.reply_builder import (
+    build_clarify_reply,
+    build_compare_reply,
+    build_explain_reply,
+    build_negative_feedback_noop_reply,
+    build_no_results_reply,
+    build_recommendation_reply,
+    build_tool_error_reply,
+)
 from agent.tools import RecommendationTool
 from agent.understanding import (
     ActionResult,
     AgentAction,
     LLMUserUnderstandingService,
-    NoResultsSuggestion,
     UserIntent,
     UserUnderstanding,
     UserUnderstandingService,
     clarify_understanding,
 )
 from core.config import LLMConfig, load_app_config
+from core.request_context import get_request_context, set_request_context
 from schemas.chat import ChatMessage, ChatResponse
 from schemas.product import ProductCard
-from schemas.recommend import RecommendResponse
 
 logger = logging.getLogger(__name__)
-
 
 class ShoppingAgentState(TypedDict, total=False):
     session_id: str
     message: str
     conversation: ConversationState
     understanding: UserUnderstanding
+    negative_feedback_result: NegativeFeedbackApplicationResult
     pending_restore_command: ConversationCommand
+    current_turn_is_broad: bool
     action: AgentAction
     action_result: ActionResult
     reply: str
@@ -52,10 +69,12 @@ class LangGraphAgentRunner:
 
     def __init__(
         self,
-        store: InMemoryConversationStore,
+        store: ConversationStore,
         recommendation_tool: RecommendationTool,
         understanding_service: UserUnderstandingService | None = None,
         llm_config: LLMConfig | None = None,
+        session_lock_manager: SessionLockManager | None = None,
+        session_lock_enabled: bool = True,
     ):
         self.store = store
         self.recommendation_tool = recommendation_tool
@@ -63,23 +82,70 @@ class LangGraphAgentRunner:
         self.understanding_service = understanding_service or LLMUserUnderstandingService(
             config=self.llm_config
         )
+        self.session_lock_manager = session_lock_manager or SessionLockManager()
+        self.session_lock_enabled = session_lock_enabled
+        self.state_reducer = ConversationStateReducer()
+        self.action_executor = ActionExecutor(recommendation_tool)
+        self.response_state_builder = ResponseStateBuilder()
+
         self.graph = self._build_graph()
 
     def run(self, session_id: str, message: str) -> ChatResponse:
-        logger.info("agent run started session_id=%s", session_id)
-        logger.debug("agent input message_length=%s", len(message))
-        result = self.graph.invoke({"session_id": session_id, "message": message})
-        logger.info("agent run completed session_id=%s", session_id)
+        context = get_request_context()
+        request_id = context.request_id if context.request_id != "-" else uuid4().hex
+        turn_id = uuid4().hex
+        with set_request_context(
+            request_id=request_id,
+            session_id=session_id,
+            turn_id=turn_id,
+        ):
+            logger.info(
+                "agent run started session_id=%s message_length=%s turn_id=%s",
+                session_id,
+                len(message),
+                turn_id,
+            )
+            if self.session_lock_enabled:
+                with self.session_lock_manager.locked(session_id) as lock_info:
+                    logger.info(
+                        "agent session lock acquired session_id=%s lock_wait_ms=%.3f",
+                        session_id,
+                        lock_info.wait_ms,
+                    )
+                    result = self.graph.invoke(
+                        {"session_id": session_id, "message": message}
+                    )
+            else:
+                result = self.graph.invoke({"session_id": session_id, "message": message})
+            logger.info("agent run completed session_id=%s turn_id=%s", session_id, turn_id)
         return result["response"]
 
     def _build_graph(self):
         graph = StateGraph(ShoppingAgentState)
-        graph.add_node("understand_user", self._understand_user)
-        graph.add_node("update_memory", self._update_memory)
-        graph.add_node("decide_next_action", self._decide_next_action)
-        graph.add_node("execute_action", self._execute_action)
-        graph.add_node("generate_reply", self._generate_reply)
-        graph.add_node("finalize_response", self._finalize_response)
+        graph.add_node(
+            "understand_user",
+            self._timed_node("understand_user", self._understand_user),
+        )
+        graph.add_node(
+            "update_memory",
+            self._timed_node("update_memory", self._update_memory),
+        )
+        graph.add_node(
+            "decide_next_action",
+            self._timed_node("decide_next_action", self._decide_next_action),
+        )
+        graph.add_node(
+            "execute_action",
+            self._timed_node("execute_action", self._execute_action),
+        )
+        graph.add_node(
+            "generate_reply",
+            self._timed_node("generate_reply", self._generate_reply),
+        )
+        graph.add_node(
+            "finalize_response",
+            self._timed_node("finalize_response", self._finalize_response),
+        )
 
         graph.add_edge(START, "understand_user")
         graph.add_edge("understand_user", "update_memory")
@@ -90,10 +156,96 @@ class LangGraphAgentRunner:
         graph.add_edge("finalize_response", END)
         return graph.compile()
 
+    def _timed_node(
+        self,
+        node: str,
+        handler: Callable[[ShoppingAgentState], dict[str, Any]],
+    ) -> Callable[[ShoppingAgentState], dict[str, Any]]:
+        """包装 LangGraph 节点，记录耗时和脱敏后的结构化状态。"""
+
+        def wrapped(state: ShoppingAgentState) -> dict[str, Any]:
+            started_at = time.perf_counter()
+            logger.info("agent node started node=%s", node)
+            try:
+                output = handler(state)
+            except Exception as exc:
+                duration_ms = (time.perf_counter() - started_at) * 1000
+                logger.exception(
+                    "agent node failed node=%s duration_ms=%.3f error_type=%s",
+                    node,
+                    duration_ms,
+                    type(exc).__name__,
+                )
+                raise
+
+            duration_ms = (time.perf_counter() - started_at) * 1000
+            merged_state: ShoppingAgentState = {**state, **output}
+            fields = self._node_log_fields(node, merged_state, output)
+            logger.info(
+                (
+                    "agent node completed node=%s duration_ms=%.3f status=ok "
+                    "intent=%s action=%s reply_type=%s fallback_reason=%s result_count=%s"
+                ),
+                node,
+                duration_ms,
+                fields["intent"],
+                fields["action"],
+                fields["reply_type"],
+                fields["fallback_reason"],
+                fields["result_count"],
+            )
+            return output
+
+        return wrapped
+
+    def _node_log_fields(
+        self,
+        node: str,
+        state: ShoppingAgentState,
+        output: dict[str, Any],
+    ) -> dict[str, Any]:
+        understanding = state.get("understanding")
+        action = state.get("action")
+        action_result = state.get("action_result")
+        items = state.get("items")
+
+        fallback_reason = "-"
+        result_count: int | str = "-"
+        reply_type = getattr(action_result, "reply_type", "-") if action_result else "-"
+        if action_result:
+            result_count = len(action_result.items)
+            fallback_reason = self._fallback_reason(action_result)
+        elif isinstance(items, list):
+            result_count = len(items)
+
+        return {
+            "node": node,
+            "intent": getattr(getattr(understanding, "intent", None), "value", "-"),
+            "action": getattr(getattr(action, "value", action), "value", action) or "-",
+            "reply_type": reply_type,
+            "fallback_reason": fallback_reason,
+            "result_count": result_count,
+            "output_keys": ",".join(sorted(output)),
+        }
+
+    def _fallback_reason(self, action_result: ActionResult) -> str:
+        if action_result.tool_error:
+            return action_result.tool_error
+        if action_result.no_results:
+            return "no_results"
+        negative_feedback = action_result.negative_feedback
+        if negative_feedback and negative_feedback.noop:
+            return negative_feedback.noop_reason or "negative_feedback_noop"
+        return "-"
+
     def _understand_user(self, state: ShoppingAgentState) -> dict[str, Any]:
         conversation = self.store.get_or_create(state["session_id"])
         message = state["message"]
         conversation.messages.append(ChatMessage(role="user", content=message))
+
+        message_negative_updates = extract_negative_updates(message)
+        if conversation.pending_restore_category and message_negative_updates:
+            clear_pending_restore(conversation)
 
         resolution = resolve_pending_restore(conversation, message)
         if resolution.handled:
@@ -111,7 +263,27 @@ class LangGraphAgentRunner:
             }
 
         if resolution.clear_pending_before_understanding:
-            conversation.pending_restore_category = None
+            clear_pending_restore(conversation)
+
+        restore_target = detect_restore_target(message)
+        if restore_target is not None:
+            active_key = active_target_key(conversation)
+            if active_key != restore_target.canonical_target_key and request_restore(
+                conversation,
+                restore_target.canonical_target_key,
+                restore_target.target_category,
+            ):
+                understanding = UserUnderstanding(
+                    intent=UserIntent.CLARIFY,
+                    confidence=0.8,
+                    clarifying_question=(
+                        "要恢复之前的"
+                        f"{conversation.pending_restore_display_target or restore_target.target_category}"
+                        "需求吗？"
+                    ),
+                    restore_context_category=restore_target.target_category,
+                )
+                return {"conversation": conversation, "understanding": understanding}
 
         understanding = self.understanding_service.understand(
             message=message,
@@ -119,345 +291,101 @@ class LangGraphAgentRunner:
         )
 
         restore_category = understanding.restore_context_category
-        if restore_category and request_restore(conversation, restore_category):
-            understanding = UserUnderstanding(
-                intent=UserIntent.CLARIFY,
-                confidence=understanding.confidence,
-                clarifying_question=f"是否恢复之前的{restore_category}需求？",
-                restore_context_category=restore_category,
-            )
-
+        if restore_category:
+            if request_restore(conversation, restore_category):
+                understanding = UserUnderstanding(
+                    intent=UserIntent.CLARIFY,
+                    confidence=understanding.confidence,
+                    clarifying_question=(
+                        "是否恢复之前的"
+                        f"{conversation.pending_restore_display_target or restore_category}"
+                        "需求？"
+                    ),
+                    restore_context_category=restore_category,
+                )
         logger.info("agent intent understood intent=%s", understanding.intent.value)
         return {"conversation": conversation, "understanding": understanding}
 
     def _update_memory(self, state: ShoppingAgentState) -> dict[str, Any]:
-        conversation = state["conversation"]
-        understanding = state["understanding"]
-        restore_command = state.get("pending_restore_command")
-
-        if restore_command == ConversationCommand.CONFIRM_RESTORE:
-            restored_understanding = confirm_restore(conversation)
-            conversation.last_intent = restored_understanding.intent.value
-            return {
-                "conversation": conversation,
-                "understanding": restored_understanding,
-            }
-
-        if restore_command == ConversationCommand.REJECT_RESTORE:
-            reject_restore(conversation)
-
-        if understanding.reset_context:
-            # 切换目标前先归档旧需求，避免新旧品类状态混在一起。
-            reset_for_new_target(conversation)
-
-        if understanding.purchase_need:
-            conversation.purchase_need = understanding.purchase_need
-        if understanding.target_item_index is not None:
-            conversation.target_item_index = understanding.target_item_index
-
-        self._merge_preferences(conversation, understanding.preference_updates)
-        conversation.last_intent = understanding.intent.value
-        return {"conversation": conversation}
-
-    def _decide_next_action(self, state: ShoppingAgentState) -> dict[str, AgentAction]:
-        understanding = state["understanding"]
-        conversation = state["conversation"]
-
-        if understanding.intent == UserIntent.EXPLAIN:
-            return {"action": AgentAction.EXPLAIN}
-        if understanding.intent == UserIntent.CLARIFY:
-            return {"action": AgentAction.CLARIFY}
-        if conversation.purchase_need:
-            return {"action": AgentAction.RECOMMEND}
-        return {"action": AgentAction.CLARIFY}
-
-    def _execute_action(self, state: ShoppingAgentState) -> dict[str, ActionResult]:
-        action = state["action"]
-        conversation = state["conversation"]
-        understanding = state["understanding"]
-
-        if action == AgentAction.RECOMMEND:
-            return {"action_result": self._execute_recommendation(conversation)}
-
-        if action == AgentAction.EXPLAIN:
-            return {
-                "action_result": self._execute_explain(
-                    conversation,
-                    understanding.target_item_index,
-                )
-            }
-
-        question = (
-            understanding.clarifying_question
-            or "可以告诉我想买的品类、预算和最在意的点吗？"
+        result = self.state_reducer.reduce(
+            conversation=state["conversation"],
+            understanding=state["understanding"],
+            restore_command=state.get("pending_restore_command"),
         )
         return {
-            "action_result": ActionResult(
-                action=AgentAction.CLARIFY,
-                reply_type="clarify_reply",
-                clarifying_question=question,
+            "conversation": result.conversation,
+            "understanding": result.understanding,
+            "negative_feedback_result": result.negative_feedback_result,
+            "current_turn_is_broad": result.current_turn_is_broad,
+        }
+
+    def _decide_next_action(self, state: ShoppingAgentState) -> dict[str, AgentAction]:
+        return {
+            "action": decide_next_action(
+                state["understanding"],
+                state["conversation"],
+                state.get("negative_feedback_result"),
             )
         }
+
+    def _execute_action(self, state: ShoppingAgentState) -> dict[str, ActionResult]:
+        action_result = self.action_executor.execute(
+            action=state["action"],
+            conversation=state["conversation"],
+            understanding=state["understanding"],
+            negative_feedback_result=state.get("negative_feedback_result"),
+        )
+        return {"action_result": action_result}
 
     def _generate_reply(self, state: ShoppingAgentState) -> dict[str, Any]:
         action_result = state["action_result"]
 
+        if action_result.reply_type == "negative_feedback_noop_reply":
+            return {
+                "reply": build_negative_feedback_noop_reply(
+                    action_result.negative_feedback
+                ),
+                "items": action_result.items,
+            }
+
         if action_result.reply_type == "recommendation_reply":
-            reply = "我根据你的需求筛选了这几款商品，可以先看第一款的匹配理由。"
+            target_category = state["conversation"].preferences.get("target_category")
+            reply = build_recommendation_reply(
+                items=action_result.items,
+                negative_feedback=action_result.negative_feedback,
+                current_turn_is_broad=state.get("current_turn_is_broad") is True,
+                target_category=(
+                    target_category if isinstance(target_category, str) else None
+                ),
+            )
         elif action_result.reply_type == "explain_reply":
-            reply = self._build_explain_reply(action_result)
+            reply = build_explain_reply(action_result)
+        elif action_result.reply_type == "compare_reply":
+            reply = build_compare_reply(action_result)
         elif action_result.reply_type == "no_results_reply":
-            reply = self._build_no_results_reply(action_result.no_results)
+            reply = build_no_results_reply(action_result.no_results)
         elif action_result.reply_type == "tool_error_reply":
-            reply = "推荐服务暂时不可用，可以稍后重试或放宽条件。"
+            reply = build_tool_error_reply()
         else:
-            reply = action_result.clarifying_question or "可以告诉我想买的品类、预算和最在意的点吗？"
+            reply = build_clarify_reply(action_result.clarifying_question)
 
         return {"reply": reply, "items": action_result.items}
 
     def _finalize_response(self, state: ShoppingAgentState) -> dict[str, ChatResponse]:
         conversation = state["conversation"]
-        understanding = state["understanding"]
-        action = state["action"]
-        action_result = state["action_result"]
 
         conversation.messages.append(ChatMessage(role="assistant", content=state["reply"]))
         self.store.save(conversation)
 
-        response_state: dict[str, Any] = {
-            "intent": understanding.intent.value,
-            "action": action.value,
-            "confidence": understanding.confidence,
-            "purchase_need": conversation.purchase_need,
-            "preferences": conversation.preferences.copy(),
-        }
-        # 只暴露本轮推荐执行状态，避免 explain 继承上一轮失败标记。
-        if action_result.action == AgentAction.RECOMMEND and conversation.last_result_status:
-            response_state["result_status"] = conversation.last_result_status
-        if action_result.tool_error:
-            response_state["tool_error"] = action_result.tool_error
-        if action_result.no_results:
-            response_state["relax_options"] = action_result.no_results.relax_options
-
         return {
-            "response": ChatResponse(
+            "response": self.response_state_builder.build_response(
                 session_id=state["session_id"],
                 reply=state["reply"],
                 items=state["items"],
-                state=response_state,
+                conversation=conversation,
+                understanding=state["understanding"],
+                action=state["action"],
+                action_result=state["action_result"],
+                negative_feedback_result=state.get("negative_feedback_result"),
             )
         }
-
-    def _execute_recommendation(self, conversation: ConversationState) -> ActionResult:
-        recommendation_query = self._build_recommendation_query(conversation)
-        logger.debug("agent recommendation query_length=%s", len(recommendation_query))
-        try:
-            result = self.recommendation_tool.run(recommendation_query)
-        except Exception:
-            return self._handle_recommendation_tool_error(
-                conversation,
-                recommendation_query,
-            )
-        logger.info("agent recommendation completed item_count=%s", len(result.items))
-
-        if not result.items:
-            no_results = self._handle_no_results(conversation, result, recommendation_query)
-            return ActionResult(
-                action=AgentAction.RECOMMEND,
-                reply_type="no_results_reply",
-                recommendation_query=recommendation_query,
-                items=[],
-                no_results=no_results,
-            )
-
-        self._save_successful_recommendation(conversation, result)
-        return ActionResult(
-            action=AgentAction.RECOMMEND,
-            reply_type="recommendation_reply",
-            recommendation_query=recommendation_query,
-            items=result.items,
-        )
-
-    def _execute_explain(
-        self,
-        conversation: ConversationState,
-        target_item_index: int | None,
-    ) -> ActionResult:
-        if not conversation.last_items:
-            return ActionResult(
-                action=AgentAction.CLARIFY,
-                reply_type="clarify_reply",
-                items=[],
-                clarifying_question="我还没有上一轮推荐结果，可以先告诉我品类、预算和偏好。",
-            )
-
-        selected_index = target_item_index or conversation.target_item_index or 1
-        zero_based_index = selected_index - 1
-        if zero_based_index < 0 or zero_based_index >= len(conversation.last_items):
-            return ActionResult(
-                action=AgentAction.CLARIFY,
-                reply_type="clarify_reply",
-                items=conversation.last_items,
-                clarifying_question="你想了解第几款商品？可以告诉我对应序号。",
-            )
-
-        conversation.target_item_index = selected_index
-        return ActionResult(
-            action=AgentAction.EXPLAIN,
-            reply_type="explain_reply",
-            items=conversation.last_items,
-            target_item_index=selected_index,
-        )
-
-    def _merge_preferences(
-        self,
-        conversation: ConversationState,
-        updates: dict[str, Any],
-    ) -> None:
-        for key, value in updates.items():
-            if value is None:
-                continue
-            if isinstance(value, list):
-                current = conversation.preferences.get(key, [])
-                if not isinstance(current, list):
-                    current = []
-                conversation.preferences[key] = self._merge_unique(current, value)
-            else:
-                conversation.preferences[key] = value
-
-        excluded = conversation.preferences.get("excluded_brands")
-        if isinstance(excluded, list):
-            conversation.excluded_brands = self._merge_unique(
-                conversation.excluded_brands,
-                excluded,
-            )
-
-    def _merge_unique(self, current: list[Any], updates: list[Any]) -> list[Any]:
-        merged: list[Any] = []
-        for item in [*current, *updates]:
-            if item not in merged:
-                merged.append(item)
-        return merged
-
-    def _build_recommendation_query(self, conversation: ConversationState) -> str:
-        return build_recommendation_query(conversation)
-
-    def _save_successful_recommendation(
-        self,
-        conversation: ConversationState,
-        result: RecommendResponse,
-    ) -> None:
-        conversation.last_query = result.query
-        conversation.last_filters = result.filters
-        conversation.last_items = result.items
-        conversation.last_result_status = "success"
-        conversation.last_no_results_need = None
-        conversation.last_no_results_relax_options = []
-        conversation.preferences.update(result.filters.model_dump(exclude_none=True))
-
-    def _handle_no_results(
-        self,
-        conversation: ConversationState,
-        result: RecommendResponse,
-        recommendation_query: str,
-    ) -> NoResultsSuggestion:
-        conversation.last_query = recommendation_query
-        conversation.last_filters = result.filters
-        conversation.last_result_status = "no_results"
-        conversation.last_no_results_need = recommendation_query
-
-        suggestion = NoResultsSuggestion(
-            purchase_need=recommendation_query,
-            blocking_constraints=self._detect_blocking_constraints(conversation, result),
-            relax_options=self._build_relax_options(conversation, result),
-        )
-        conversation.last_no_results_relax_options = suggestion.relax_options
-        return suggestion
-
-    def _handle_recommendation_tool_error(
-        self,
-        conversation: ConversationState,
-        recommendation_query: str,
-    ) -> ActionResult:
-        """推荐工具失败时保留上一轮结果，只记录本轮可恢复错误。"""
-        logger.exception("agent recommendation tool failed")
-        conversation.last_query = recommendation_query
-        conversation.last_result_status = "tool_error"
-        return ActionResult(
-            action=AgentAction.RECOMMEND,
-            reply_type="tool_error_reply",
-            recommendation_query=recommendation_query,
-            items=[],
-            tool_error="recommendation_failed",
-        )
-
-    def _detect_blocking_constraints(
-        self,
-        conversation: ConversationState,
-        result: RecommendResponse,
-    ) -> list[str]:
-        constraints: list[str] = []
-        budget = conversation.preferences.get("budget")
-        if budget:
-            constraints.append(str(budget))
-        elif result.filters.max_price is not None:
-            constraints.append(f"预算{result.filters.max_price}以内")
-
-        category = conversation.preferences.get("category") or result.filters.category
-        if category:
-            constraints.append(str(category))
-
-        focus = conversation.preferences.get("focus")
-        if isinstance(focus, list):
-            constraints.extend(str(item) for item in focus[:3])
-        elif focus:
-            constraints.append(str(focus))
-
-        return self._merge_unique([], constraints)
-
-    def _build_relax_options(
-        self,
-        conversation: ConversationState,
-        result: RecommendResponse,
-    ) -> list[str]:
-        options: list[str] = []
-        if conversation.preferences.get("budget") or result.filters.max_price is not None:
-            options.append("提高预算或放宽价格上限")
-        if result.filters.brand or conversation.excluded_brands:
-            options.append("放宽品牌限制")
-
-        category = conversation.preferences.get("category") or result.filters.category
-        if category:
-            options.append("考虑相近或更宽的品类")
-
-        focus = conversation.preferences.get("focus")
-        if isinstance(focus, list) and len(focus) > 1:
-            options.append("只保留最重要的一个功能重点")
-
-        if not options:
-            options = ["放宽预算", "放宽品牌或品类", "告诉我哪个条件最重要"]
-        return options[:3]
-
-    def _build_explain_reply(self, action_result: ActionResult) -> str:
-        index = action_result.target_item_index or 1
-        item = action_result.items[index - 1]
-        return f"因为{item.evidence}，所以我优先推荐 {item.title}。"
-
-    def _build_no_results_reply(
-        self,
-        suggestion: NoResultsSuggestion | None,
-    ) -> str:
-        if suggestion is None:
-            return "我暂时没有找到完全匹配的商品。你可以放宽预算、品牌或品类条件。"
-
-        options = "、".join(suggestion.relax_options)
-        blockers = "、".join(suggestion.blocking_constraints)
-        if blockers:
-            return (
-                f"我暂时没有找到完全满足“{suggestion.purchase_need}”的商品。"
-                f"主要限制可能是{blockers}。你可以选择{options}。"
-            )
-        return (
-            f"我暂时没有找到完全满足“{suggestion.purchase_need}”的商品。"
-            f"你可以选择{options}。"
-        )
