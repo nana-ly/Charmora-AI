@@ -19,7 +19,12 @@ from agent.context_manager import (
 from agent.graph.action_executor import ActionExecutor
 from agent.graph.response_state_builder import ResponseStateBuilder
 from agent.graph.state_reducer import ConversationStateReducer
-from agent.memory import ConversationState, ConversationStore, SessionLockManager
+from agent.memory import (
+    ConversationState,
+    ConversationStore,
+    SessionLockManager,
+    VersionedConversationStore,
+)
 from agent.negative_feedback_models import NegativeFeedbackApplicationResult
 from agent.negative_feedback_rules import extract_negative_updates
 from agent.policy import decide_next_action
@@ -62,6 +67,7 @@ class ShoppingAgentState(TypedDict, total=False):
     reply: str
     items: list[ProductCard]
     response: ChatResponse
+    persist_response: bool
 
 
 class LangGraphAgentRunner:
@@ -112,12 +118,43 @@ class LangGraphAgentRunner:
                         session_id,
                         lock_info.wait_ms,
                     )
-                    result = self.graph.invoke(
-                        {"session_id": session_id, "message": message}
-                    )
+                    response = self._run_state_update(session_id, message)
             else:
-                result = self.graph.invoke({"session_id": session_id, "message": message})
+                response = self._run_state_update(session_id, message)
             logger.info("agent run completed session_id=%s turn_id=%s", session_id, turn_id)
+        return response
+
+    def _run_state_update(self, session_id: str, message: str) -> ChatResponse:
+        """把一整轮图执行包进 store.update()，成功响应后才提交会话状态。"""
+        if isinstance(self.store, VersionedConversationStore):
+            response_holder: dict[str, ChatResponse] = {}
+
+            def mutate(conversation: ConversationState) -> ConversationState:
+                # 冲突重试时 mutate 可能被再次执行；只把最终一次返回的状态交给 store 提交。
+                result = self.graph.invoke(
+                    {
+                        "session_id": session_id,
+                        "message": message,
+                        "conversation": conversation,
+                        "persist_response": False,
+                    }
+                )
+                response_holder["response"] = result["response"]
+                return result["conversation"]
+
+            self.store.update(session_id, mutate)
+            return response_holder["response"]
+
+        logger.warning(
+            "conversation store does not support atomic update; falling back to save path"
+        )
+        result = self.graph.invoke(
+            {
+                "session_id": session_id,
+                "message": message,
+                "persist_response": True,
+            }
+        )
         return result["response"]
 
     def _build_graph(self):
@@ -239,7 +276,9 @@ class LangGraphAgentRunner:
         return "-"
 
     def _understand_user(self, state: ShoppingAgentState) -> dict[str, Any]:
-        conversation = self.store.get_or_create(state["session_id"])
+        conversation = state.get("conversation") or self.store.get_or_create(
+            state["session_id"]
+        )
         message = state["message"]
         conversation.messages.append(ChatMessage(role="user", content=message))
 
@@ -371,13 +410,15 @@ class LangGraphAgentRunner:
 
         return {"reply": reply, "items": action_result.items}
 
-    def _finalize_response(self, state: ShoppingAgentState) -> dict[str, ChatResponse]:
+    def _finalize_response(self, state: ShoppingAgentState) -> dict[str, Any]:
         conversation = state["conversation"]
 
         conversation.messages.append(ChatMessage(role="assistant", content=state["reply"]))
-        self.store.save(conversation)
+        if state.get("persist_response", True):
+            self.store.save(conversation)
 
         return {
+            "conversation": conversation,
             "response": self.response_state_builder.build_response(
                 session_id=state["session_id"],
                 reply=state["reply"],

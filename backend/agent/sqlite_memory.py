@@ -55,7 +55,12 @@ class SQLiteConversationStore:
         session_id: str,
         mutator: Callable[[ConversationState], ConversationState | None],
     ) -> ConversationState:
-        """用 version 条件更新实现有限重试的乐观并发。"""
+        """用 version 条件更新实现有限重试的乐观并发。
+
+        当发生版本冲突时，mutator 会基于最新 state 重新执行。Runner 的 mutator
+        会重跑整轮 graph，因此冲突重试可能重复调用 LLM 或推荐工具；调用方不应在
+        mutator 内执行不可接受重复调用的外部写操作。
+        """
         attempts = max(self.update_retries, 1)
         for _ in range(attempts):
             with self._connect() as connection:
