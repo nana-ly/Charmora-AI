@@ -1,6 +1,6 @@
 """推荐接口数据结构。"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from schemas.product import ProductCard
 
@@ -74,6 +74,13 @@ class RecommendResponse(BaseModel):
 
     query: str
     filters: RecommendFilters
+    result_count: int | None = None
     items: list[ProductCard] = Field(default_factory=list)
     trace: RecommendationTrace | None = None
+
+    @model_validator(mode="after")
+    def default_result_count(self):
+        if self.result_count is None:
+            self.result_count = len(self.items)
+        return self
 

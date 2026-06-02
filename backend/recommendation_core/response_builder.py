@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from recommendation_core.image_url import product_image_fields
 from recommendation_core.ranking import get_product_price
 from recommendation_core.reason import ReasonService, generate_reason
 
@@ -22,4 +23,5 @@ def build_response_item(
         "price": get_product_price(product),
         "reason": generate_reason(query, product, evidence, reason_service=reason_service),
         "evidence": evidence,
+        **product_image_fields(product),
     }

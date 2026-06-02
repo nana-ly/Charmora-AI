@@ -1,6 +1,6 @@
 """商品相关数据结构。"""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 
 class ProductCard(BaseModel):
@@ -15,4 +15,15 @@ class ProductCard(BaseModel):
     price: float
     reason: str
     evidence: str
+    image_path: str | None = None
+    image_url: str | None = None
+    imageUrl: str | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def mirror_android_image_url(self):
+        if self.imageUrl is None and self.image_url is not None:
+            self.imageUrl = self.image_url
+        if self.image_url is None and self.imageUrl is not None:
+            self.image_url = self.imageUrl
+        return self
 

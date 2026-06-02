@@ -100,6 +100,7 @@ Response:
     "brand": null,
     "keywords": ["手机", "拍照", "剪视频"]
   },
+  "result_count": 12,
   "items": [
     {
       "product_id": "p_digital_001",
@@ -107,7 +108,10 @@ Response:
       "brand": "Apple",
       "price": 8999,
       "reason": "这款商品与需求匹配，命中拍照和视频相关证据。",
-      "evidence": "临时匹配：命中 手机、拍照、剪视频；来自结构化筛选结果。"
+      "evidence": "临时匹配：命中 手机、拍照、剪视频；来自结构化筛选结果。",
+      "image_path": "2_数码电子/images/p_digital_001_live.jpg",
+      "image_url": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
+      "imageUrl": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg"
     }
   ]
 }
@@ -122,6 +126,7 @@ Response:
 | `filters.max_price` | `number \| null` | 后端解析出的最高预算。 |
 | `filters.brand` | `string \| null` | 后端解析出的品牌偏好。 |
 | `filters.keywords` | `string[]` | 后端从 query 中命中的关键词。 |
+| `result_count` | `number` | 本次推荐找到的匹配商品总数，可能大于 `items.length`。 |
 | `items` | `array` | 推荐商品列表；没有匹配时返回空数组。 |
 | `items[].product_id` | `string` | 商品唯一 ID。 |
 | `items[].title` | `string` | 商品名称。 |
@@ -129,9 +134,12 @@ Response:
 | `items[].price` | `number` | 商品价格。 |
 | `items[].reason` | `string` | 中文推荐理由。 |
 | `items[].evidence` | `string` | 中文匹配依据。 |
+| `items[].image_path` | `string \| null` | 商品数据中的相对图片路径。 |
+| `items[].image_url` | `string \| null` | 由后端配置生成的图片 URL，Web/通用客户端优先使用。 |
+| `items[].imageUrl` | `string \| null` | 与 `image_url` 相同，兼容 Android camelCase 模型。 |
 | `trace` | `object \| null` | 内部调试 trace；默认不返回。 |
 
-推荐链路不会为无结果或异常伪造商品。检索结果为空时 `items` 是 `[]`；推荐链路异常时异常向上暴露。
+推荐链路不会为无结果或异常伪造商品。检索结果为空时 `items` 是 `[]`；推荐链路异常时异常向上暴露。`result_count` 表示本次找到的匹配商品总数，实际展示卡片数量请读取 `items.length`。
 后端会在当前 Python 进程内缓存推荐服务的配置、retriever 和 reason service；`/recommend` 与 `/chat` 中的推荐工具共用同一个推荐入口。
 
 调试 trace 需要同时满足服务端 `RECOMMEND_TRACE_ENABLED=true` 和请求显式开启，例如 body/query 中 `debug=true` 或请求头 `X-Debug-Trace: true`。trace 只包含候选数量、召回数量、最终数量、负反馈过滤状态和每个结果的 `product_id/title/brand/rank/score/score_type/source/evidence/retriever_mode`，不包含完整用户原文、完整商品 JSON 或完整 RAG 文档。
@@ -154,6 +162,7 @@ Response:
 ```json
 {
   "query": "适合熬夜后修护的抗初老精华",
+  "result_count": 5,
   "items": [
     {
       "product_id": "p_beauty_001",
@@ -165,6 +174,9 @@ Response:
       "retriever_mode": "vector",
       "score_type": "vector_similarity",
       "evidence": "向量召回：相似度 0.82 ...",
+      "image_path": "3_美妆护肤/images/p_beauty_001.jpg",
+      "image_url": "/assets/products/3_%E7%BE%8E%E5%A6%86%E6%8A%A4%E8%82%A4/images/p_beauty_001.jpg",
+      "imageUrl": "/assets/products/3_%E7%BE%8E%E5%A6%86%E6%8A%A4%E8%82%A4/images/p_beauty_001.jpg",
       "metadata": {
         "document_preview": "截断后的 RAG 文档摘要"
       }
@@ -194,6 +206,7 @@ Response:
 {
   "session_id": "demo-session",
   "reply": "我根据你的需求筛选了这几款商品，可以先看第一款的匹配理由。",
+  "result_count": 12,
   "items": [
     {
       "product_id": "p_digital_001",
@@ -201,7 +214,10 @@ Response:
       "brand": "Apple",
       "price": 8999,
       "reason": "这款商品与需求匹配，命中拍照相关证据。",
-      "evidence": "命中关键词：手机、拍照。"
+      "evidence": "命中关键词：手机、拍照。",
+      "image_path": "2_数码电子/images/p_digital_001_live.jpg",
+      "image_url": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
+      "imageUrl": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg"
     }
   ],
   "state": {
@@ -260,6 +276,7 @@ tool_error
 {
   "session_id": "demo-session",
   "reply": "推荐服务暂时不可用，可以稍后重试或放宽条件。",
+  "result_count": 0,
   "items": [],
   "state": {
     "intent": "recommend",
@@ -292,6 +309,15 @@ start -> error -> done
 
 请求体验证失败仍由 FastAPI 返回 `422`，不会进入 SSE 流。
 
+`items` 事件 data 结构：
+
+```json
+{
+  "items": [],
+  "result_count": 0
+}
+```
+
 ## 后端推荐链路
 
 ```text
@@ -301,7 +327,7 @@ api.recommend
   -> cached Retriever.search
   -> recommendation_core.pipeline.recommend_products
   -> recommendation_core.response_builder.build_response_item
-  -> return {"query", "filters", "items"}
+  -> return {"query", "filters", "result_count", "items"}
 ```
 
 `choose_candidates()` 严格使用结构化条件。`RETRIEVER_MODE=vector` 使用向量检索并暴露向量错误；`RETRIEVER_MODE=keyword` 使用关键词检索。

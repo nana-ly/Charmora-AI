@@ -228,6 +228,7 @@ def test_build_response_item_converts_retrieved_result_to_card_fields():
                 "title": "Apple iPhone 17 Pro",
                 "brand": "Apple",
                 "base_price": 8999,
+                "image_path": "2_数码电子/images/p_digital_001_live.jpg",
             },
             "evidence": "匹配关键词：拍照；价格符合预算。",
         },
@@ -240,6 +241,9 @@ def test_build_response_item_converts_retrieved_result_to_card_fields():
         "price": 8999.0,
         "reason": "Apple iPhone 17 Pro 与你的需求「预算9000以内，想买拍照好的手机」匹配，匹配关键词：拍照；价格符合预算。",
         "evidence": "匹配关键词：拍照；价格符合预算。",
+        "image_path": "2_数码电子/images/p_digital_001_live.jpg",
+        "image_url": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
+        "imageUrl": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
     }
 
 
@@ -326,6 +330,7 @@ def test_recommend_products_assembles_real_recommendation_chain():
     assert response["query"] == "预算9000以内，想买拍照和剪视频好的手机"
     assert response["filters"]["category"] == "数码电子"
     assert response["filters"]["max_price"] == 9000
+    assert response["result_count"] == 3
     assert len(response["items"]) == 3
     assert response["items"][0]["product_id"].startswith("p_digital_")
     assert response["items"][0]["reason"]
@@ -349,7 +354,31 @@ def test_recommend_products_consumes_retriever_results_directly():
 
     assert response["items"][0]["product_id"] == "p_1"
     assert response["items"][0]["evidence"] == "测试 evidence"
+    assert response["result_count"] == 1
     assert "trace" not in response
+
+
+def test_recommend_products_result_count_tracks_candidates_not_top_k():
+    product_source = [
+        {
+            "product_id": f"p_{index}",
+            "title": f"测试手机 {index}",
+            "brand": "测试品牌",
+            "category": "数码电子",
+            "base_price": 1000 + index,
+        }
+        for index in range(5)
+    ]
+
+    response = recommend_products(
+        "推荐测试手机",
+        product_source=product_source,
+        top_k=2,
+        retriever=CapturingRetriever(),
+    )
+
+    assert response["result_count"] == 5
+    assert len(response["items"]) == 2
 
 
 def test_recommend_products_include_trace_returns_sanitized_trace():
@@ -572,6 +601,7 @@ def test_recommend_products_returns_empty_items_when_retriever_returns_empty():
     )
 
     assert response["items"] == []
+    assert response["result_count"] == 1
     assert "error" not in response
 
 
@@ -582,6 +612,7 @@ def test_recommend_products_returns_empty_items_when_product_source_is_empty():
     )
 
     assert response["items"] == []
+    assert response["result_count"] == 0
 
 
 def test_recommend_products_propagates_retriever_errors():

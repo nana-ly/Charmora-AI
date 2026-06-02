@@ -63,6 +63,10 @@ CONVERSATION_STORE_UPDATE_RETRIES=3
 AGENT_SESSION_LOCK_ENABLED=true
 RECOMMEND_TRACE_ENABLED=false
 
+PRODUCT_IMAGE_BASE_URL=/assets/products
+PRODUCT_IMAGE_STATIC_ROOT=../ecommerce_agent_dataset
+PRODUCT_IMAGE_STATIC_ENABLED=true
+
 embedding_url=https://dashscope.aliyuncs.com/compatible-mode/v1
 embedding_api=
 embedding_model=text-embedding-v4
@@ -75,7 +79,7 @@ LLM_MODEL=gpt-4o-mini
 LLM_TIMEOUT_SECONDS=8
 ```
 
-`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`CONVERSATION_STORE_MODE=memory` 使用进程内会话状态；设置为 `sqlite` 时会通过 `CONVERSATION_STORE_PATH` 持久化完整 `ConversationState`，用于本地演示服务重启后恢复同一 `session_id` 的多轮上下文。`ConversationState.version` 会随 `save()` 或 `update()` 递增；SQLite 会自动为旧表补 `version` 列，并用 `CONVERSATION_STORE_UPDATE_RETRIES` 控制乐观更新重试次数。`AGENT_SESSION_LOCK_ENABLED=true` 会在单个 Python 进程内按 `session_id` 串行化 `/chat` 与 `/chat/stream` 的完整 LangGraph 执行，避免当前 `get_or_create -> mutate -> save` 链路并发覆盖；多 worker、多实例仍需要 Redis/Postgres 等外部一致性机制。`DEFAULT_TOP_K` 控制推荐默认返回数量。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。`RECOMMEND_TRACE_ENABLED=true` 只打开服务端 trace 资格，请求仍需传 `debug=true` 或 `X-Debug-Trace: true` 才会返回脱敏 trace。
+`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`CONVERSATION_STORE_MODE=memory` 使用进程内会话状态；设置为 `sqlite` 时会通过 `CONVERSATION_STORE_PATH` 持久化完整 `ConversationState`，用于本地演示服务重启后恢复同一 `session_id` 的多轮上下文。`ConversationState.version` 会随 `save()` 或 `update()` 递增；SQLite 会自动为旧表补 `version` 列，并用 `CONVERSATION_STORE_UPDATE_RETRIES` 控制乐观更新重试次数。`AGENT_SESSION_LOCK_ENABLED=true` 会在单个 Python 进程内按 `session_id` 串行化 `/chat` 与 `/chat/stream` 的完整 LangGraph 执行，避免当前 `get_or_create -> mutate -> save` 链路并发覆盖；多 worker、多实例仍需要 Redis/Postgres 等外部一致性机制。`DEFAULT_TOP_K` 控制推荐默认返回数量。`PRODUCT_IMAGE_BASE_URL` 控制商品图片 URL 前缀，默认 `/assets/products`；生产环境可改为 CDN 或对象存储域名。`PRODUCT_IMAGE_STATIC_ENABLED=true` 时会把 `PRODUCT_IMAGE_STATIC_ROOT` 挂载到本地静态路径，配置为 CDN 绝对 URL 时不会挂载本地目录。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。`RECOMMEND_TRACE_ENABLED=true` 只打开服务端 trace 资格，请求仍需传 `debug=true` 或 `X-Debug-Trace: true` 才会返回脱敏 trace。
 
 理解 Prompt 已外置到 `agent/prompts/understanding_v1.md`，由 `agent.prompt_loader` 按版本读取；读取失败时回退到内置默认 Prompt，并在日志中记录 `prompt_version`。品类、品牌和关键词规则统一从 `agent.catalog_taxonomy` 读取，旧的 `category_rules.py`、`negative_feedback_rules.py` 和 `recommendation_core.filters` 仍保留原 public 函数外观。
 
@@ -111,6 +115,8 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 - `recommend_products(include_trace=True)` 会返回内部 trace；默认响应不含 `trace`。
 - `/recommend` 只有在 `RECOMMEND_TRACE_ENABLED=true` 且请求显式开启 debug 时才返回脱敏 trace。
 - `/rag/search` 复用应用级 `RecommendationService` 的 retriever，输出与推荐链路一致的 `rank/source/retriever_mode/score_type/metadata` 调试字段。
+- `/recommend`、`/chat` 和 `/chat/stream` 的 `result_count` 表示本次找到的匹配商品总数，可能大于实际返回的 `items.length`；展示卡片数量请直接读取 `items.length`。
+- 商品卡片返回 `image_path`、`image_url` 和兼容 Android 的 `imageUrl`。`image_url`/`imageUrl` 由 `PRODUCT_IMAGE_BASE_URL` 生成，不写死在商品数据中。
 
 允许保留的可用性处理包括：LLM 推荐理由使用模板理由、Agent 理解层对不可信 LLM 输出做保守兜底、`/chat` 推荐工具异常返回 `tool_error`、`/chat/stream` 在流开始后的未处理异常转换为 SSE `error` 事件。
 

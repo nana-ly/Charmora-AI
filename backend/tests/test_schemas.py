@@ -27,6 +27,8 @@ def test_product_card_contains_android_stable_fields():
         price=8999,
         reason="适合重视拍照体验的用户。",
         evidence="匹配关键词：拍照；价格符合预算。",
+        image_path="2_数码电子/images/p_digital_001_live.jpg",
+        image_url="/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
     )
 
     assert card.model_dump() == {
@@ -36,6 +38,9 @@ def test_product_card_contains_android_stable_fields():
         "price": 8999.0,
         "reason": "适合重视拍照体验的用户。",
         "evidence": "匹配关键词：拍照；价格符合预算。",
+        "image_path": "2_数码电子/images/p_digital_001_live.jpg",
+        "image_url": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
+        "imageUrl": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
     }
 
 
@@ -43,6 +48,7 @@ def test_recommend_response_wraps_filters_and_items():
     response = RecommendResponse(
         query="想买手机",
         filters=RecommendFilters(category="数码电子", keywords=["手机"]),
+        result_count=8,
         items=[
             ProductCard(
                 product_id="p_digital_001",
@@ -57,8 +63,29 @@ def test_recommend_response_wraps_filters_and_items():
 
     assert response.filters.category == "数码电子"
     assert response.filters.max_price is None
+    assert response.result_count == 8
+    assert response.result_count > len(response.items)
     assert response.items[0].product_id == "p_digital_001"
     assert response.trace is None
+
+
+def test_recommend_response_defaults_result_count_to_item_count():
+    response = RecommendResponse(
+        query="想买手机",
+        filters=RecommendFilters(category="数码电子"),
+        items=[
+            ProductCard(
+                product_id="p_digital_001",
+                title="Apple iPhone 17 Pro",
+                brand="Apple",
+                price=8999,
+                reason="适合拍照。",
+                evidence="命中手机。",
+            )
+        ],
+    )
+
+    assert response.result_count == 1
 
 
 def test_recommendation_trace_schema_keeps_debug_fields_optional():
@@ -122,12 +149,14 @@ def test_chat_request_and_response_keep_session_shape():
     response = ChatResponse(
         session_id=request.session_id,
         reply="可以，我先帮你按拍照需求筛选。",
+        result_count=6,
         items=[],
         state={"intent": "recommend", "preferences": {"category": "数码电子"}},
     )
 
     assert request.session_id == "s_001"
     assert request.message == "我想买拍照好的手机"
+    assert response.result_count == 6
     assert response.state["intent"] == "recommend"
 
 
