@@ -35,7 +35,7 @@
             android:layout_gravity="top|end"
             android:layout_marginTop="4dp"
             android:layout_marginEnd="4dp"
-            android:backgroundTint="#FF5722"
+            android:backgroundTint="#A3935DE4"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:minWidth="0dp"

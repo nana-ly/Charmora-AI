@@ -13,6 +13,14 @@ class ProductCard(BaseModel):
     title: str
     brand: str
     price: float
+    price_range: str = ""
     reason: str
     evidence: str
+    image_url: str = ""
+    rating: float = 0.0
+    sold_count: int = 0
+    review_count: int = 0
+    marketing_desc: str = ""
+    reviews: list[dict] = []
+    faqs: list[dict] = []
 

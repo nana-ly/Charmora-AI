@@ -2,7 +2,7 @@
 <androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/cardProduct"
-    android:layout_width="150dp"
+    android:layout_width="170dp"
     android:layout_height="wrap_content"
     android:layout_marginEnd="10dp"
     app:cardCornerRadius="10dp"
@@ -12,52 +12,48 @@
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground">
 
-    <FrameLayout
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
 
-        <ImageView
-            android:id="@+id/ivProductImage"
+        <!-- 商品大图 -->
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="120dp"
-            android:scaleType="centerCrop"
-            android:background="#F0F0F0"
-            android:contentDescription="商品图片" />
+            android:layout_height="170dp">
 
-        <Button
-            android:id="@+id/btnAddToCart"
-            style="@style/Widget.Material3.Button.Icon"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:layout_gravity="top|end"
-            android:layout_marginTop="4dp"
-            android:layout_marginEnd="4dp"
-            android:backgroundTint="#FF5722"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:padding="3dp"
-            app:icon="@android:drawable/ic_menu_add"
-            app:iconSize="16dp"
-            app:iconTint="#FFFFFF" />
+            <ImageView
+                android:id="@+id/ivProductImage"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:background="#F0F0F0"
+                android:contentDescription="商品图片" />
 
+            <Button
+                android:id="@+id/btnAddToCart"
+                style="@style/Widget.Material3.Button.Icon"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="4dp"
+                android:layout_marginEnd="4dp"
+                android:backgroundTint="#FF5722"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="3dp"
+                app:icon="@android:drawable/ic_menu_add"
+                app:iconSize="16dp"
+                app:iconTint="#FFFFFF" />
+        </FrameLayout>
+
+        <!-- 底部信息区 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
             android:orientation="vertical"
             android:background="#FFFFFF"
-            android:padding="6dp">
-
-            <TextView
-                android:id="@+id/tvTitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:textColor="#333333"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:layout_marginBottom="1dp" />
+            android:padding="8dp">
 
             <TextView
                 android:id="@+id/tvBrand"
@@ -67,18 +63,29 @@
                 android:textColor="#999999"
                 android:maxLines="1"
                 android:ellipsize="end"
-                android:layout_marginBottom="2dp"
                 android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="#333333"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:layout_marginBottom="4dp" />
 
             <TextView
                 android:id="@+id/tvPrice"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="14sp"
+                android:textSize="16sp"
                 android:textStyle="bold"
                 android:textColor="#FF5722"
-                android:layout_marginBottom="2dp" />
+                android:layout_marginBottom="4dp" />
 
+            <!-- 评分 + 销量 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -90,16 +97,16 @@
                     android:id="@+id/tvRating"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="10sp"
+                    android:textSize="11sp"
                     android:textColor="#FF9800"
-                    android:layout_marginEnd="6dp"
+                    android:layout_marginEnd="8dp"
                     android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/tvSoldCount"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="10sp"
+                    android:textSize="11sp"
                     android:textColor="#999999"
                     android:visibility="gone" />
             </LinearLayout>
@@ -110,9 +117,8 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:visibility="gone" />
-
         </LinearLayout>
 
-    </FrameLayout>
+    </LinearLayout>
 
 </androidx.cardview.widget.CardView>

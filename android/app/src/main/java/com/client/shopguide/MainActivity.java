@@ -13,11 +13,17 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
+import android.speech.tts.TextToSpeech;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.LinearLayout;
 import android.widget.Toast;
 
@@ -38,17 +44,27 @@ import com.client.shopguide.model.Product;
 import com.client.shopguide.model.RecommendResponse;
 import com.client.shopguide.network.ChatSseClient;
 import com.client.shopguide.voice.BaiduAsrClient;
+import coil.Coil;
+import coil.request.ImageRequest;
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -58,10 +74,15 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String PREFS_NAME = "shopguide_chat";
     private static final String KEY_SESSION_ID = "session_id";
+    private static final String KEY_LAST_ACTIVE = "last_active_time";
+    private static final String MESSAGES_FILE = "chat_messages.json";
+    private static final int SESSION_GAP_MINUTES = 30;
     private static final String WELCOME_MESSAGE = "你好！告诉我品类、预算和偏好，我来帮你推荐商品。你也可以追问「再便宜一点」或「为什么推荐第一款」。";
 
     /** 后端 POST /chat/stream 已就绪，默认走 SSE；404 时自动回退 POST /chat */
     private static final boolean USE_SSE_STREAM = true;
+
+    private Gson gson;
 
     private EditText etMessage;
     private ImageButton btnMic;
@@ -88,6 +109,12 @@ public class MainActivity extends AppCompatActivity {
 
     // 语音识别
     private boolean isListening = false;
+
+    // 购物车
+    private final List<Product> cartProducts = new ArrayList<>();
+
+    // TTS 语音
+    private TextToSpeech tts;
 
     // 拍照相关
     private Uri currentPhotoUri;
@@ -137,17 +164,29 @@ public class MainActivity extends AppCompatActivity {
 
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         chatSseClient = new ChatSseClient();
+        gson = new Gson();
 
         initViews();
         initRecyclerView();
-        initSession();
+        loadHistoryAndInitSession();
         setupListeners();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        saveMessages();
+        prefs.edit().putLong(KEY_LAST_ACTIVE, System.currentTimeMillis()).apply();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         chatSseClient.cancel();
+        if (tts != null) {
+            tts.stop();
+            tts.shutdown();
+        }
     }
 
     // ========== 初始化 ==========
@@ -165,8 +204,27 @@ public class MainActivity extends AppCompatActivity {
 
     private void initRecyclerView() {
         chatAdapter = new ChatAdapter(chatMessages);
+        chatAdapter.setOnAddToCartListener(product -> {
+            if (!cartProducts.contains(product)) {
+                cartProducts.add(product);
+            }
+        });
+        // TTS 回调
+        tts = new TextToSpeech(this, status -> {});
+        chatAdapter.setOnTTSListener(text -> {
+            tts.setLanguage(Locale.CHINESE);
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+        });
         rvChat.setLayoutManager(new LinearLayoutManager(this));
         rvChat.setAdapter(chatAdapter);
+
+        // 触摸列表 → 隐藏 TTS 图标
+        rvChat.setOnTouchListener((v, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                chatAdapter.dismissTts();
+            }
+            return false;
+        });
     }
 
     private void initSession() {
@@ -267,7 +325,7 @@ public class MainActivity extends AppCompatActivity {
         // VAD 统计：统计有多少帧有声音能量
         int totalFrames = 0;
         int voiceFrames = 0;
-        final int VAD_THRESHOLD = 600; // RMS 阈值，低于此值视为静音/噪音
+        final int VAD_THRESHOLD = 250; // RMS 阈值，低于此值视为静音/噪音
 
         // 录制最长 3 秒，同时做 VAD 检测
         while (System.currentTimeMillis() - startTime < 3000) {
@@ -284,8 +342,8 @@ public class MainActivity extends AppCompatActivity {
         audioRecord.stop();
         audioRecord.release();
 
-        // 如果超过一半的帧都是静音，认为无有效语音
-        if (totalFrames == 0 || voiceFrames < totalFrames * 0.3) {
+        // 超过 80% 的帧静音才判定无有效语音
+        if (totalFrames == 0 || voiceFrames < totalFrames * 0.2) {
             throw new Exception("VAD_SILENCE"); // 未检测到说话声
         }
 
@@ -345,16 +403,13 @@ public class MainActivity extends AppCompatActivity {
             hideFunctionPanel();
         });
 
-        // 购物车
+        // 购物车 → 商品多选 BottomSheet
         LinearLayout llCart = findViewById(R.id.llCart);
         llCart.setOnClickListener(v -> {
-            Toast.makeText(MainActivity.this, "购物车功能开发中", Toast.LENGTH_SHORT).show();
             hideFunctionPanel();
+            showShoppingCart();
         });
 
-        // 取消
-        LinearLayout llCancel = findViewById(R.id.llCancel);
-        llCancel.setOnClickListener(v -> hideFunctionPanel());
     }
 
     // 拍照
@@ -422,22 +477,17 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupExampleChips() {
         chipGroupExamples.setOnCheckedStateChangeListener((group, checkedIds) -> {
-            if (checkedIds.isEmpty()) {
-                return;
-            }
+            if (checkedIds.isEmpty()) return;
             Chip chip = findViewById(checkedIds.get(0));
-            if (chip == null) {
-                return;
-            }
-
+            if (chip == null) return;
             String text = chip.getText().toString();
-            if ("拍照手机".equals(text)) {
+            if ("拍照手机求推荐".equals(text)) {
                 etMessage.setText("预算9000以内，想买拍照好的手机");
-            } else if ("抗初老精华".equals(text)) {
+            } else if ("有没有好用的抗初老精华".equals(text)) {
                 etMessage.setText("敏感肌能用的抗初老精华");
-            } else if ("凉快T恤".equals(text)) {
+            } else if ("要是有凉快T恤就好了".equals(text)) {
                 etMessage.setText("夏天通勤穿的凉快 T 恤");
-            } else if ("速溶咖啡".equals(text)) {
+            } else if ("想喝速溶咖啡急急急".equals(text)) {
                 etMessage.setText("新手想买精品速溶咖啡");
             }
             etMessage.setSelection(etMessage.getText().length());
@@ -448,6 +498,7 @@ public class MainActivity extends AppCompatActivity {
     // 会话管理
 
     private void startNewSession(boolean showToast) {
+        saveMessages();
         sessionId = UUID.randomUUID().toString();
         prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
         chatSseClient.cancel();
@@ -464,6 +515,81 @@ public class MainActivity extends AppCompatActivity {
         chatMessages.add(ChatUiMessage.assistant(WELCOME_MESSAGE));
         chatAdapter.notifyDataSetChanged();
         scrollToBottom();
+    }
+
+    // ========== 历史记录存取 ==========
+
+    private void loadHistoryAndInitSession() {
+        long lastActive = prefs.getLong(KEY_LAST_ACTIVE, 0);
+        long now = System.currentTimeMillis();
+        boolean isNewSession = (lastActive == 0) || (now - lastActive > SESSION_GAP_MINUTES * 60_000L);
+
+        // 从文件加载旧消息
+        List<ChatUiMessage> storedMessages = loadMessagesFromFile();
+        if (storedMessages != null && !storedMessages.isEmpty()) {
+            chatMessages.addAll(storedMessages);
+            if (isNewSession) {
+                // 插入时间分割线
+                SimpleDateFormat sdf = new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault());
+                chatMessages.add(ChatUiMessage.divider(sdf.format(new Date(lastActive))));
+                // 新 session
+                sessionId = UUID.randomUUID().toString();
+                prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
+                addWelcomeMessage();
+            } else {
+                // 30分钟内回来，恢复上次 session
+                sessionId = prefs.getString(KEY_SESSION_ID, null);
+                if (sessionId == null) {
+                    sessionId = UUID.randomUUID().toString();
+                    prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
+                    addWelcomeMessage();
+                }
+            }
+            chatAdapter.notifyDataSetChanged();
+            scrollToBottom();
+            return;
+        }
+
+        // 没有历史：全新开始
+        sessionId = UUID.randomUUID().toString();
+        prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
+        addWelcomeMessage();
+    }
+
+    private void saveMessages() {
+        // 过滤掉 loading 和 divider 类型，只保存用户/AI/商品/对比
+        List<ChatUiMessage> toSave = new ArrayList<>();
+        for (ChatUiMessage msg : chatMessages) {
+            if (msg.getType() != ChatUiMessage.TYPE_LOADING
+                    && msg.getType() != ChatUiMessage.TYPE_DIVIDER) {
+                toSave.add(msg);
+            }
+        }
+        if (toSave.isEmpty()) return;
+
+        try {
+            File file = new File(getFilesDir(), MESSAGES_FILE);
+            OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(file), "UTF-8");
+            gson.toJson(toSave, writer);
+            writer.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private List<ChatUiMessage> loadMessagesFromFile() {
+        try {
+            File file = new File(getFilesDir(), MESSAGES_FILE);
+            if (!file.exists()) return null;
+            InputStreamReader reader = new InputStreamReader(new FileInputStream(file), "UTF-8");
+            List<ChatUiMessage> loaded = gson.fromJson(reader,
+                    new TypeToken<List<ChatUiMessage>>() {}.getType());
+            reader.close();
+            return loaded;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
     // ========== 发送消息 ==========
@@ -668,7 +794,14 @@ public class MainActivity extends AppCompatActivity {
         product.setMatched_evidence(item.getEvidence());
         product.setCategory("");
         product.setSub_category("");
-        // TODO: 等后端返回 imageUrl、rating、soldCount、tags 后设置对应字段
+        product.setImageUrl(item.getImage_url());
+        product.setPriceRange(item.getPrice_range());
+        product.setRating(item.getRating());
+        product.setSoldCount(item.getSold_count());
+        product.setReviewCount(item.getReview_count());
+        product.setMarketingDesc(item.getMarketing_desc());
+        product.setReviews(item.getReviews());
+        product.setFaqs(item.getFaqs());
         return product;
     }
 
@@ -683,5 +816,104 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         rvChat.post(() -> rvChat.smoothScrollToPosition(chatMessages.size() - 1));
+    }
+
+    // ========== 购物车多选面板 ==========
+
+    private void showShoppingCart() {
+        BottomSheetDialog sheet = new BottomSheetDialog(this);
+        View sheetView = LayoutInflater.from(this).inflate(R.layout.bottom_sheet_shopping_cart, null);
+        sheet.setContentView(sheetView);
+
+        RecyclerView rv = sheetView.findViewById(R.id.rvCartProducts);
+        rv.setLayoutManager(new androidx.recyclerview.widget.GridLayoutManager(this, 2));
+
+        if (cartProducts.isEmpty()) {
+            Toast.makeText(this, "购物车为空，请先添加商品", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        CartProductAdapter cartAdapter = new CartProductAdapter(cartProducts);
+        rv.setAdapter(cartAdapter);
+
+        sheetView.findViewById(R.id.btnCartConfirm).setOnClickListener(v -> {
+            List<String> selected = cartAdapter.getSelectedNames();
+            if (selected.isEmpty()) {
+                Toast.makeText(this, "请至少选一个商品", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            for (String name : selected) {
+                if (sb.length() > 0) sb.append("、");
+                sb.append(name);
+            }
+            etMessage.setText("帮我看看 " + sb);
+            etMessage.setSelection(etMessage.length());
+            sheet.dismiss();
+        });
+
+        sheet.show();
+    }
+
+    static class CartProductAdapter extends RecyclerView.Adapter<CartProductAdapter.Vh> {
+        private static final String IMG_BASE = "http://10.0.2.2:8000/static/";
+        private final List<Product> items;
+        private final boolean[] selected;
+
+        CartProductAdapter(List<Product> items) {
+            this.items = items;
+            this.selected = new boolean[items.size()];
+        }
+
+        List<String> getSelectedNames() {
+            List<String> names = new ArrayList<>();
+            for (int i = 0; i < items.size(); i++) {
+                if (selected[i]) names.add(items.get(i).getTitle());
+            }
+            return names;
+        }
+
+        @NonNull @Override
+        public Vh onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View v = LayoutInflater.from(parent.getContext())
+                    .inflate(R.layout.item_shopping_cart_product, parent, false);
+            return new Vh(v);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull Vh h, int pos) {
+            Product p = items.get(pos);
+            h.tvName.setText(p.getTitle());
+            h.tvPrice.setText(String.format("¥%.0f", p.getBase_price()));
+            h.cbSelect.setChecked(selected[pos]);
+            h.cbSelect.setOnCheckedChangeListener((btn, checked) -> selected[pos] = checked);
+
+            String url = p.getImageUrl();
+            if (url != null && !url.isEmpty()) {
+                ImageRequest req = new ImageRequest.Builder(h.itemView.getContext())
+                        .data(IMG_BASE + url)
+                        .target(h.ivImage)
+                        .placeholder(R.drawable.ic_placeholder_product)
+                        .error(R.drawable.ic_placeholder_product)
+                        .crossfade(200)
+                        .build();
+                Coil.imageLoader(h.itemView.getContext()).enqueue(req);
+            }
+        }
+
+        @Override public int getItemCount() { return items.size(); }
+
+        static class Vh extends RecyclerView.ViewHolder {
+            CheckBox cbSelect;
+            TextView tvName, tvPrice;
+            ImageView ivImage;
+            Vh(@NonNull View v) {
+                super(v);
+                cbSelect = v.findViewById(R.id.cbSelect);
+                tvName = v.findViewById(R.id.tvCartName);
+                tvPrice = v.findViewById(R.id.tvCartPrice);
+                ivImage = v.findViewById(R.id.ivCartImage);
+            }
+        }
     }
 }

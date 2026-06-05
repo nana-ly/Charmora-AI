@@ -3,6 +3,7 @@ package com.client.shopguide.adapter;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.LayoutInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -24,7 +25,13 @@ import java.util.List;
 
 public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
+    public interface OnTTSListener {
+        void onSpeak(String text);
+    }
+
     private List<ChatUiMessage> messages;
+    private ProductCardAdapter.OnAddToCartListener onAddToCartListener;
+    private OnTTSListener onTTSListener;
 
     public ChatAdapter(List<ChatUiMessage> messages) {
         this.messages = messages;
@@ -33,6 +40,27 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     public void setMessages(List<ChatUiMessage> messages) {
         this.messages = messages;
         notifyDataSetChanged();
+    }
+
+    public void setOnAddToCartListener(ProductCardAdapter.OnAddToCartListener listener) {
+        this.onAddToCartListener = listener;
+    }
+
+    public void setOnTTSListener(OnTTSListener listener) {
+        this.onTTSListener = listener;
+    }
+
+    private AssistantViewHolder activeTtsHolder;
+
+    public void dismissTts() {
+        if (activeTtsHolder != null && activeTtsHolder.tvTtsIcon != null) {
+            activeTtsHolder.tvTtsIcon.setVisibility(View.GONE);
+            activeTtsHolder = null;
+        }
+    }
+
+    private void hideActiveTtsIcon() {
+        dismissTts();
     }
 
     @Override
@@ -55,6 +83,8 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 return new ProductViewHolder(inflater.inflate(R.layout.item_product, parent, false));
             case ChatUiMessage.TYPE_COMPARE:
                 return new CompareViewHolder(inflater.inflate(R.layout.item_chat_compare, parent, false));
+            case ChatUiMessage.TYPE_DIVIDER:
+                return new DividerViewHolder(inflater.inflate(R.layout.item_chat_divider, parent, false));
             case ChatUiMessage.TYPE_LOADING:
             default:
                 return new LoadingViewHolder(inflater.inflate(R.layout.item_chat_loading, parent, false));
@@ -75,12 +105,29 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 } else if (message.isStreaming()) {
                     text = text + " \u258C";
                 }
-                ((AssistantViewHolder) holder).tvAssistantMessage.setText(text);
+                AssistantViewHolder avh = (AssistantViewHolder) holder;
+                avh.tvAssistantMessage.setText(text);
+                avh.tvTtsIcon.setVisibility(View.GONE);
+
+                // 长按出现 ▶ 播放按钮
+                if (!message.isStreaming() && text != null && !text.isEmpty()) {
+                    final String speakText = message.getContent();
+                    avh.itemView.setOnLongClickListener(v -> {
+                        hideActiveTtsIcon();
+                        activeTtsHolder = avh;
+                        avh.tvTtsIcon.setVisibility(View.VISIBLE);
+                        avh.tvTtsIcon.setOnClickListener(icon -> {
+                            if (onTTSListener != null) onTTSListener.onSpeak(speakText);
+                        });
+                        return true;
+                    });
+                }
                 break;
             case ChatUiMessage.TYPE_PRODUCT_ROW:
                 List<Product> products = message.getProductList();
                 if (products != null && !products.isEmpty()) {
                     ProductCardAdapter cardAdapter = new ProductCardAdapter(products);
+                    cardAdapter.setOnAddToCartListener(onAddToCartListener);
                     ((ProductRowViewHolder) holder).rvProductRow.setAdapter(cardAdapter);
                 }
                 break;
@@ -89,6 +136,9 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 break;
             case ChatUiMessage.TYPE_COMPARE:
                 bindCompare((CompareViewHolder) holder, message.getCompareResponse());
+                break;
+            case ChatUiMessage.TYPE_DIVIDER:
+                ((DividerViewHolder) holder).tvDividerTime.setText(message.getContent());
                 break;
             case ChatUiMessage.TYPE_LOADING:
                 bindLoading((LoadingViewHolder) holder);
@@ -134,9 +184,11 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     static class AssistantViewHolder extends RecyclerView.ViewHolder {
         TextView tvAssistantMessage;
+        TextView tvTtsIcon;
         AssistantViewHolder(@NonNull View itemView) {
             super(itemView);
             tvAssistantMessage = itemView.findViewById(R.id.tvAssistantMessage);
+            tvTtsIcon = itemView.findViewById(R.id.tvTtsIcon);
         }
     }
 
@@ -145,6 +197,14 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private void bindLoading(LoadingViewHolder holder) {
         holder.stopAnimation();
         holder.startAnimation();
+    }
+
+    static class DividerViewHolder extends RecyclerView.ViewHolder {
+        TextView tvDividerTime;
+        DividerViewHolder(@NonNull View itemView) {
+            super(itemView);
+            tvDividerTime = itemView.findViewById(R.id.tvDividerTime);
+        }
     }
 
     static class LoadingViewHolder extends RecyclerView.ViewHolder {

@@ -13,6 +13,7 @@ public class ChatUiMessage {
     public static final int TYPE_LOADING = 3;
     public static final int TYPE_PRODUCT_ROW = 4;
     public static final int TYPE_COMPARE = 5;
+    public static final int TYPE_DIVIDER = 6;
 
     private final int type;
     private String content;
@@ -54,6 +55,10 @@ public class ChatUiMessage {
         ChatUiMessage message = new ChatUiMessage(TYPE_COMPARE, "");
         message.compareResponse = compareResponse;
         return message;
+    }
+
+    public static ChatUiMessage divider(String time) {
+        return new ChatUiMessage(TYPE_DIVIDER, time);
     }
 
     public int getType() {

@@ -91,58 +91,60 @@ public class RecommendResponse {
         private String title;
         private String brand;
         private double price;
+        private String price_range;
         private String reason;
         private String evidence;
+        private String image_url;
+        private float rating;
+        private int sold_count;
+        private int review_count;
+        private String marketing_desc;
+        private List<ReviewItem> reviews;
+        private List<FaqItem> faqs;
 
         public Item() {
         }
 
-        public String getProduct_id() {
-            return product_id;
-        }
+        public String getProduct_id() { return product_id; }
+        public void setProduct_id(String product_id) { this.product_id = product_id; }
 
-        public void setProduct_id(String product_id) {
-            this.product_id = product_id;
-        }
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
 
-        public String getTitle() {
-            return title;
-        }
+        public String getBrand() { return brand; }
+        public void setBrand(String brand) { this.brand = brand; }
 
-        public void setTitle(String title) {
-            this.title = title;
-        }
+        public double getPrice() { return price; }
+        public void setPrice(double price) { this.price = price; }
 
-        public String getBrand() {
-            return brand;
-        }
+        public String getPrice_range() { return price_range; }
+        public void setPrice_range(String price_range) { this.price_range = price_range; }
 
-        public void setBrand(String brand) {
-            this.brand = brand;
-        }
+        public String getReason() { return reason; }
+        public void setReason(String reason) { this.reason = reason; }
 
-        public double getPrice() {
-            return price;
-        }
+        public String getEvidence() { return evidence; }
+        public void setEvidence(String evidence) { this.evidence = evidence; }
 
-        public void setPrice(double price) {
-            this.price = price;
-        }
+        public String getImage_url() { return image_url; }
+        public void setImage_url(String image_url) { this.image_url = image_url; }
 
-        public String getReason() {
-            return reason;
-        }
+        public float getRating() { return rating; }
+        public void setRating(float rating) { this.rating = rating; }
 
-        public void setReason(String reason) {
-            this.reason = reason;
-        }
+        public int getSold_count() { return sold_count; }
+        public void setSold_count(int sold_count) { this.sold_count = sold_count; }
 
-        public String getEvidence() {
-            return evidence;
-        }
+        public int getReview_count() { return review_count; }
+        public void setReview_count(int review_count) { this.review_count = review_count; }
 
-        public void setEvidence(String evidence) {
-            this.evidence = evidence;
-        }
+        public String getMarketing_desc() { return marketing_desc; }
+        public void setMarketing_desc(String marketing_desc) { this.marketing_desc = marketing_desc; }
+
+        public List<ReviewItem> getReviews() { return reviews; }
+        public void setReviews(List<ReviewItem> reviews) { this.reviews = reviews; }
+
+        public List<FaqItem> getFaqs() { return faqs; }
+        public void setFaqs(List<FaqItem> faqs) { this.faqs = faqs; }
     }
 }
