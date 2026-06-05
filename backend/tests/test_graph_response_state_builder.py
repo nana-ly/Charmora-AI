@@ -25,6 +25,7 @@ def test_response_state_builder_exposes_recommend_success_fields():
         action=AgentAction.RECOMMEND,
         reply_type="recommendation_reply",
         items=[item],
+        result_count=5,
         negative_feedback=negative_feedback,
     )
     understanding = UserUnderstanding(intent=UserIntent.RECOMMEND, confidence=0.9)
@@ -43,6 +44,7 @@ def test_response_state_builder_exposes_recommend_success_fields():
     assert response.state["action"] == "recommend"
     assert response.state["result_status"] == "success"
     assert response.state["negative_feedback"]["applied"] is True
+    assert response.result_count == 5
 
 
 def test_response_state_builder_exposes_no_results_and_tool_error_selectively():

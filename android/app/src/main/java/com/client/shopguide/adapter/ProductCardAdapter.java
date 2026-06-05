@@ -32,7 +32,7 @@ public class ProductCardAdapter extends RecyclerView.Adapter<ProductCardAdapter.
     }
 
     /** 后端静态文件根 URL（模拟器用 10.0.2.2，真机改局域网IP） */
-    private static final String IMAGE_BASE_URL = "http://10.0.2.2:8000/static/";
+    private static final String IMAGE_BASE_URL = "http://10.0.2.2:8000";
 
     private List<Product> products;
     private OnAddToCartListener onAddToCartListener;

@@ -186,7 +186,11 @@ class ConversationStore(Protocol):
 class VersionedConversationStore(ConversationStore, Protocol):
     """支持原子更新契约的会话存储。
 
-    mutator 可返回新 state，也可以原地修改后返回 None；实现负责递增版本。
+    update() 会读取最新 ConversationState，把它交给 mutator 修改，并负责递增版本。
+    mutator 可以返回新 state，也可以原地修改后返回 None。支持乐观重试的实现可能
+    在冲突后再次调用 mutator；Runner 会把整轮 graph 执行放进 mutator，因此冲突重试
+    可能带来额外 LLM/工具调用成本。当前契约保证失败或冲突未成功提交时不会落入半成品
+    ConversationState，但调用方仍应避免在 mutator 内执行不可接受重复调用的外部写操作。
     """
 
     def update(
@@ -245,18 +249,19 @@ class InMemoryConversationStore:
 
     def __init__(self):
         self._states: dict[str, ConversationState] = {}
-        self._lock = threading.RLock()
+        self._locks: dict[str, threading.RLock] = {}
+        self._locks_guard = threading.Lock()
 
     def get_or_create(self, session_id: str) -> ConversationState:
         """获取会话状态；不存在时创建空状态。"""
-        with self._lock:
+        with self._get_lock(session_id):
             if session_id not in self._states:
                 self._states[session_id] = ConversationState(session_id=session_id)
             return self._states[session_id]
 
     def save(self, state: ConversationState) -> None:
         """保存会话状态。"""
-        with self._lock:
+        with self._get_lock(state.session_id):
             state.version += 1
             self._states[state.session_id] = state
 
@@ -266,10 +271,18 @@ class InMemoryConversationStore:
         mutator: Callable[[ConversationState], ConversationState | None],
     ) -> ConversationState:
         """在进程内锁保护下更新状态，避免并发写入丢失。"""
-        with self._lock:
-            state = self.get_or_create(session_id)
-            mutated = mutator(state)
-            next_state = state if mutated is None else mutated
-            next_state.version = state.version + 1
+        with self._get_lock(session_id):
+            current = deepcopy(self.get_or_create(session_id))
+            current_version = current.version
+            mutated = mutator(current)
+            next_state = current if mutated is None else mutated
+            next_state.version = current_version + 1
             self._states[session_id] = next_state
             return next_state
+
+    def _get_lock(self, session_id: str) -> threading.RLock:
+        # 锁表创建需要单独保护；具体 graph 执行只阻塞同一个 session。
+        with self._locks_guard:
+            if session_id not in self._locks:
+                self._locks[session_id] = threading.RLock()
+            return self._locks[session_id]

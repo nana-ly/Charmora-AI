@@ -61,6 +61,11 @@ class ResponseStateBuilder:
         return ChatResponse(
             session_id=session_id,
             reply=reply,
+            result_count=(
+                action_result.result_count
+                if action_result.result_count is not None
+                else len(items)
+            ),
             items=items,
             state=response_state,
         )

@@ -77,6 +77,7 @@ def recommend_products(
     response = {
         "query": query,
         "filters": filters,
+        "result_count": len(candidates),
         "items": items,
     }
     if include_trace:

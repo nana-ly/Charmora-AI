@@ -37,6 +37,8 @@ public class ChatSseClient {
 
         void onItems(@NonNull List<RecommendResponse.Item> items);
 
+        void onState(int resultCount);
+
         void onDone();
 
         void onError(@NonNull String message);
@@ -157,7 +159,17 @@ public class ChatSseClient {
             return;
         }
 
-        if ("start".equals(eventName) || "state".equals(eventName)) {
+        if ("start".equals(eventName)) {
+            return;
+        }
+
+        if ("state".equals(eventName)) {
+            try {
+                JsonObject st = GSON.fromJson(data, JsonObject.class);
+                if (st != null && st.has("result_count")) {
+                    listener.onState(st.get("result_count").getAsInt());
+                }
+            } catch (Exception ignored) {}
             return;
         }
 
@@ -181,6 +193,9 @@ public class ChatSseClient {
             List<RecommendResponse.Item> items = GSON.fromJson(json.get("items"), ITEM_LIST_TYPE);
             if (items != null) {
                 listener.onItems(items);
+                if (json.has("result_count")) {
+                    listener.onState(json.get("result_count").getAsInt());
+                }
             }
         }
     }

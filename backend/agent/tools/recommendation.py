@@ -35,6 +35,7 @@ class RecommendationTool:
         return RecommendResponse(
             query=result["query"],
             filters=RecommendFilters(**result["filters"]),
+            result_count=result.get("result_count", len(result["items"])),
             items=result["items"],
             trace=result.get("trace"),
         )

@@ -20,7 +20,7 @@ import java.util.List;
 
 public class ProductDetailActivity extends AppCompatActivity {
 
-    private static final String IMAGE_BASE_URL = "http://10.0.2.2:8000/static/";
+    private static final String IMAGE_BASE_URL = "http://10.0.2.2:8000";
 
     private ImageView ivProductImage;
     private TextView tvTitle, tvBrand, tvPrice, tvReason, tvEvidence;

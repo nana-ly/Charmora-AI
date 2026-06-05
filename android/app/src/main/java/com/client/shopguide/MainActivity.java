@@ -76,7 +76,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_SESSION_ID = "session_id";
     private static final String KEY_LAST_ACTIVE = "last_active_time";
     private static final String MESSAGES_FILE = "chat_messages.json";
-    private static final int SESSION_GAP_MINUTES = 30;
+    private static final int SESSION_GAP_MINUTES = 5;
     private static final String WELCOME_MESSAGE = "你好！告诉我品类、预算和偏好，我来帮你推荐商品。你也可以追问「再便宜一点」或「为什么推荐第一款」。";
 
     /** 后端 POST /chat/stream 已就绪，默认走 SSE；404 时自动回退 POST /chat */
@@ -115,6 +115,10 @@ public class MainActivity extends AppCompatActivity {
 
     // TTS 语音
     private TextToSpeech tts;
+
+    // SSE 状态：result_count
+    private int pendingResultCount = 0;
+    private int pendingItemsCount = 0;
 
     // 拍照相关
     private Uri currentPhotoUri;
@@ -633,6 +637,8 @@ public class MainActivity extends AppCompatActivity {
      * 优先走 SSE；后端尚未提供 /chat/stream 时自动回退 POST /chat。
      */
     private void sendViaSse(String message) {
+        pendingResultCount = 0;
+        pendingItemsCount = 0;
         chatSseClient.streamChat(sessionId, message, new ChatSseClient.StreamListener() {
             @Override
             public void onTextDelta(String content) {
@@ -640,13 +646,24 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onState(int resultCount) {
+                mainHandler.post(() -> pendingResultCount = resultCount);
+            }
+
+            @Override
             public void onItems(List<RecommendResponse.Item> items) {
-                mainHandler.post(() -> appendProductItems(items));
+                mainHandler.post(() -> {
+                    appendProductItems(items);
+                    pendingItemsCount = items != null ? items.size() : 0;
+                });
             }
 
             @Override
             public void onDone() {
-                mainHandler.post(() -> finishStreamingResponse());
+                mainHandler.post(() -> {
+                    finishStreamingResponse();
+                    showResultCount();
+                });
             }
 
             @Override
@@ -744,6 +761,8 @@ public class MainActivity extends AppCompatActivity {
     private void handleChatResponse(ChatResponse response) {
         removeLoadingMessage();
 
+        pendingResultCount = response.getResult_count();
+
         if (response.getSession_id() != null) {
             sessionId = response.getSession_id();
             prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
@@ -756,6 +775,7 @@ public class MainActivity extends AppCompatActivity {
         chatMessages.add(ChatUiMessage.assistant(reply));
 
         List<RecommendResponse.Item> items = response.getItems();
+        pendingItemsCount = items != null ? items.size() : 0;
         if (items != null && !items.isEmpty()) {
             List<Product> productList = new ArrayList<>();
             for (RecommendResponse.Item item : items) {
@@ -766,6 +786,7 @@ public class MainActivity extends AppCompatActivity {
 
         chatAdapter.notifyDataSetChanged();
         scrollToBottom();
+        showResultCount();
         setSendingState(false);
     }
 
@@ -803,6 +824,15 @@ public class MainActivity extends AppCompatActivity {
         product.setReviews(item.getReviews());
         product.setFaqs(item.getFaqs());
         return product;
+    }
+
+    private void showResultCount() {
+        if (pendingResultCount > pendingItemsCount && pendingItemsCount > 0) {
+            chatMessages.add(ChatUiMessage.divider(
+                    "共找到 " + pendingResultCount + " 件，已为你推荐 " + pendingItemsCount + " 款"));
+            chatAdapter.notifyItemInserted(chatMessages.size() - 1);
+            scrollToBottom();
+        }
     }
 
     private void setSendingState(boolean sending) {
@@ -856,7 +886,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     static class CartProductAdapter extends RecyclerView.Adapter<CartProductAdapter.Vh> {
-        private static final String IMG_BASE = "http://10.0.2.2:8000/static/";
+        private static final String IMG_BASE = "http://10.0.2.2:8000";
         private final List<Product> items;
         private final boolean[] selected;
 

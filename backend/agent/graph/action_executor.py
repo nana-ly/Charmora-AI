@@ -115,6 +115,7 @@ class ActionExecutor:
                 reply_type="no_results_reply",
                 recommendation_query=recommendation_query,
                 items=[],
+                result_count=result.result_count,
                 no_results=no_results,
                 negative_feedback=negative_feedback,
             )
@@ -125,6 +126,7 @@ class ActionExecutor:
             reply_type="recommendation_reply",
             recommendation_query=recommendation_query,
             items=result.items,
+            result_count=result.result_count,
             negative_feedback=negative_feedback,
         )
 
@@ -201,6 +203,7 @@ class ActionExecutor:
             reply_type="tool_error_reply",
             recommendation_query=recommendation_query,
             items=[],
+            result_count=0,
             tool_error="recommendation_failed",
             negative_feedback=negative_feedback,
         )
