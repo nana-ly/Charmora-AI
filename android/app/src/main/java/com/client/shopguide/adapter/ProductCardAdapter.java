@@ -21,9 +21,25 @@ import com.client.shopguide.model.Product;
 
 import java.util.List;
 
+import coil.Coil;
+import coil.request.ImageRequest;
+import com.google.gson.Gson;
+
 public class ProductCardAdapter extends RecyclerView.Adapter<ProductCardAdapter.ViewHolder> {
 
+    public interface OnAddToCartListener {
+        void onAddToCart(Product product);
+    }
+
+    /** 后端静态文件根 URL（模拟器用 10.0.2.2，真机改局域网IP） */
+    private static final String IMAGE_BASE_URL = "http://10.0.2.2:8000/static/";
+
     private List<Product> products;
+    private OnAddToCartListener onAddToCartListener;
+
+    public void setOnAddToCartListener(OnAddToCartListener listener) {
+        this.onAddToCartListener = listener;
+    }
 
     public ProductCardAdapter(List<Product> products) {
         this.products = products;
@@ -41,11 +57,29 @@ public class ProductCardAdapter extends RecyclerView.Adapter<ProductCardAdapter.
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         Product product = products.get(position);
 
-        // 占位图（TODO: 等后端返回真实 imageUrl 后，用 Coil 加载）
-        holder.ivProductImage.setImageResource(R.drawable.ic_placeholder_product);
+        // 用 Coil 加载商品图片（URL 为空时显示占位图）
+        String imageUrl = product.getImageUrl();
+        String fullUrl = (imageUrl != null && !imageUrl.isEmpty())
+                ? IMAGE_BASE_URL + imageUrl : null;
+
+        ImageRequest request = new ImageRequest.Builder(holder.itemView.getContext())
+                .data(fullUrl)
+                .target(holder.ivProductImage)
+                .placeholder(R.drawable.ic_placeholder_product)
+                .error(R.drawable.ic_placeholder_product)
+                .crossfade(300)
+                .build();
+        Coil.imageLoader(holder.itemView.getContext()).enqueue(request);
 
         holder.tvTitle.setText(product.getTitle());
-        holder.tvPrice.setText("¥" + String.format("%.0f", product.getBase_price()));
+
+        // 价格区间（有多个SKU时显示范围，否则显示底价）
+        String priceRange = product.getPriceRange();
+        if (priceRange != null && !priceRange.isEmpty()) {
+            holder.tvPrice.setText(priceRange);
+        } else {
+            holder.tvPrice.setText("¥" + String.format("%.0f", product.getBase_price()));
+        }
 
         // 品牌信息
         String brand = product.getBrand();
@@ -65,10 +99,17 @@ public class ProductCardAdapter extends RecyclerView.Adapter<ProductCardAdapter.
             holder.tvRating.setVisibility(View.GONE);
         }
 
-        // 销量（TODO: 等后端返回真实 soldCount 后显示）
+        // 销量 + 评论数
         int soldCount = product.getSoldCount();
-        if (soldCount > 0) {
-            holder.tvSoldCount.setText("已售 " + formatSoldCount(soldCount));
+        int reviewCount = product.getReviewCount();
+        StringBuilder soldText = new StringBuilder();
+        if (soldCount > 0) soldText.append("已售 ").append(formatSoldCount(soldCount));
+        if (reviewCount > 0) {
+            if (soldText.length() > 0) soldText.append("  ·  ");
+            soldText.append(reviewCount).append("条评论");
+        }
+        if (soldText.length() > 0) {
+            holder.tvSoldCount.setText(soldText);
             holder.tvSoldCount.setVisibility(View.VISIBLE);
         } else {
             holder.tvSoldCount.setVisibility(View.GONE);
@@ -108,17 +149,28 @@ public class ProductCardAdapter extends RecyclerView.Adapter<ProductCardAdapter.
                 intent.putExtra("price", product.getBase_price());
                 intent.putExtra("reason", product.getReason());
                 intent.putExtra("evidence", product.getMatched_evidence());
+                intent.putExtra("image_url", product.getImageUrl());
+                intent.putExtra("rating", product.getRating());
+                intent.putExtra("sold_count", product.getSoldCount());
+                intent.putExtra("review_count", product.getReviewCount());
+                intent.putExtra("price_range", product.getPriceRange());
+                intent.putExtra("marketing_desc", product.getMarketingDesc());
+                Gson gson = new Gson();
+                intent.putExtra("reviews_json", product.getReviews() != null
+                        ? gson.toJson(product.getReviews()) : "");
+                intent.putExtra("faqs_json", product.getFaqs() != null
+                        ? gson.toJson(product.getFaqs()) : "");
                 context.startActivity(intent);
             }
         });
 
         // 加入购物车
-        holder.btnAddToCart.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Toast.makeText(v.getContext(),
-                        product.getTitle() + " 已加入购物车", Toast.LENGTH_SHORT).show();
+        holder.btnAddToCart.setOnClickListener(v -> {
+            if (onAddToCartListener != null) {
+                onAddToCartListener.onAddToCart(product);
             }
+            Toast.makeText(v.getContext(),
+                    product.getTitle() + " 已加入购物车", Toast.LENGTH_SHORT).show();
         });
     }
 

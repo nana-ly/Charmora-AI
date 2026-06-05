@@ -17,10 +17,14 @@ public class Product {
     private String matched_evidence;
 
     // ========== 预留字段（等后端返回真实数据） ==========
-    // TODO: 后端返回真实 imageUrl、rating、soldCount、tags 后移除 Mock 默认值
     private String imageUrl;          // 商品图片URL
+    private String priceRange;        // 价格范围，如 "¥9999-13499"
     private float rating;             // 评分 0~5
-    private int soldCount;            // 销量
+    private int soldCount;            // 预估销量
+    private int reviewCount;          // 评论数
+    private String marketingDesc;     // 商品介绍
+    private List<ReviewItem> reviews; // 用户评论
+    private List<FaqItem> faqs;       // 常见问题
     private List<String> tags;        // 标签列表，如 "热销"、"新品"、"包邮"
 
     public Product() {
@@ -122,13 +126,23 @@ public class Product {
         this.rating = rating;
     }
 
-    public int getSoldCount() {
-        return soldCount;
-    }
+    public String getPriceRange() { return priceRange; }
+    public void setPriceRange(String priceRange) { this.priceRange = priceRange; }
 
-    public void setSoldCount(int soldCount) {
-        this.soldCount = soldCount;
-    }
+    public int getSoldCount() { return soldCount; }
+    public void setSoldCount(int soldCount) { this.soldCount = soldCount; }
+
+    public int getReviewCount() { return reviewCount; }
+    public void setReviewCount(int reviewCount) { this.reviewCount = reviewCount; }
+
+    public String getMarketingDesc() { return marketingDesc; }
+    public void setMarketingDesc(String marketingDesc) { this.marketingDesc = marketingDesc; }
+
+    public List<ReviewItem> getReviews() { return reviews; }
+    public void setReviews(List<ReviewItem> reviews) { this.reviews = reviews; }
+
+    public List<FaqItem> getFaqs() { return faqs; }
+    public void setFaqs(List<FaqItem> faqs) { this.faqs = faqs; }
 
     public List<String> getTags() {
         return tags;
