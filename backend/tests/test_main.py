@@ -49,6 +49,7 @@ class FakeVectorRetriever:
             "brand": "Apple",
             "category": "数码电子",
             "base_price": 8999,
+            "image_path": "2_数码电子/images/p_rag_1.jpg",
         }
         return [
             RetrievalResult(
@@ -182,6 +183,7 @@ def test_recommend_returns_three_product_cards_from_loaded_products(monkeypatch)
 
     items = payload["items"]
     assert len(items) == 3
+    assert payload["result_count"] >= len(items)
 
     required_fields = {
         "product_id",
@@ -190,6 +192,9 @@ def test_recommend_returns_three_product_cards_from_loaded_products(monkeypatch)
         "price",
         "reason",
         "evidence",
+        "image_path",
+        "image_url",
+        "imageUrl",
     }
     for item in items:
         assert required_fields <= item.keys()
@@ -225,9 +230,13 @@ def test_rag_search_returns_vector_retrieval_debug_results(monkeypatch):
             "retriever_mode": "vector",
             "score_type": "vector_similarity",
             "evidence": "向量召回：匹配“预算9000以内，想买拍照好的手机”。",
+            "image_path": "2_数码电子/images/p_rag_1.jpg",
+            "image_url": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_rag_1.jpg",
+            "imageUrl": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_rag_1.jpg",
             "metadata": {"document_preview": "RAG 拍照旗舰手机 摘要"},
         }
     ]
+    assert payload["result_count"] == 1
 
 
 def test_recommend_debug_trace_requires_server_flag(monkeypatch):
@@ -323,6 +332,7 @@ def test_recommend_route_returns_200_with_empty_items_for_no_results(monkeypatch
             "brand": None,
             "keywords": ["手机"],
         },
+        "result_count": 0,
         "items": [],
     }
 
@@ -358,6 +368,7 @@ def test_chat_uses_vector_retriever_by_default(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["result_count"] >= len(payload["items"])
     assert payload["items"][0]["product_id"] == "p_rag_1"
     assert payload["items"][0]["evidence"].startswith("向量召回")
 
@@ -401,6 +412,7 @@ def test_chat_returns_agent_response_and_state(monkeypatch):
     assert payload["reply"]
     assert payload["state"]["intent"] == "recommend"
     assert payload["state"]["preferences"]["category"] == "数码电子"
+    assert payload["result_count"] >= len(payload["items"])
     assert len(payload["items"]) == 3
 
 
@@ -424,8 +436,9 @@ def test_chat_keeps_response_contract_with_langgraph_runner(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"session_id", "reply", "items", "state"}
+    assert set(payload) == {"session_id", "reply", "items", "state", "result_count"}
     assert payload["session_id"] == "test-chat-langgraph-session"
+    assert payload["result_count"] >= len(payload["items"])
     assert payload["state"]["intent"] == "recommend"
     assert len(payload["items"]) == 3
     assert {
@@ -477,6 +490,7 @@ def test_chat_no_results_keeps_response_shape_and_relax_options(monkeypatch):
                 "brand": None,
                 "keywords": ["手机"],
             },
+            "result_count": 0,
             "items": [],
         }
 
@@ -507,7 +521,8 @@ def test_chat_no_results_keeps_response_shape_and_relax_options(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"session_id", "reply", "items", "state"}
+    assert set(body) == {"session_id", "reply", "items", "state", "result_count"}
+    assert body["result_count"] == 0
     assert body["items"] == []
     assert body["state"]["result_status"] == "no_results"
     assert body["state"]["latest_attempt_status"] == "no_results"
@@ -547,6 +562,7 @@ def test_chat_response_includes_negative_feedback_state(monkeypatch):
                 "brand": None,
                 "keywords": ["拍照"],
             },
+            "result_count": 4,
             "items": [
                 ProductCard(
                     product_id="p_huawei_1",
@@ -585,6 +601,7 @@ def test_chat_response_includes_negative_feedback_state(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
+    assert body["result_count"] == 4
     assert body["state"]["negative_feedback"]["applied"] is True
     assert body["state"]["excluded_brands"] == ["苹果"]
     assert captured["negative_filters"].excluded_brands == ["苹果"]
@@ -631,7 +648,8 @@ def test_chat_negative_feedback_noop_keeps_response_contract(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"session_id", "reply", "items", "state"}
+    assert set(body) == {"session_id", "reply", "items", "state", "result_count"}
+    assert body["result_count"] == 0
     assert body["items"] == []
     assert body["state"]["action"] == "reply_only"
     assert body["state"]["negative_feedback"]["noop"] is True
@@ -694,6 +712,7 @@ def test_chat_pending_restore_confirmation_keeps_response_contract(monkeypatch):
                 "brand": None,
                 "keywords": ["手机"],
             },
+            "result_count": 1,
             "items": [phone_item],
         }
 
@@ -720,7 +739,8 @@ def test_chat_pending_restore_confirmation_keeps_response_contract(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"session_id", "reply", "items", "state"}
+    assert set(body) == {"session_id", "reply", "items", "state", "result_count"}
+    assert body["result_count"] == 1
     assert body["items"][0]["product_id"] == "p_restore_phone"
     assert body["state"]["action"] == "recommend"
     assert body["state"]["preferences"]["canonical_target_key"] == "phone"
@@ -747,9 +767,10 @@ def test_chat_tool_error_keeps_response_shape(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"session_id", "reply", "items", "state"}
+    assert set(payload) == {"session_id", "reply", "items", "state", "result_count"}
     assert payload["session_id"] == "test-chat-tool-error-session"
     assert payload["items"] == []
+    assert payload["result_count"] == 0
     assert "推荐服务暂时不可用" in payload["reply"]
     assert payload["state"]["action"] == "recommend"
     assert payload["state"]["result_status"] == "tool_error"
@@ -757,6 +778,8 @@ def test_chat_tool_error_keeps_response_shape(monkeypatch):
 
 
 def test_chat_stream_returns_sse_events(monkeypatch):
+    monkeypatch.setenv("RETRIEVER_MODE", "keyword")
+    refresh_api_recommendation_service()
     inject_recommend_chat_runner(monkeypatch)
 
     with client.stream(
@@ -780,6 +803,7 @@ def test_chat_stream_returns_sse_events(monkeypatch):
     assert start_index < delta_index < items_index < state_index < done_index
     assert '"session_id": "test-stream-session"' in body
     assert '"product_id":' in body
+    assert '"result_count":' in body
 
 
 def test_chat_stream_tool_error_returns_success_events(monkeypatch):
@@ -847,6 +871,7 @@ def test_chat_stream_negative_feedback_keeps_success_event_order(monkeypatch):
                 "brand": None,
                 "keywords": ["拍照"],
             },
+            "result_count": 2,
             "items": [
                 ProductCard(
                     product_id="p_huawei_1",
@@ -899,6 +924,7 @@ def test_chat_stream_negative_feedback_keeps_success_event_order(monkeypatch):
     assert start_index < delta_index < items_index < state_index < done_index
     assert '"excluded_brands": ["苹果"]' in body
     assert '"applied": true' in body
+    assert '"result_count": 2' in body
     assert "event: error" not in body
 
 

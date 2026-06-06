@@ -59,7 +59,10 @@ def chat_stream(request: ChatRequest, http_request: Request) -> StreamingRespons
                     sse_event("delta", {"text": response.reply}),
                     sse_event(
                         "items",
-                        {"items": [item.model_dump() for item in response.items]},
+                        {
+                            "items": [item.model_dump() for item in response.items],
+                            "result_count": response.result_count,
+                        },
                     ),
                     sse_event("state", {"state": response.state}),
                 ]

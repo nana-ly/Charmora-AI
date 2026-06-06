@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +24,29 @@ app.include_router(chat_router)
 # 挂载商品图片静态目录，前端通过 /static/xxx.jpg 访问
 dataset_root = os.path.join(os.path.dirname(__file__), "..", "ecommerce_agent_dataset")
 app.mount("/static", StaticFiles(directory=dataset_root), name="static")
+
+
+def _mount_product_images() -> None:
+    if not config.product_image_static_enabled:
+        return
+    if "://" in config.product_image_base_url:
+        return
+
+    mount_path = "/" + config.product_image_base_url.strip("/")
+    if mount_path == "/":
+        return
+
+    static_root = Path(config.product_image_static_root)
+    if not static_root.is_absolute():
+        static_root = Path(__file__).resolve().parent / static_root
+    app.mount(
+        mount_path,
+        StaticFiles(directory=str(static_root.resolve()), check_dir=False),
+        name="product_images",
+    )
+
+
+_mount_product_images()
 
 
 __all__ = ["app"]

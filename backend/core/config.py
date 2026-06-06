@@ -57,6 +57,9 @@ class AppConfig:
     agent_session_lock_enabled: bool = True
     conversation_store_update_retries: int = 3
     recommend_trace_enabled: bool = False
+    product_image_base_url: str = "/assets/products"
+    product_image_static_root: str = "../ecommerce_agent_dataset"
+    product_image_static_enabled: bool = True
     llm: LLMConfig = field(default_factory=LLMConfig)
     rag: RAGConfig = field(default_factory=RAGConfig)
 
@@ -85,6 +88,17 @@ def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] 
         ),
         recommend_trace_enabled=(
             os.getenv("RECOMMEND_TRACE_ENABLED", "false").lower() == "true"
+        ),
+        product_image_base_url=os.getenv(
+            "PRODUCT_IMAGE_BASE_URL",
+            "/assets/products",
+        ),
+        product_image_static_root=os.getenv(
+            "PRODUCT_IMAGE_STATIC_ROOT",
+            "../ecommerce_agent_dataset",
+        ),
+        product_image_static_enabled=(
+            os.getenv("PRODUCT_IMAGE_STATIC_ENABLED", "true").lower() == "true"
         ),
         llm=LLMConfig(
             enabled=os.getenv("LLM_ENABLED", "false").lower() == "true",

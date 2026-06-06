@@ -168,6 +168,7 @@ class ActionResult(BaseModel):
     reply_type: str
     recommendation_query: str | None = None
     items: list[ProductCard] = Field(default_factory=list)
+    result_count: int | None = None
     tool_error: str | None = None
     no_results: NoResultsSuggestion | None = None
     target_item_index: int | None = None

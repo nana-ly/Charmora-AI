@@ -2,6 +2,8 @@ import logging
 
 from fastapi.testclient import TestClient
 
+import api.deps as api_deps
+import services.recommendation_service as recommendation_service_module
 from agent.graph.runner import LangGraphAgentRunner
 from agent.memory import InMemoryConversationStore
 from agent.tools import RecommendationTool
@@ -12,6 +14,13 @@ from main import app
 
 
 client = TestClient(app)
+
+
+def refresh_api_recommendation_service():
+    recommendation_service_module.reset_recommendation_service_for_tests()
+    api_deps.recommendation_service = (
+        recommendation_service_module.get_recommendation_service()
+    )
 
 
 class FakeUnderstandingService:
@@ -26,6 +35,7 @@ class FakeUnderstandingService:
 
 def test_recommend_logs_request(monkeypatch, caplog):
     monkeypatch.setenv("RETRIEVER_MODE", "keyword")
+    refresh_api_recommendation_service()
     caplog.set_level(logging.INFO)
 
     response = client.post(

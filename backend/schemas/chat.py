@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from schemas.product import ProductCard
 
@@ -26,6 +26,13 @@ class ChatResponse(BaseModel):
 
     session_id: str
     reply: str
+    result_count: int | None = None
     items: list[ProductCard] = Field(default_factory=list)
     state: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def default_result_count(self):
+        if self.result_count is None:
+            self.result_count = len(self.items)
+        return self
 

@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 import api.deps as api_deps
+from recommendation_core.image_url import product_image_fields
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ def rag_search(request: RagSearchRequest) -> dict[str, Any]:
     logger.info("rag search response generated item_count=%s", len(results))
     return {
         "query": request.query,
+        "result_count": len(results),
         "items": [
             {
                 "product_id": result.product.get("product_id", ""),
@@ -37,6 +39,7 @@ def rag_search(request: RagSearchRequest) -> dict[str, Any]:
                 "retriever_mode": result.retriever_mode,
                 "score_type": result.score_type,
                 "evidence": result.evidence,
+                **product_image_fields(result.product),
                 "metadata": result.metadata or {},
             }
             for result in results

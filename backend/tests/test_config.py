@@ -44,3 +44,15 @@ def test_load_app_config_reads_conversation_store_update_retries(monkeypatch):
     config = load_app_config(env_file=None)
 
     assert config.conversation_store_update_retries == 5
+
+
+def test_load_app_config_reads_product_image_settings(monkeypatch):
+    monkeypatch.setenv("PRODUCT_IMAGE_BASE_URL", "https://cdn.example.com/products")
+    monkeypatch.setenv("PRODUCT_IMAGE_STATIC_ROOT", "../dataset")
+    monkeypatch.setenv("PRODUCT_IMAGE_STATIC_ENABLED", "false")
+
+    config = load_app_config(env_file=None)
+
+    assert config.product_image_base_url == "https://cdn.example.com/products"
+    assert config.product_image_static_root == "../dataset"
+    assert config.product_image_static_enabled is False
