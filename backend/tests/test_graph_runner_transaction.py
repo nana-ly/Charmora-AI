@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+import threading
 
 import pytest
 
@@ -162,3 +164,82 @@ def test_langgraph_runner_with_sqlite_store_persists_full_turn_transaction(tmp_p
     assert saved.purchase_need == "推荐手机"
     assert saved.preferences["canonical_target_key"] == "phone"
     assert saved.last_successful_items[0].product_id == "p_tx_phone"
+
+
+def test_two_langgraph_runners_sharing_sqlite_preserve_concurrent_turns(tmp_path):
+    from agent.sqlite_memory import SQLiteConversationStore
+
+    db_path = tmp_path / "shared-chat.sqlite3"
+    store_a = SQLiteConversationStore(db_path, update_retries=5)
+    store_b = SQLiteConversationStore(db_path, update_retries=5)
+    store_a.update("shared-sqlite-session", lambda state: state)
+    first_two_graph_calls = threading.Barrier(2)
+    call_lock = threading.Lock()
+    recommendation_calls = {"count": 0}
+
+    def concurrent_recommendation(query: str, top_k: int = 3, negative_filters=None):
+        with call_lock:
+            recommendation_calls["count"] += 1
+            call_number = recommendation_calls["count"]
+
+        # 预置 session 后，前两次调用停在同一道栅栏上，确保两个 Runner 都先读到同一版本，
+        # 随后其中一个提交成功、另一个触发 SQLite 乐观冲突并重跑整轮 graph。
+        if call_number <= 2:
+            first_two_graph_calls.wait(timeout=10)
+
+        return {
+            "query": query,
+            "filters": {
+                "category": "数码电子",
+                "max_price": None,
+                "brand": None,
+                "keywords": ["手机"],
+            },
+            "result_count": 1,
+            "items": [
+                ProductCard(
+                    product_id=f"p_shared_sqlite_{call_number}",
+                    title=f"共享 SQLite 事务测试手机 {call_number}",
+                    brand="TestPhone",
+                    price=2999,
+                    reason="符合共享 SQLite 并发事务测试需求",
+                    evidence="shared-sqlite-transaction-test",
+                )
+            ],
+        }
+
+    runner_a = LangGraphAgentRunner(
+        store=store_a,
+        recommendation_tool=RecommendationTool(recommend_func=concurrent_recommendation),
+        understanding_service=StaticUnderstandingService(),
+        session_lock_manager=SessionLockManager(),
+    )
+    runner_b = LangGraphAgentRunner(
+        store=store_b,
+        recommendation_tool=RecommendationTool(recommend_func=concurrent_recommendation),
+        understanding_service=StaticUnderstandingService(),
+        session_lock_manager=SessionLockManager(),
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(
+            executor.map(
+                lambda args: args[0].run("shared-sqlite-session", args[1]),
+                [
+                    (runner_a, "推荐手机 A"),
+                    (runner_b, "推荐手机 B"),
+                ],
+            )
+        )
+
+    saved = store_a.get_or_create("shared-sqlite-session")
+    user_messages = [
+        message.content for message in saved.messages if message.role == "user"
+    ]
+
+    assert saved.version == 3
+    assert len(saved.messages) == 4
+    assert set(user_messages) == {"推荐手机 A", "推荐手机 B"}
+    assert all(response.session_id == "shared-sqlite-session" for response in responses)
+    assert all(response.items for response in responses)
+    assert recommendation_calls["count"] >= 3
