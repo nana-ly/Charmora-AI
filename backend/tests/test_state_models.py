@@ -93,3 +93,38 @@ def test_turn_result_state_omits_empty_fields_for_response_state():
         "tool_error": "recommendation_failed",
         "result_count": 0,
     }
+
+
+def test_purchase_preferences_accepts_usage_and_recipient_fields():
+    from agent.state_models import PurchasePreferences
+
+    model = PurchasePreferences.from_dict(
+        {
+            "target_category": "手机",
+            "usage": "拍照",
+            "recipient": "父母",
+            "avoid_current_price_band": True,
+        }
+    )
+
+    assert model.usage == "拍照"
+    assert model.recipient == "父母"
+    assert model.avoid_current_price_band is True
+    assert model.to_dict()["usage"] == "拍照"
+    assert model.to_dict()["recipient"] == "父母"
+
+
+def test_purchase_preferences_rejects_dirty_usage_and_recipient_types():
+    from agent.state_models import PurchasePreferences
+
+    model = PurchasePreferences.from_dict(
+        {
+            "usage": ["拍照"],
+            "recipient": {"name": "父母"},
+        }
+    )
+
+    assert model.usage is None
+    assert model.recipient is None
+    assert "usage" not in model.to_dict()
+    assert "recipient" not in model.to_dict()

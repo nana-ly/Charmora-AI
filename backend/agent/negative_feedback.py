@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from agent.context_manager import active_target_key
 from agent.memory import ConversationState
 from agent.negative_feedback_models import (
     NegativeFeedbackApplicationResult,
@@ -172,6 +173,10 @@ def _apply_item_index_exclusion(
             title=item.title,
             brand=item.brand,
             price=item.price,
+            source_result_id=conversation.last_successful_result_id,
+            source_target_key=active_target_key(conversation),
+            source_item_index=index,
+            feedback_type="item_exclusion",
         )
     )
 
@@ -197,7 +202,7 @@ def _apply_all_last_items_exclusion(
         )
 
     added_ids: list[str] = []
-    for item in items:
+    for index, item in enumerate(items, start=1):
         if item.product_id in conversation.excluded_product_ids:
             continue
         conversation.excluded_product_ids.append(item.product_id)
@@ -207,6 +212,10 @@ def _apply_all_last_items_exclusion(
                 title=item.title,
                 brand=item.brand,
                 price=item.price,
+                source_result_id=conversation.last_successful_result_id,
+                source_target_key=active_target_key(conversation),
+                source_item_index=index,
+                feedback_type="item_exclusion",
             )
         )
         added_ids.append(item.product_id)
@@ -307,7 +316,13 @@ def _apply_brand_exclusion(
 
     conversation.excluded_brands.append(brand)
     _remove_positive_brand_preferences(conversation, brand)
-    conversation.negative_feedback_items.append(NegativeFeedbackItem(brand=brand))
+    conversation.negative_feedback_items.append(
+        NegativeFeedbackItem(
+            brand=brand,
+            source_target_key=active_target_key(conversation),
+            feedback_type="brand_exclusion",
+        )
+    )
 
     return NegativeFeedbackApplicationResult(
         detected=True,

@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from agent.context_prompt_builder import PromptContextBuilder
 from agent.memory import ConversationState
 from agent.negative_feedback_models import NegativeFeedbackApplicationResult
 from agent.prompt_loader import PromptTemplate, load_prompt
@@ -219,6 +220,7 @@ class LLMUserUnderstandingService:
         max_tokens: int = 3000,
         prompt_version: str = "understanding_v1",
         prompt_loader=load_prompt,
+        context_builder: PromptContextBuilder | None = None,
     ) -> None:
         self.llm = llm
         self.config = config or LLMConfig()
@@ -226,6 +228,7 @@ class LLMUserUnderstandingService:
         self.prompt_version = prompt_version
         self._prompt_loader = prompt_loader
         self._prompt_template: PromptTemplate | None = None
+        self.context_builder = context_builder or PromptContextBuilder()
 
     def understand(
         self,
@@ -406,41 +409,7 @@ class LLMUserUnderstandingService:
         return self._prompt_template.content
 
     def _context_block(self, message: str, conversation: ConversationState) -> str:
-        recent_messages = conversation.messages[-8:]
-        history = "\n".join(
-            f"{item.role}: {item.content}"
-            for item in recent_messages
-            if item.content.strip()
-        )
-        previous_items = "\n".join(
-            self._format_previous_item(index, item)
-            for index, item in enumerate(conversation.last_items, start=1)
-        )
-        # 归档上下文只摘要关键购买意图，避免把历史商品列表塞进提示词。
-        previous_contexts = "\n".join(
-            (
-                f"- target_category={item.target_category or '无'}; "
-                f"category={item.category or '无'}; "
-                f"purchase_need={item.purchase_need}"
-            )
-            for item in conversation.previous_purchase_contexts
-        )
-        return (
-            f"最新用户消息：{message}\n"
-            f"最近对话：\n{history or '无'}\n"
-            f"当前 purchase_need：{conversation.purchase_need or '无'}\n"
-            f"当前 preferences：{json.dumps(conversation.preferences, ensure_ascii=False)}\n"
-            f"排除品牌：{json.dumps(conversation.excluded_brands, ensure_ascii=False)}\n"
-            f"pending_restore_category：{conversation.pending_restore_category or '无'}\n"
-            f"previous_purchase_contexts：\n{previous_contexts or '无'}\n"
-            f"上一轮成功推荐：\n{previous_items or '无'}"
-        )
-
-    def _format_previous_item(self, index: int, item: ProductCard) -> str:
-        return (
-            f"{index}. title={item.title}; brand={item.brand}; "
-            f"price={item.price}; evidence={item.evidence}"
-        )
+        return self.context_builder.build(message, conversation)
 
 
 def clarify_for_context(conversation: ConversationState) -> UserUnderstanding:

@@ -11,6 +11,20 @@ from schemas.chat import ChatResponse
 from schemas.product import ProductCard
 
 
+def _response_active_target_key(conversation: ConversationState) -> str | None:
+    """只读推导响应里的目标 key，避免构造 response 时隐藏修改会话状态。"""
+    key = conversation.preferences.get("canonical_target_key")
+    if isinstance(key, str) and key.strip():
+        return key
+    target = conversation.preferences.get("target_category")
+    if isinstance(target, str) and target.strip():
+        return target
+    category = conversation.preferences.get("category")
+    if isinstance(category, str) and category.strip():
+        return category
+    return None
+
+
 class ResponseStateBuilder:
     """纯构造 response，不保存会话，避免隐藏存储副作用。"""
 
@@ -35,6 +49,35 @@ class ResponseStateBuilder:
             "excluded_product_ids": list(conversation.excluded_product_ids),
             "excluded_brands": list(conversation.excluded_brands),
             "latest_attempt_status": conversation.latest_attempt_status,
+        }
+        response_state["context"] = {
+            "active_target_key": _response_active_target_key(conversation),
+            "target_category": conversation.preferences.get("target_category"),
+            "category": conversation.preferences.get("category"),
+            "pending_restore": conversation.pending_restore_category is not None,
+            "pending_restore_category": conversation.pending_restore_category,
+            "pending_restore_display_target": conversation.pending_restore_display_target,
+        }
+        response_state["memory"] = {
+            "archived_context_count": len(conversation.previous_purchase_contexts),
+            "last_successful_result_id": conversation.last_successful_result_id,
+        }
+        response_state["negative_feedback_state"] = {
+            "excluded_product_ids": list(conversation.excluded_product_ids),
+            "excluded_brands": list(conversation.excluded_brands),
+        }
+        response_state["result"] = {
+            "status": (
+                conversation.last_result_status
+                if action_result.action == AgentAction.RECOMMEND
+                else None
+            ),
+            "tool_error": action_result.tool_error,
+            "relax_options": (
+                action_result.no_results.relax_options
+                if action_result.no_results
+                else []
+            ),
         }
         negative_feedback = (
             action_result.negative_feedback or negative_feedback_result

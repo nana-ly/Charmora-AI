@@ -153,6 +153,24 @@ def test_apply_negative_feedback_excludes_item_by_last_successful_index():
     assert result.ack_message == "已排除第 2 款，我按你的需求重新筛选。"
 
 
+def test_item_negative_feedback_records_source_result_context():
+    state = make_phone_state()
+    state.preferences["canonical_target_key"] = "phone"
+
+    result = apply_negative_feedback(
+        state,
+        {"excluded_item_indexes": [1]},
+        catalog_products=[],
+    )
+
+    assert result.applied is True
+    feedback = state.negative_feedback_items[0]
+    assert feedback.source_result_id == "result-1"
+    assert feedback.source_target_key == "phone"
+    assert feedback.source_item_index == 1
+    assert feedback.feedback_type == "item_exclusion"
+
+
 def test_apply_negative_feedback_current_reference_uses_target_item_index():
     state = make_phone_state()
     state.target_item_index = 2
@@ -192,6 +210,29 @@ def test_apply_negative_feedback_excludes_all_last_successful_items():
     assert result.applied is True
     assert state.excluded_product_ids == ["p_apple", "p_huawei"]
     assert result.target_product_ids == ["p_apple", "p_huawei"]
+
+
+def test_all_item_negative_feedback_records_each_source_index():
+    state = make_phone_state()
+    state.preferences["canonical_target_key"] = "phone"
+    state.last_successful_result_id = "result-phone-2"
+
+    result = apply_negative_feedback(
+        state,
+        {"exclude_all_last_items": True},
+        catalog_products=[],
+    )
+
+    assert result.applied is True
+    assert [item.source_item_index for item in state.negative_feedback_items] == [1, 2]
+    assert [item.source_result_id for item in state.negative_feedback_items] == [
+        "result-phone-2",
+        "result-phone-2",
+    ]
+    assert [item.source_target_key for item in state.negative_feedback_items] == [
+        "phone",
+        "phone",
+    ]
 
 
 def test_apply_negative_feedback_keeps_mvp_item_index_priority_for_mixed_updates():

@@ -194,3 +194,25 @@ def test_rag_eval_runner_loads_cases():
 
     assert len(cases) >= 15
     assert cases[0]["id"] == "phone_huawei_camera"
+
+
+def test_context_memory_eval_cases_have_required_fields_and_valid_ids():
+    cases_path = Path(__file__).resolve().parents[2] / "eval" / "context_memory_cases.jsonl"
+    lines = [
+        line
+        for line in cases_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert len(lines) >= 4
+
+    seen_ids = set()
+    for line in lines:
+        case = json.loads(line)
+        assert {"id", "messages", "expected"} <= case.keys()
+        assert case["id"] not in seen_ids
+        seen_ids.add(case["id"])
+        assert isinstance(case["messages"], list)
+        assert case["messages"]
+        assert all(isinstance(message, str) and message for message in case["messages"])
+        assert isinstance(case["expected"], dict)

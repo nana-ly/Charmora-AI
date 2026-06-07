@@ -230,6 +230,27 @@ Response:
       "max_price": 9000,
       "keywords": ["手机", "拍照"]
     },
+    "context": {
+      "active_target_key": "phone",
+      "target_category": "手机",
+      "category": "数码电子",
+      "pending_restore": false,
+      "pending_restore_category": null,
+      "pending_restore_display_target": null
+    },
+    "memory": {
+      "archived_context_count": 0,
+      "last_successful_result_id": "generated-result-id"
+    },
+    "negative_feedback_state": {
+      "excluded_product_ids": [],
+      "excluded_brands": []
+    },
+    "result": {
+      "status": "success",
+      "tool_error": null,
+      "relax_options": []
+    },
     "result_status": "success"
   }
 }
@@ -269,6 +290,10 @@ tool_error
 | `excluded_brands` | `string[]` | 当前购买上下文中被用户明确排除的品牌，例如“不要苹果”。 |
 | `latest_attempt_status` | `"success" \| "no_results" \| "tool_error" \| null` | 最近一次推荐尝试状态，随当前购买上下文归档和恢复。 |
 | `negative_feedback` | `object` | 本轮识别到负反馈时返回的应用结果，可能包含 `applied`、`removed`、`noop`、`needs_clarification`、`changed_fields`、`target_product_ids`、`target_brands`、`noop_reason` 等字段。 |
+| `context` | `object` | 当前上下文快照，包含 `active_target_key`、目标品类、catalog 类目和待恢复状态。 |
+| `memory` | `object` | 会话记忆摘要，包含已归档上下文数量和最近一次成功推荐结果 ID。 |
+| `negative_feedback_state` | `object` | 当前购买上下文下已生效的商品 ID 和品牌排除条件。 |
+| `result` | `object` | 本轮动作结果摘要，包含推荐状态、工具错误和无结果放宽建议。 |
 
 无结果响应仍保持 `items=[]`，并可能在 `state.relax_options` 中返回可放宽的条件。推荐工具异常会返回稳定对话响应，而不是伪造商品：
 

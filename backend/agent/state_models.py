@@ -67,6 +67,8 @@ class PurchasePreferences(BaseModel):
     brand: str | None = None
     preferred_brands: list[str] = Field(default_factory=list)
     focus: list[str] = Field(default_factory=list)
+    usage: str | None = None
+    recipient: str | None = None
     price_direction: str | None = None
     price_preference: str | None = None
     avoid_current_price_band: bool | None = None
@@ -93,6 +95,8 @@ class PurchasePreferences(BaseModel):
             brand=_clean_str(known.get("brand")),
             preferred_brands=_clean_str_list(known.get("preferred_brands")),
             focus=_clean_str_list(known.get("focus")),
+            usage=_clean_str(known.get("usage")),
+            recipient=_clean_str(known.get("recipient")),
             price_direction=_clean_str(known.get("price_direction")),
             price_preference=_clean_str(known.get("price_preference")),
             avoid_current_price_band=_clean_bool(
@@ -116,6 +120,8 @@ class PurchasePreferences(BaseModel):
             "brand",
             "preferred_brands",
             "focus",
+            "usage",
+            "recipient",
             "price_direction",
             "price_preference",
             "avoid_current_price_band",
@@ -157,6 +163,8 @@ class PurchasePreferences(BaseModel):
                 "canonical_target_key",
                 "display_target_category",
                 "brand",
+                "usage",
+                "recipient",
                 "price_direction",
                 "price_preference",
             }:

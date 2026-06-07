@@ -126,13 +126,15 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 `/chat` 和 `/chat/stream` 使用 LangGraph Runner，LLM 理解是主路径，规则只作为安全护栏：
 
 - Runner 负责编排 LangGraph 节点和一整轮会话状态事务；状态归约、动作执行和对外 `state` 构造分别由 `ConversationStateReducer`、`ActionExecutor`、`ResponseStateBuilder` 承担，这些组件不直接保存会话状态。
+- 理解 Prompt 的上下文拼接由 `PromptContextBuilder` 承担；默认仍保留最近 8 条消息、当前偏好、排除品牌、待恢复状态、历史购买上下文摘要和上一轮商品摘要。
 - 明显完整的购买请求在 LLM 不可用、输出缺字段、JSON 无法解析或校验失败时，会通过保守 fallback 转成 `recommend`。
 - 用户切换购物目标时，当前购买上下文会先归档，再清空活跃推荐状态，避免新旧品类偏好混在一起。
 - 用户疑似回到旧品类时，后端先询问是否恢复之前需求；确认后恢复归档上下文，拒绝后按新约束推荐。
 - 明确负反馈会写入当前购买上下文：`不要第 2 个` 写入 `excluded_product_ids`，`不要苹果` 写入顶层 `excluded_brands`。这些字段随购买上下文归档和恢复，不作为跨品类全局偏好。
+- 商品序号类负反馈会记录来源结果上下文，包括 `source_result_id`、`source_target_key`、`source_item_index` 和 `feedback_type`，用于后续调试和评估。
 - 中文序号、当前商品指代和批量排除也走同一安全路径：`不要第二个` 等价于排除第 2 款，`不要这个` 需要已有解释目标，`这几个都不要` 只排除当前成功推荐结果。
 - 负反馈不会拼进推荐 query。Agent 会把 `ConversationState` 转成 `NegativeFilters` 传给推荐工具，推荐链路在检索前和构建商品卡片前各执行一次 product_id/brand 硬过滤。
-- `/chat.state` 会额外返回 `excluded_product_ids`、`excluded_brands`、`latest_attempt_status`，本轮识别到负反馈时返回 `negative_feedback`。
+- `/chat.state` 保留旧扁平字段，同时新增 `context`、`memory`、`negative_feedback_state` 和 `result` 分层，便于前端调试和离线评估。
 - 推荐工具异常会返回稳定 `tool_error` 对话响应：`items=[]`、`state.result_status="tool_error"`、`state.tool_error="recommendation_failed"`。这不会覆盖上一轮成功商品，也不会伪造商品。
 - 无结果或工具错误之后，用户仍可追问上一轮成功推荐的解释。
 
@@ -197,6 +199,9 @@ backend/
   llm/                     LLM 客户端、Agent 意图解析适配、推荐理由生成
   agent/                   多轮 Agent、Runner 工厂和 LangGraph 编排器
     catalog_taxonomy.py     统一品类、品牌和关键词规则来源
+    context_prompt_builder.py 理解层 Prompt 上下文构造
+    context_lifecycle.py    上下文切换 transition helper
+    context_manager.py      购买上下文归档、恢复和待确认状态
     state_models.py         preferences/negative updates/result state typed helper
     prompt_loader.py        版本化 Prompt 加载和 fallback
     prompts/                理解 Prompt markdown 模板
@@ -236,4 +241,12 @@ uv run pytest tests/test_main.py::test_chat_tool_error_keeps_response_shape test
 cd backend
 uv run pytest tests/test_eval_cases.py tests/test_rag_eval_runner.py -q
 uv run python ..\eval\rag_retrieval_runner.py --retriever-mode keyword --top-k 3
+```
+
+上下文记忆评估：
+
+```powershell
+cd backend
+uv run pytest tests/test_context_eval_runner.py tests/test_eval_cases.py -q
+uv run python ..\eval\context_memory_runner.py --min-pass-rate 1.0
 ```

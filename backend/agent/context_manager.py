@@ -139,7 +139,10 @@ def clear_active_context(conversation: ConversationState) -> None:
 
 
 def reset_for_new_target(conversation: ConversationState) -> None:
-    """切换到新目标前，先归档旧需求再清空活跃上下文。"""
+    """切换到新目标前，先归档旧需求再清空活跃上下文。
+
+    如需记录 transition 元数据，可调用 agent.context_lifecycle.switch_target_with_transition()。
+    """
 
     archive_active_context(conversation)
     clear_active_context(conversation)

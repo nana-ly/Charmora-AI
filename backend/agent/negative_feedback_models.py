@@ -15,6 +15,10 @@ class NegativeFeedbackItem(BaseModel):
     reason: str | None = None
     source: str = "chat"
     active: bool = True
+    source_result_id: str | None = None
+    source_target_key: str | None = None
+    source_item_index: int | None = None
+    feedback_type: str | None = None
 
 
 class NegativeFeedbackApplicationResult(BaseModel):
