@@ -2,6 +2,23 @@
 
 本目录放离线评估脚本和报告。评估只读商品数据，不调用真实 LLM。
 
+已生成的 `report.md`、`rag_retrieval_report.md`、`rag_retrieval_report.json` 和 `context_memory_report.md` 是脚本运行结果快照，用于记录某次评测输出；接口字段和运行契约以 `docs/api.md`、`docs/后端技术文档.md` 与本 README 为准。
+
+## Shopping Agent Eval
+
+Agent 架构评估覆盖推荐、偏好细化、负反馈、解释、跨品类恢复和商品对比等多轮行为。脚本使用固定推荐结果和确定性理解服务，不调用真实 LLM。
+
+运行：
+
+```powershell
+cd backend
+uv run python ..\eval\shopping_agent_runner.py
+```
+
+脚本会读取 `eval/shopping_agent_architecture_cases.jsonl`，输出：
+
+- `eval/report.md`
+
 ## RAG Retrieval Eval
 
 运行 keyword 模式：

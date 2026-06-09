@@ -107,11 +107,18 @@ Response:
       "title": "Apple iPhone 17 Pro",
       "brand": "Apple",
       "price": 8999,
+      "price_range": "¥8999",
       "reason": "这款商品与需求匹配，命中拍照和视频相关证据。",
       "evidence": "临时匹配：命中 手机、拍照、剪视频；来自结构化筛选结果。",
       "image_path": "2_数码电子/images/p_digital_001_live.jpg",
       "image_url": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
-      "imageUrl": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg"
+      "imageUrl": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
+      "rating": 4.8,
+      "sold_count": 1500,
+      "review_count": 3,
+      "marketing_desc": "商品营销描述摘要",
+      "reviews": [],
+      "faqs": []
     }
   ]
 }
@@ -132,11 +139,18 @@ Response:
 | `items[].title` | `string` | 商品名称。 |
 | `items[].brand` | `string` | 商品品牌。 |
 | `items[].price` | `number` | 商品价格。 |
+| `items[].price_range` | `string` | SKU 价格区间；没有 SKU 时通常为单价展示，例如 `¥8999`。 |
 | `items[].reason` | `string` | 中文推荐理由。 |
 | `items[].evidence` | `string` | 中文匹配依据。 |
 | `items[].image_path` | `string \| null` | 商品数据中的相对图片路径。 |
 | `items[].image_url` | `string \| null` | 由后端配置生成的图片 URL，Web/通用客户端优先使用。 |
 | `items[].imageUrl` | `string \| null` | 与 `image_url` 相同，兼容 Android camelCase 模型。 |
+| `items[].rating` | `number` | 根据商品评论计算的平均评分；没有评论时为 `0.0`。 |
+| `items[].sold_count` | `number` | 当前由评论数派生的展示型销量估计值。 |
+| `items[].review_count` | `number` | 商品评论数量。 |
+| `items[].marketing_desc` | `string` | 商品营销描述摘要。 |
+| `items[].reviews` | `array` | 脱敏后的用户评论摘要，元素包含 `nickname`、`rating`、`content`。 |
+| `items[].faqs` | `array` | 官方 FAQ 摘要，元素包含 `question`、`answer`。 |
 | `trace` | `object \| null` | 内部调试 trace；默认不返回。 |
 
 推荐链路不会为无结果或异常伪造商品。检索结果为空时 `items` 是 `[]`；推荐链路异常时异常向上暴露。`result_count` 表示本次找到的匹配商品总数，实际展示卡片数量请读取 `items.length`。
@@ -146,7 +160,7 @@ Response:
 
 ## RAG Search
 
-`POST /rag/search` 用于本地调试向量召回质量。
+`POST /rag/search` 用于本地调试检索召回质量。
 
 Request:
 
@@ -185,7 +199,7 @@ Response:
 }
 ```
 
-`/rag/search` 复用应用级 `RecommendationService` 的 retriever 缓存；当前 `RETRIEVER_MODE=keyword` 时返回关键词检索调试结果，`RETRIEVER_MODE=vector` 时返回向量检索调试结果。
+`/rag/search` 复用应用级 `RecommendationService` 的 retriever 缓存；当前 `RETRIEVER_MODE=keyword` 时返回关键词检索调试结果，`RETRIEVER_MODE=vector` 时返回向量检索调试结果。`score` 只用于同一检索器内部调试，不应跨 keyword/vector 直接比较。
 
 ## Chat
 
@@ -213,11 +227,18 @@ Response:
       "title": "Apple iPhone 17 Pro",
       "brand": "Apple",
       "price": 8999,
+      "price_range": "¥8999",
       "reason": "这款商品与需求匹配，命中拍照相关证据。",
       "evidence": "命中关键词：手机、拍照。",
       "image_path": "2_数码电子/images/p_digital_001_live.jpg",
       "image_url": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
-      "imageUrl": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg"
+      "imageUrl": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg",
+      "rating": 4.8,
+      "sold_count": 1500,
+      "review_count": 3,
+      "marketing_desc": "商品营销描述摘要",
+      "reviews": [],
+      "faqs": []
     }
   ],
   "state": {
@@ -256,12 +277,15 @@ Response:
 }
 ```
 
+`result_count` 表示本轮推荐链路找到的匹配商品总数，可能大于 `items.length`。`items` 使用与 `/recommend` 相同的商品卡片字段契约。
+
 `state.intent` 当前取值：
 
 ```text
 recommend
 update_preference
 explain
+compare
 clarify
 ```
 
@@ -270,6 +294,7 @@ clarify
 ```text
 recommend
 explain
+compare
 clarify
 reply_only
 ```

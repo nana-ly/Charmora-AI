@@ -1,5 +1,7 @@
 # Android 原生 3 天最小闭环方案
 
+> 当前状态说明：本文是早期 3 天 MVP 方案，保留用于回溯最小闭环设计。当前代码已经扩展到 `/chat` 多轮导购、`/chat/stream` SSE 流式输出、商品扩展字段、购物车 UI、语音输入和商品详情页；接口契约以 `docs/api.md` 为准，后端实现以 `docs/后端技术文档.md` 和 `backend/README.md` 为准。
+
 ## 一、重新定义目标
 
 本项目第一阶段只做：
@@ -58,6 +60,8 @@ Android 展示商品推荐列表
 | 复杂 Agent | 固定流程更稳 |
 | 购物车/支付 | 与导购闭环无关 |
 
+以上范围描述的是早期 MVP。当前 Android 代码默认优先调用 `POST /chat/stream`，当 SSE 不可用时回退 `POST /chat`；`/recommend` 仍保留为单轮推荐接口。
+
 ---
 
 ## 三、系统形态
@@ -82,10 +86,17 @@ Android 展示商品推荐列表
 Python FastAPI + Chroma + 大模型 API
 ```
 
-Android 通过 HTTP 调用：
+早期方案中 Android 通过 HTTP 调用：
 
 ```text
 POST /recommend
+```
+
+当前 Android 客户端实际默认调用：
+
+```text
+POST /chat/stream
+POST /chat
 ```
 
 ---
@@ -135,32 +146,41 @@ Android 展示商品卡片
     "brand": null,
     "keywords": ["拍照", "剪视频"]
   },
-  "answer": "根据你的预算和需求，优先推荐以下商品：",
-  "products": [
+  "result_count": 12,
+  "items": [
     {
       "product_id": "p_digital_001",
       "title": "Apple iPhone 17 Pro 6.3英寸 A19 Pro 256GB 全网通旗舰手机",
       "brand": "Apple 苹果",
-      "category": "数码电子",
-      "sub_category": "智能手机",
-      "base_price": 8999.0,
+      "price": 8999.0,
+      "price_range": "¥8999",
       "reason": "这款手机搭载 A19 Pro 芯片，适合视频剪辑；摄像头系统支持高质量拍摄，符合你的拍照和创作需求。",
-      "matched_evidence": "A19 Pro芯片、专业视频剪辑、摄像头系统升级"
+      "evidence": "A19 Pro芯片、专业视频剪辑、摄像头系统升级",
+      "image_url": "/assets/products/2_%E6%95%B0%E7%A0%81%E7%94%B5%E5%AD%90/images/p_digital_001_live.jpg"
     }
   ]
 }
 ```
 
-Android 端只需要重点解析：
+当前 Android 端重点解析：
 
 ```text
-answer
-products
+reply（/chat 或 /chat/stream）
+items
+result_count
 title
 brand
-base_price
+price
+price_range
 reason
-matched_evidence
+evidence
+image_url
+rating
+sold_count
+review_count
+marketing_desc
+reviews
+faqs
 ```
 
 ---

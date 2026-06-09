@@ -5,38 +5,48 @@
 ### 安装依赖
 
 ```bash
-pip install "chromadb>=1.0.12" "openai>=1.0.0" pytest
+uv sync
 ```
+
+如果不使用 `uv`，也可以按 `pyproject.toml` 安装 `chromadb`、`openai`、`python-dotenv` 和测试依赖。
 
 ### 配置百炼 Embedding
 
-在 `rag/.env` 或当前 shell 里配置：
+在仓库根目录 `.env` 或当前 shell 里配置：
 
 ```bash
 export embedding_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
 export embedding_api="your-api-key"
 export embedding_model="text-embedding-v4"
-export dimentions="1024"
+export dimention="1024"
 ```
+
+独立 `rag` 包当前从环境变量读取 `dimention`；CLI 参数使用标准拼写 `--embedding-dimensions`，推荐在命令中显式传入。后端配置读取时兼容 `embedding_dimensions`、`dimention` 和 `dimentions`。
 
 ### 建立索引
 
 ```bash
-python -m shopguide_rag.cli index
+uv run python -m shopguide_rag.cli index
 ```
 
-默认索引目录是 `rag/.chroma/products/`，默认数据集目录是 `../ecommerce_agent_dataset/`。
+在 `rag/` 目录执行时，默认索引目录是 `.chroma/products/`，默认数据集目录是 `../ecommerce_agent_dataset/`。后端向量检索默认读取仓库下的 `rag/.chroma/products/`。
+
+如需显式指定维度：
+
+```bash
+uv run python -m shopguide_rag.cli --embedding-dimensions 1024 index
+```
 
 ### 文本检索
 
 ```bash
-python -m shopguide_rag.cli query --query "适合熬夜后修护的抗初老精华" --top-k 5
+uv run python -m shopguide_rag.cli query --query "适合熬夜后修护的抗初老精华" --top-k 5
 ```
 
 ### 按商品找相似商品
 
 ```bash
-python -m shopguide_rag.cli query --product-id p_beauty_001 --top-k 5
+uv run python -m shopguide_rag.cli query --product-id p_beauty_001 --top-k 5
 ```
 
 ### 当前 collection 设计

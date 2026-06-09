@@ -77,10 +77,10 @@ LLM_ENABLED=false
 LLM_API_KEY=
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
-LLM_TIMEOUT_SECONDS=8
+LLM_TIMEOUT_SECONDS=60
 ```
 
-`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`CONVERSATION_STORE_MODE=memory` 使用进程内会话状态，适合本地开发和单进程演示；`sqlite` 会通过 `CONVERSATION_STORE_PATH` 持久化完整 `ConversationState`，用于本地演示服务重启后恢复同一 `session_id` 的多轮上下文。`ConversationState.version` 会随事务化 `update()` 递增；SQLite 会自动为旧表补 `version` 列，并用 version 条件更新和 `CONVERSATION_STORE_UPDATE_RETRIES` 做有限乐观重试，降低共享同一 SQLite 文件的多进程场景中同一 `session_id` 直接互相覆盖的风险。SQLite 冲突重试可能重新执行一整轮 graph，从而带来额外 LLM 或推荐工具调用成本；如果超过重试次数，REST `/chat` 会按未处理服务端错误返回，SSE `/chat/stream` 会输出 `start -> error -> done`，并且不会提交本轮半成品 `ConversationState`。`AGENT_SESSION_LOCK_ENABLED=true` 会在单个 Python 进程内按 `session_id` 串行化 `/chat` 与 `/chat/stream` 的完整 LangGraph 执行，减少同进程并发冲突；注意进程内锁不是分布式锁，`memory` store 不支持跨 worker 状态共享，SQLite 适合本地和轻量演示，不建议作为跨机器生产级会话存储。`DEFAULT_TOP_K` 控制推荐默认返回数量。`PRODUCT_IMAGE_BASE_URL` 控制商品图片 URL 前缀，默认 `/assets/products`；生产环境可改为 CDN 或对象存储域名。`PRODUCT_IMAGE_STATIC_ENABLED=true` 时会把 `PRODUCT_IMAGE_STATIC_ROOT` 挂载到本地静态路径，配置为 CDN 绝对 URL 时不会挂载本地目录。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。`RECOMMEND_TRACE_ENABLED=true` 只打开服务端 trace 资格，请求仍需传 `debug=true` 或 `X-Debug-Trace: true` 才会返回脱敏 trace。
+`AGENT_RUNNER=langgraph` 是当前唯一支持的 Agent Runner。`CONVERSATION_STORE_MODE=memory` 使用进程内会话状态，适合本地开发和单进程演示；`sqlite` 会通过 `CONVERSATION_STORE_PATH` 持久化完整 `ConversationState`，用于本地演示服务重启后恢复同一 `session_id` 的多轮上下文。`ConversationState.version` 会随事务化 `update()` 递增；SQLite 会自动为旧表补 `version` 列，并用 version 条件更新和 `CONVERSATION_STORE_UPDATE_RETRIES` 做有限乐观重试，降低共享同一 SQLite 文件的多进程场景中同一 `session_id` 直接互相覆盖的风险。SQLite 冲突重试可能重新执行一整轮 graph，从而带来额外 LLM 或推荐工具调用成本；如果超过重试次数，REST `/chat` 会按未处理服务端错误返回，SSE `/chat/stream` 会输出 `start -> error -> done`，并且不会提交本轮半成品 `ConversationState`。`AGENT_SESSION_LOCK_ENABLED=true` 会在单个 Python 进程内按 `session_id` 串行化 `/chat` 与 `/chat/stream` 的完整 LangGraph 执行，减少同进程并发冲突；注意进程内锁不是分布式锁，`memory` store 不支持跨 worker 状态共享，SQLite 适合本地和轻量演示，不建议作为跨机器生产级会话存储。`DEFAULT_TOP_K` 控制推荐默认返回数量。`PRODUCT_IMAGE_BASE_URL` 控制商品图片 URL 前缀，默认 `/assets/products`；生产环境可改为 CDN 或对象存储域名。`PRODUCT_IMAGE_STATIC_ENABLED=true` 时会把 `PRODUCT_IMAGE_STATIC_ROOT` 挂载到本地静态路径，配置为 CDN 绝对 URL 时不会挂载本地目录。`main.py` 还保留了 legacy `/static` 挂载用于兼容旧 Android 图片路径，但新客户端应优先使用后端返回的 `image_url`/`imageUrl`。只有 `LLM_ENABLED=true` 且 `LLM_API_KEY` 非空时，后端才会调用 LLM；LLM 不可用或调用失败时只使用模板理由，不会伪造商品结果。`.env.example` 为本地运行将 `LLM_TIMEOUT_SECONDS` 设为 60 秒；代码默认值仍是 8 秒。Agent 理解层也会校验 LLM 的结构化 JSON，缺字段会补安全默认值，解析或校验失败时只对明显完整的购买请求做保守兜底。`RECOMMEND_TRACE_ENABLED=true` 只打开服务端 trace 资格，请求仍需传 `debug=true` 或 `X-Debug-Trace: true` 才会返回脱敏 trace。
 
 理解 Prompt 已外置到 `agent/prompts/understanding_v1.md`，由 `agent.prompt_loader` 按版本读取；读取失败时回退到内置默认 Prompt，并在日志中记录 `prompt_version`。品类、品牌和关键词规则统一从 `agent.catalog_taxonomy` 读取，旧的 `category_rules.py`、`negative_feedback_rules.py` 和 `recommendation_core.filters` 仍保留原 public 函数外观。
 
@@ -117,7 +117,7 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 - `/recommend` 只有在 `RECOMMEND_TRACE_ENABLED=true` 且请求显式开启 debug 时才返回脱敏 trace。
 - `/rag/search` 复用应用级 `RecommendationService` 的 retriever，输出与推荐链路一致的 `rank/source/retriever_mode/score_type/metadata` 调试字段。
 - `/recommend`、`/chat` 和 `/chat/stream` 的 `result_count` 表示本次找到的匹配商品总数，可能大于实际返回的 `items.length`；展示卡片数量请直接读取 `items.length`。
-- 商品卡片返回 `image_path`、`image_url` 和兼容 Android 的 `imageUrl`。`image_url`/`imageUrl` 由 `PRODUCT_IMAGE_BASE_URL` 生成，不写死在商品数据中。
+- 商品卡片返回 `image_path`、`image_url` 和兼容 Android 的 `imageUrl`。`image_url`/`imageUrl` 由 `PRODUCT_IMAGE_BASE_URL` 生成，不写死在商品数据中。卡片还包含 `price_range`、`rating`、`sold_count`、`review_count`、`marketing_desc`、`reviews` 和 `faqs`，供 Android 详情页和商品卡片展示使用。
 
 允许保留的可用性处理包括：LLM 推荐理由使用模板理由、Agent 理解层对不可信 LLM 输出做保守兜底、`/chat` 推荐工具异常返回 `tool_error`、`/chat/stream` 在流开始后的未处理异常转换为 SSE `error` 事件。
 
@@ -148,17 +148,17 @@ uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 
 推荐链路的 `extract_filters()` 会把“护肤品”“美妆”“化妆品”统一映射到 catalog category `美妆护肤`，因此理解层、query_builder 和向量检索过滤条件使用同一类目语义。
 
-## Shopping Agent Understanding Fallback
+## Agent 理解兜底
 
-The `/chat` and `/chat/stream` contracts stay unchanged. The backend understanding flow is:
+`/chat` 和 `/chat/stream` 的接口契约保持稳定。当前后端理解流程为：
 
-1. Ask the LLM for one JSON object.
-2. Normalize safe schema issues before Pydantic validation, including `target_item_index <= 0` to `None` and non-object `preference_updates` to `{}`.
-3. If the LLM output is invalid, empty for an active context, or asks for clarification while a purchase context exists, use deterministic fallback rules.
-4. Short price feedback such as `太贵了` or `便宜点` with an active purchase context becomes `price_direction=lower` and `avoid_current_price_band=True`.
-5. If the backend still cannot infer the update, it uses context-aware clarification instead of asking for a new category.
+1. 先要求 LLM 返回单个 JSON 对象。
+2. 在 Pydantic 校验前做安全规范化，例如把非法 `target_item_index` 清洗为 `None`，把非对象 `preference_updates` 清洗为 `{}`。
+3. 当 LLM 输出非法、在活跃上下文中给出空更新，或已有购买上下文时仍误判为澄清，会进入确定性兜底。
+4. 在活跃购买上下文中，`太贵了`、`便宜点` 等短反馈会转成 `price_direction=lower` 和 `avoid_current_price_band=True`。
+5. 如果后端仍无法推断用户意图，会返回基于上下文的澄清问题，而不是直接要求重新输入品类。
 
-Local verification:
+本地验证：
 
 ```powershell
 cd backend
