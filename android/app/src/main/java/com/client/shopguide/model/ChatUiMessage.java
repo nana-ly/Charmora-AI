@@ -3,7 +3,7 @@ package com.client.shopguide.model;
 import java.util.List;
 
 /**
- * 对话列表 UI 模型，支持用户气泡、AI 回复、产品行（横向卡片）、对比卡片和加载态
+ * 对话列表 UI 模型，支持用户气泡、AI 回复、产品行和加载态
  */
 public class ChatUiMessage {
 
@@ -12,15 +12,14 @@ public class ChatUiMessage {
     public static final int TYPE_PRODUCT = 2;
     public static final int TYPE_LOADING = 3;
     public static final int TYPE_PRODUCT_ROW = 4;
-    public static final int TYPE_COMPARE = 5;
     public static final int TYPE_DIVIDER = 6;
 
     private final int type;
     private String content;
+    private transient CharSequence styledContent;
     private Product product;
     private List<Product> productList;
     private boolean streaming;
-    private CompareResponse compareResponse;
 
     public ChatUiMessage(int type, String content) {
         this.type = type;
@@ -51,12 +50,6 @@ public class ChatUiMessage {
         return new ChatUiMessage(TYPE_LOADING, "正在思考...");
     }
 
-    public static ChatUiMessage compare(CompareResponse compareResponse) {
-        ChatUiMessage message = new ChatUiMessage(TYPE_COMPARE, "");
-        message.compareResponse = compareResponse;
-        return message;
-    }
-
     public static ChatUiMessage divider(String time) {
         return new ChatUiMessage(TYPE_DIVIDER, time);
     }
@@ -73,6 +66,14 @@ public class ChatUiMessage {
         this.content = content;
     }
 
+    public CharSequence getStyledContent() {
+        return styledContent;
+    }
+
+    public void setStyledContent(CharSequence styledContent) {
+        this.styledContent = styledContent;
+    }
+
     public void appendContent(String delta) {
         if (content == null) {
             content = delta;
@@ -87,10 +88,6 @@ public class ChatUiMessage {
 
     public List<Product> getProductList() {
         return productList;
-    }
-
-    public CompareResponse getCompareResponse() {
-        return compareResponse;
     }
 
     public boolean isStreaming() {

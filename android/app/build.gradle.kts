@@ -69,6 +69,9 @@ dependencies {
     // Coil 图片加载
     implementation("io.coil-kt:coil:2.6.0")
 
+    // Markdown 渲染（Markwon）
+    implementation("io.noties.markwon:core:4.6.2")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

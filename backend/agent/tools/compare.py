@@ -45,9 +45,11 @@ class CompareTool:
                 clarifying_question=f"上一轮只有 {len(items)} 款商品，你想比较哪两款？",
             )
 
+        # 只返回被对比的商品，不全量返回
+        selected = [items[i - 1] for i in compare_item_indexes[:2]]
         return ActionResult(
             action=AgentAction.COMPARE,
             reply_type="compare_reply",
-            items=items,
-            compare_item_indexes=compare_item_indexes[:2],
+            items=selected,
+            compare_item_indexes=[1, 2],  # 归一化索引，方便前端和 reply builder 使用
         )

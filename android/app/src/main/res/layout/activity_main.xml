@@ -34,7 +34,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="清空对话"
-            android:textColor="#673AB7"
+            android:textColor="#6A6AE6"
             android:textSize="14sp" />
     </LinearLayout>
 
@@ -155,9 +155,9 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="发送"
             android:src="@android:drawable/ic_menu_send"
-            android:tint="#673AB7"
-            app:layout_constraintEnd_toStartOf="@id/btnPlus"
-            app:layout_constraintBottom_toBottomOf="@id/etMessage" />
+            android:tint="#E26A6AE6"
+            app:layout_constraintBottom_toBottomOf="@id/etMessage"
+            app:layout_constraintEnd_toStartOf="@id/btnPlus" />
 
         <!-- 加号按钮 -->
         <ImageButton

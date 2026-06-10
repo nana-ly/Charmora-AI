@@ -248,7 +248,7 @@
             android:id="@+id/btnAddToCart"
             android:layout_width="match_parent"
             android:layout_height="48dp"
-            android:backgroundTint="#673AB7"
+            android:backgroundTint="#E26A6AE6"
             android:text="加入购物车"
             android:textColor="#FFFFFF"
             android:textSize="15sp"

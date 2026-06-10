@@ -39,8 +39,6 @@ import com.client.shopguide.adapter.ChatAdapter;
 import com.client.shopguide.model.ChatRequest;
 import com.client.shopguide.model.ChatResponse;
 import com.client.shopguide.model.ChatUiMessage;
-import com.client.shopguide.model.CompareItem;
-import com.client.shopguide.model.CompareResponse;
 import com.client.shopguide.model.Product;
 import com.client.shopguide.model.RecommendResponse;
 import com.client.shopguide.network.ChatSseClient;
@@ -60,7 +58,6 @@ import java.io.OutputStreamWriter;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -533,50 +530,53 @@ public class MainActivity extends AppCompatActivity {
     // ========== 历史记录存取 ==========
 
     private void loadHistoryAndInitSession() {
-        long lastActive = prefs.getLong(KEY_LAST_ACTIVE, 0);
-        long now = System.currentTimeMillis();
-        boolean isNewSession = (lastActive == 0) || (now - lastActive > SESSION_GAP_MINUTES * 60_000L);
-
         // 从文件加载旧消息
         List<ChatUiMessage> storedMessages = loadMessagesFromFile();
         if (storedMessages != null && !storedMessages.isEmpty()) {
-            chatMessages.addAll(storedMessages);
-            if (isNewSession) {
-                // 插入时间分割线
-                SimpleDateFormat sdf = new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault());
-                chatMessages.add(ChatUiMessage.divider(sdf.format(new Date(lastActive))));
-                // 新 session
-                sessionId = UUID.randomUUID().toString();
-                prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
-                addWelcomeMessage();
-            } else {
-                // 30分钟内回来，恢复上次 session
-                sessionId = prefs.getString(KEY_SESSION_ID, null);
-                if (sessionId == null) {
-                    sessionId = UUID.randomUUID().toString();
-                    prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
-                    addWelcomeMessage();
-                }
+            // 过滤旧欢迎语、loading、divider
+            List<ChatUiMessage> filtered = new ArrayList<>();
+            for (ChatUiMessage msg : storedMessages) {
+                if (msg.getType() == ChatUiMessage.TYPE_LOADING
+                        || msg.getType() == ChatUiMessage.TYPE_DIVIDER) continue;
+                if (msg.getType() == ChatUiMessage.TYPE_ASSISTANT
+                        && WELCOME_MESSAGE.equals(msg.getContent())) continue;
+                filtered.add(msg);
             }
+            chatMessages.addAll(filtered);
+
+            // 插入时间分割线
+            long lastActive = prefs.getLong(KEY_LAST_ACTIVE, System.currentTimeMillis());
+            SimpleDateFormat sdf = new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault());
+            chatMessages.add(ChatUiMessage.divider(sdf.format(new Date(lastActive))));
+
+            // 每次打开都是新对话
+            sessionId = UUID.randomUUID().toString();
+            prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
+            addWelcomeMessage();
             chatAdapter.notifyDataSetChanged();
             scrollToBottom();
             return;
         }
 
-        // 没有历史：全新开始
+        // 第一次：全新开始
         sessionId = UUID.randomUUID().toString();
         prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
         addWelcomeMessage();
     }
 
     private void saveMessages() {
-        // 过滤掉 loading 和 divider 类型，只保存用户/AI/商品/对比
+        // 过滤掉 loading、divider 和欢迎语，只保存用户/AI/商品
         List<ChatUiMessage> toSave = new ArrayList<>();
         for (ChatUiMessage msg : chatMessages) {
-            if (msg.getType() != ChatUiMessage.TYPE_LOADING
-                    && msg.getType() != ChatUiMessage.TYPE_DIVIDER) {
-                toSave.add(msg);
+            if (msg.getType() == ChatUiMessage.TYPE_LOADING
+                    || msg.getType() == ChatUiMessage.TYPE_DIVIDER) {
+                continue;
             }
+            if (msg.getType() == ChatUiMessage.TYPE_ASSISTANT
+                    && WELCOME_MESSAGE.equals(msg.getContent())) {
+                continue;
+            }
+            toSave.add(msg);
         }
         if (toSave.isEmpty()) return;
 
@@ -809,12 +809,26 @@ public class MainActivity extends AppCompatActivity {
         List<RecommendResponse.Item> items = response.getItems();
         pendingItemsCount = items != null ? items.size() : 0;
 
-        // 根据 state.action 决定展示方式：compare 走对比卡片，其余走商品横滚
+        // 根据 state.action 决定展示方式
         Map<String, Object> state = response.getState();
         String action = state != null ? (String) state.get("action") : null;
 
-        if ("compare".equals(action) && items != null && items.size() >= 2) {
-            addCompareFromItems(items);
+        if ("compare".equals(action) && items != null && !items.isEmpty()) {
+            for (RecommendResponse.Item item : items) {
+                chatMessages.add(ChatUiMessage.assistant(formatCompareItemMd(item)));
+            }
+            if (items.size() >= 2) {
+                RecommendResponse.Item a = items.get(0);
+                RecommendResponse.Item b = items.get(1);
+                String c;
+                if (a.getPrice() < b.getPrice())
+                    c = "\n如果预算更有限，**" + a.getTitle() + "** 更合适，因为价格更低。";
+                else if (b.getPrice() < a.getPrice())
+                    c = "\n如果预算更有限，**" + b.getTitle() + "** 更合适，因为价格更低。";
+                else
+                    c = "\n两款价格接近，可以优先按上面的证据和使用重点来选。";
+                chatMessages.add(ChatUiMessage.assistant(c));
+            }
         } else if (items != null && !items.isEmpty()) {
             List<Product> productList = new ArrayList<>();
             for (RecommendResponse.Item item : items) {
@@ -866,9 +880,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showResultCount() {
-        if (pendingResultCount > pendingItemsCount && pendingItemsCount > 0) {
-            chatMessages.add(ChatUiMessage.divider(
-                    "共找到 " + pendingResultCount + " 件，已为你推荐 " + pendingItemsCount + " 款"));
+        if (pendingResultCount > 0 && pendingItemsCount > 0) {
+            String text;
+            if (pendingResultCount > pendingItemsCount) {
+                text = "共找到 " + pendingResultCount + " 件，已为你推荐 " + pendingItemsCount + " 款";
+            } else {
+                text = "已为你推荐 " + pendingItemsCount + " 款";
+            }
+            chatMessages.add(ChatUiMessage.divider(text));
             chatAdapter.notifyItemInserted(chatMessages.size() - 1);
             scrollToBottom();
         }
@@ -890,68 +909,61 @@ public class MainActivity extends AppCompatActivity {
     // ========== SSE items 缓冲 & 对比卡片构建 ==========
 
     /**
-     * 根据 pendingState.action 将缓冲的 items 以正确形式展示：
-     * compare → 对比卡片，其余 → 商品横滚卡片。
+     * 根据 action 展示缓冲的 items：
+     * compare → 逐个产品 Markdown 文本气泡；其余 → 商品横滚。
      */
     private void processPendingStreamItems() {
         if (pendingStreamItems == null || pendingStreamItems.isEmpty()) return;
-
         String action = pendingState != null ? (String) pendingState.get("action") : null;
 
         if ("compare".equals(action)) {
-            addCompareFromItems(pendingStreamItems);
+            for (RecommendResponse.Item item : pendingStreamItems) {
+                String md = formatCompareItemMd(item);
+                chatMessages.add(ChatUiMessage.assistant(md));
+            }
+            // 结论（后端只发 2 件后这里就是正确的 2 件对比）
+            if (pendingStreamItems.size() >= 2) {
+                RecommendResponse.Item a = pendingStreamItems.get(0);
+                RecommendResponse.Item b = pendingStreamItems.get(1);
+                String c;
+                if (a.getPrice() < b.getPrice()) {
+                    c = "\n如果预算更有限，**" + a.getTitle() + "** 更合适，因为价格更低。";
+                } else if (b.getPrice() < a.getPrice()) {
+                    c = "\n如果预算更有限，**" + b.getTitle() + "** 更合适，因为价格更低。";
+                } else {
+                    c = "\n两款价格接近，可以优先按上面的证据和使用重点来选。";
+                }
+                chatMessages.add(ChatUiMessage.assistant(c));
+            }
         } else {
             appendProductItems(pendingStreamItems);
         }
         pendingStreamItems = null;
     }
 
-    /**
-     * 用后端返回的真实商品数据构建 CompareResponse 对比卡片。
-     * 取前两个 items，从 evidence/reason/marketing_desc 提取优点，缺点暂时留空。
-     */
-    private void addCompareFromItems(List<RecommendResponse.Item> items) {
-        if (items == null || items.size() < 2) return;
-
-        CompareItem left = itemToCompareItem(items.get(0));
-        CompareItem right = itemToCompareItem(items.get(1));
-        chatMessages.add(ChatUiMessage.compare(new CompareResponse(left, right)));
-        chatAdapter.notifyDataSetChanged();
-    }
-
-    /**
-     * 将后端 Item 转为对比卡片的 CompareItem。
-     * pros 从 evidence、reason、marketing_desc、评分、销量中提取。
-     */
-    private CompareItem itemToCompareItem(RecommendResponse.Item item) {
-        String name = item.getTitle() != null ? item.getTitle() : "";
-        String price = "¥" + String.format("%.0f", item.getPrice());
-
-        List<String> pros = new ArrayList<>();
-        if (item.getEvidence() != null && !item.getEvidence().isEmpty()) {
-            pros.add(item.getEvidence());
-        }
-        if (item.getReason() != null && !item.getReason().isEmpty()) {
-            pros.add(item.getReason());
-        }
-        if (item.getMarketing_desc() != null && !item.getMarketing_desc().isEmpty()) {
-            // 商品介绍截取前 40 字作为亮点
-            String desc = item.getMarketing_desc();
-            pros.add(desc.length() > 40 ? desc.substring(0, 40) + "..." : desc);
-        }
-        if (item.getRating() > 0) {
-            pros.add("评分 " + String.format("%.1f", item.getRating()));
-        }
+    /** 将单个商品格式化为 Markdown 文本 */
+    private static String formatCompareItemMd(RecommendResponse.Item item) {
+        StringBuilder sb = new StringBuilder();
+        // 标题行：**品牌 商品名**（加粗）
+        String brand = item.getBrand();
+        String title = item.getTitle();
+        String name = (brand != null && !brand.isEmpty() ? brand + " " : "") +
+                      (title != null ? title : "");
+        sb.append("**").append(name).append("**\n");
+        // 价格+元信息
+        sb.append("**¥").append(String.format("%.0f", item.getPrice())).append("**");
+        if (item.getRating() > 0) sb.append(" · ★").append(String.format("%.1f", item.getRating()));
         if (item.getSold_count() > 0) {
-            String sold = item.getSold_count() >= 10000
-                    ? String.format("%.1f万", item.getSold_count() / 10000.0)
-                    : String.valueOf(item.getSold_count());
-            pros.add("已售 " + sold);
+            int s = item.getSold_count();
+            sb.append(" · 已售").append(s >= 10000 ? String.format("%.1f万", s/10000.0) : s);
         }
-
-        List<String> cons = new ArrayList<>(); // 后端当前不返回缺点，后续可扩展
-
-        return new CompareItem(name, price, pros, cons);
+        sb.append("\n\n");
+        // 理由+依据
+        if (item.getReason() != null && !item.getReason().isEmpty())
+            sb.append(item.getReason()).append("\n");
+        if (item.getEvidence() != null && !item.getEvidence().isEmpty())
+            sb.append("依据：").append(item.getEvidence()).append("\n");
+        return sb.toString();
     }
 
     // ========== 购物车多选面板 ==========
