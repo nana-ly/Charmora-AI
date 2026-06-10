@@ -39,7 +39,8 @@ import com.client.shopguide.adapter.ChatAdapter;
 import com.client.shopguide.model.ChatRequest;
 import com.client.shopguide.model.ChatResponse;
 import com.client.shopguide.model.ChatUiMessage;
-import com.client.shopguide.model.CompareMock;
+import com.client.shopguide.model.CompareItem;
+import com.client.shopguide.model.CompareResponse;
 import com.client.shopguide.model.Product;
 import com.client.shopguide.model.RecommendResponse;
 import com.client.shopguide.network.ChatSseClient;
@@ -59,8 +60,10 @@ import java.io.OutputStreamWriter;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 import com.google.gson.Gson;
@@ -76,7 +79,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_SESSION_ID = "session_id";
     private static final String KEY_LAST_ACTIVE = "last_active_time";
     private static final String MESSAGES_FILE = "chat_messages.json";
-    private static final int SESSION_GAP_MINUTES = 30;
+    private static final int SESSION_GAP_MINUTES = 5;
     private static final String WELCOME_MESSAGE = "你好！告诉我品类、预算和偏好，我来帮你推荐商品。你也可以追问「再便宜一点」或「为什么推荐第一款」。";
 
     /** 后端 POST /chat/stream 已就绪，默认走 SSE；404 时自动回退 POST /chat */
@@ -115,6 +118,14 @@ public class MainActivity extends AppCompatActivity {
 
     // TTS 语音
     private TextToSpeech tts;
+
+    // SSE 状态：result_count
+    private int pendingResultCount = 0;
+    private int pendingItemsCount = 0;
+    /** SSE 完整 state（含 action/intent/result_count 等），用于判断 compare/explain 等动作 */
+    private Map<String, Object> pendingState;
+    /** SSE items 缓冲区：等 state 事件到达后才决定以 productRow 还是 compare 卡片展示 */
+    private List<RecommendResponse.Item> pendingStreamItems;
 
     // 拍照相关
     private Uri currentPhotoUri;
@@ -504,6 +515,8 @@ public class MainActivity extends AppCompatActivity {
         chatSseClient.cancel();
         chatMessages.clear();
         streamingAssistantIndex = -1;
+        pendingState = null;
+        pendingStreamItems = null;
         addWelcomeMessage();
         setSendingState(false);
         if (showToast) {
@@ -611,12 +624,6 @@ public class MainActivity extends AppCompatActivity {
         etMessage.setText("");
         chatMessages.add(ChatUiMessage.user(message));
 
-        // 检测"对比"关键词 → 插入 Mock 对比卡片
-        // TODO: 等后端 /compare 接口 ready 后，替换为真实 API 调用
-        if (message.contains("对比")) {
-            chatMessages.add(ChatUiMessage.compare(CompareMock.getMockData()));
-        }
-
         chatMessages.add(ChatUiMessage.loading());
         chatAdapter.notifyDataSetChanged();
         scrollToBottom();
@@ -633,6 +640,10 @@ public class MainActivity extends AppCompatActivity {
      * 优先走 SSE；后端尚未提供 /chat/stream 时自动回退 POST /chat。
      */
     private void sendViaSse(String message) {
+        pendingResultCount = 0;
+        pendingItemsCount = 0;
+        pendingState = null;
+        pendingStreamItems = null;
         chatSseClient.streamChat(sessionId, message, new ChatSseClient.StreamListener() {
             @Override
             public void onTextDelta(String content) {
@@ -640,13 +651,49 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onState(String stateJson) {
+                mainHandler.post(() -> {
+                    try {
+                        pendingState = gson.fromJson(stateJson,
+                                new TypeToken<Map<String, Object>>() {}.getType());
+                        if (pendingState != null) {
+                            Object rc = pendingState.get("result_count");
+                            if (rc instanceof Double) {
+                                pendingResultCount = ((Double) rc).intValue();
+                            }
+                        }
+                        // state 到达后，立即处理之前缓冲的 items
+                        processPendingStreamItems();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                });
+            }
+
+            @Override
             public void onItems(List<RecommendResponse.Item> items) {
-                mainHandler.post(() -> appendProductItems(items));
+                mainHandler.post(() -> {
+                    if (items != null && !items.isEmpty()) {
+                        pendingItemsCount = items.size();
+                        // 先缓冲 items，等 state 到达后再决定展示方式
+                        if (pendingStreamItems == null) {
+                            pendingStreamItems = new ArrayList<>();
+                        }
+                        pendingStreamItems.addAll(items);
+                        // 如果 state 已经到了，立即处理
+                        if (pendingState != null) {
+                            processPendingStreamItems();
+                        }
+                    }
+                });
             }
 
             @Override
             public void onDone() {
-                mainHandler.post(() -> finishStreamingResponse());
+                mainHandler.post(() -> {
+                    finishStreamingResponse();
+                    showResultCount();
+                });
             }
 
             @Override
@@ -735,6 +782,8 @@ public class MainActivity extends AppCompatActivity {
             chatAdapter.notifyItemChanged(streamingAssistantIndex);
         }
         streamingAssistantIndex = -1;
+        // 兜底：如果 state 事件没能触发处理，在 done 时统一刷新缓冲的 items
+        processPendingStreamItems();
         setSendingState(false);
         scrollToBottom();
     }
@@ -743,6 +792,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void handleChatResponse(ChatResponse response) {
         removeLoadingMessage();
+
+        pendingResultCount = response.getResult_count();
 
         if (response.getSession_id() != null) {
             sessionId = response.getSession_id();
@@ -756,7 +807,15 @@ public class MainActivity extends AppCompatActivity {
         chatMessages.add(ChatUiMessage.assistant(reply));
 
         List<RecommendResponse.Item> items = response.getItems();
-        if (items != null && !items.isEmpty()) {
+        pendingItemsCount = items != null ? items.size() : 0;
+
+        // 根据 state.action 决定展示方式：compare 走对比卡片，其余走商品横滚
+        Map<String, Object> state = response.getState();
+        String action = state != null ? (String) state.get("action") : null;
+
+        if ("compare".equals(action) && items != null && items.size() >= 2) {
+            addCompareFromItems(items);
+        } else if (items != null && !items.isEmpty()) {
             List<Product> productList = new ArrayList<>();
             for (RecommendResponse.Item item : items) {
                 productList.add(toProduct(item));
@@ -766,6 +825,7 @@ public class MainActivity extends AppCompatActivity {
 
         chatAdapter.notifyDataSetChanged();
         scrollToBottom();
+        showResultCount();
         setSendingState(false);
     }
 
@@ -805,6 +865,15 @@ public class MainActivity extends AppCompatActivity {
         return product;
     }
 
+    private void showResultCount() {
+        if (pendingResultCount > pendingItemsCount && pendingItemsCount > 0) {
+            chatMessages.add(ChatUiMessage.divider(
+                    "共找到 " + pendingResultCount + " 件，已为你推荐 " + pendingItemsCount + " 款"));
+            chatAdapter.notifyItemInserted(chatMessages.size() - 1);
+            scrollToBottom();
+        }
+    }
+
     private void setSendingState(boolean sending) {
         isSending = sending;
         etMessage.setEnabled(!sending);
@@ -816,6 +885,73 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         rvChat.post(() -> rvChat.smoothScrollToPosition(chatMessages.size() - 1));
+    }
+
+    // ========== SSE items 缓冲 & 对比卡片构建 ==========
+
+    /**
+     * 根据 pendingState.action 将缓冲的 items 以正确形式展示：
+     * compare → 对比卡片，其余 → 商品横滚卡片。
+     */
+    private void processPendingStreamItems() {
+        if (pendingStreamItems == null || pendingStreamItems.isEmpty()) return;
+
+        String action = pendingState != null ? (String) pendingState.get("action") : null;
+
+        if ("compare".equals(action)) {
+            addCompareFromItems(pendingStreamItems);
+        } else {
+            appendProductItems(pendingStreamItems);
+        }
+        pendingStreamItems = null;
+    }
+
+    /**
+     * 用后端返回的真实商品数据构建 CompareResponse 对比卡片。
+     * 取前两个 items，从 evidence/reason/marketing_desc 提取优点，缺点暂时留空。
+     */
+    private void addCompareFromItems(List<RecommendResponse.Item> items) {
+        if (items == null || items.size() < 2) return;
+
+        CompareItem left = itemToCompareItem(items.get(0));
+        CompareItem right = itemToCompareItem(items.get(1));
+        chatMessages.add(ChatUiMessage.compare(new CompareResponse(left, right)));
+        chatAdapter.notifyDataSetChanged();
+    }
+
+    /**
+     * 将后端 Item 转为对比卡片的 CompareItem。
+     * pros 从 evidence、reason、marketing_desc、评分、销量中提取。
+     */
+    private CompareItem itemToCompareItem(RecommendResponse.Item item) {
+        String name = item.getTitle() != null ? item.getTitle() : "";
+        String price = "¥" + String.format("%.0f", item.getPrice());
+
+        List<String> pros = new ArrayList<>();
+        if (item.getEvidence() != null && !item.getEvidence().isEmpty()) {
+            pros.add(item.getEvidence());
+        }
+        if (item.getReason() != null && !item.getReason().isEmpty()) {
+            pros.add(item.getReason());
+        }
+        if (item.getMarketing_desc() != null && !item.getMarketing_desc().isEmpty()) {
+            // 商品介绍截取前 40 字作为亮点
+            String desc = item.getMarketing_desc();
+            pros.add(desc.length() > 40 ? desc.substring(0, 40) + "..." : desc);
+        }
+        if (item.getRating() > 0) {
+            pros.add("评分 " + String.format("%.1f", item.getRating()));
+        }
+        if (item.getSold_count() > 0) {
+            String sold = item.getSold_count() >= 10000
+                    ? String.format("%.1f万", item.getSold_count() / 10000.0)
+                    : String.valueOf(item.getSold_count());
+            pros.add("已售 " + sold);
+        }
+
+        List<String> cons = new ArrayList<>(); // 后端当前不返回缺点，后续可扩展
+
+        return new CompareItem(name, price, pros, cons);
     }
 
     // ========== 购物车多选面板 ==========
@@ -856,7 +992,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     static class CartProductAdapter extends RecyclerView.Adapter<CartProductAdapter.Vh> {
-        private static final String IMG_BASE = "http://10.0.2.2:8000/static/";
+        private static final String IMG_BASE = "http://8.137.191.215";
         private final List<Product> items;
         private final boolean[] selected;
 

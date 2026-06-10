@@ -10,6 +10,7 @@ public class ChatResponse {
 
     private String session_id;
     private String reply;
+    private int result_count;
     private List<RecommendResponse.Item> items;
     private Map<String, Object> state;
 
@@ -31,6 +32,9 @@ public class ChatResponse {
     public void setReply(String reply) {
         this.reply = reply;
     }
+
+    public int getResult_count() { return result_count; }
+    public void setResult_count(int result_count) { this.result_count = result_count; }
 
     public List<RecommendResponse.Item> getItems() {
         return items;
