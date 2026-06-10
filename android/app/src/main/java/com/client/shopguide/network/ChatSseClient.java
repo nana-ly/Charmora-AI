@@ -37,7 +37,8 @@ public class ChatSseClient {
 
         void onItems(@NonNull List<RecommendResponse.Item> items);
 
-        void onState(int resultCount);
+        /** state 事件原始 JSON，包含 action/intent/result_count 等字段 */
+        void onState(@NonNull String stateJson);
 
         void onDone();
 
@@ -165,9 +166,10 @@ public class ChatSseClient {
 
         if ("state".equals(eventName)) {
             try {
-                JsonObject st = GSON.fromJson(data, JsonObject.class);
-                if (st != null && st.has("result_count")) {
-                    listener.onState(st.get("result_count").getAsInt());
+                JsonObject outer = GSON.fromJson(data, JsonObject.class);
+                if (outer != null && outer.has("state")) {
+                    JsonObject st = outer.getAsJsonObject("state");
+                    listener.onState(st.toString());
                 }
             } catch (Exception ignored) {}
             return;
@@ -193,9 +195,6 @@ public class ChatSseClient {
             List<RecommendResponse.Item> items = GSON.fromJson(json.get("items"), ITEM_LIST_TYPE);
             if (items != null) {
                 listener.onItems(items);
-                if (json.has("result_count")) {
-                    listener.onState(json.get("result_count").getAsInt());
-                }
             }
         }
     }
