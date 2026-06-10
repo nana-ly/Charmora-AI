@@ -12,6 +12,7 @@ public class ChatUiMessage {
     public static final int TYPE_PRODUCT = 2;
     public static final int TYPE_LOADING = 3;
     public static final int TYPE_PRODUCT_ROW = 4;
+    public static final int TYPE_COMPARE_PRODUCT = 5;
     public static final int TYPE_DIVIDER = 6;
 
     private final int type;
@@ -43,6 +44,12 @@ public class ChatUiMessage {
     public static ChatUiMessage productRow(List<Product> productList) {
         ChatUiMessage message = new ChatUiMessage(TYPE_PRODUCT_ROW, "");
         message.productList = productList;
+        return message;
+    }
+
+    public static ChatUiMessage compareProduct(Product product, int index) {
+        ChatUiMessage message = new ChatUiMessage(TYPE_COMPARE_PRODUCT, "对比商品 " + index);
+        message.product = product;
         return message;
     }
 

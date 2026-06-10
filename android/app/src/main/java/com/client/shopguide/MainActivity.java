@@ -119,9 +119,9 @@ public class MainActivity extends AppCompatActivity {
     // SSE 状态：result_count
     private int pendingResultCount = 0;
     private int pendingItemsCount = 0;
-    /** SSE 完整 state（含 action/intent/result_count 等），用于判断 compare/explain 等动作 */
+    /** SSE 完整 state（含 action/intent/result_count 等），用于判断是否展示推荐统计等 UI */
     private Map<String, Object> pendingState;
-    /** SSE items 缓冲区：等 state 事件到达后才决定以 productRow 还是 compare 卡片展示 */
+    /** SSE items 缓冲区：等 state 事件到达后决定展示推荐横滚或对比商品气泡 */
     private List<RecommendResponse.Item> pendingStreamItems;
 
     // 拍照相关
@@ -671,9 +671,12 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onItems(List<RecommendResponse.Item> items) {
+            public void onItems(List<RecommendResponse.Item> items, int resultCount) {
                 mainHandler.post(() -> {
                     if (items != null && !items.isEmpty()) {
+                        if (resultCount > 0) {
+                            pendingResultCount = resultCount;
+                        }
                         pendingItemsCount = items.size();
                         // 先缓冲 items，等 state 到达后再决定展示方式
                         if (pendingStreamItems == null) {
@@ -772,12 +775,28 @@ public class MainActivity extends AppCompatActivity {
         scrollToBottom();
     }
 
+    private void appendCompareItems(List<RecommendResponse.Item> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        int index = 1;
+        for (RecommendResponse.Item item : items) {
+            chatMessages.add(ChatUiMessage.compareProduct(toProduct(item), index));
+            index++;
+        }
+        chatAdapter.notifyDataSetChanged();
+        scrollToBottom();
+    }
+
     private void finishStreamingResponse() {
         if (streamingAssistantIndex >= 0 && streamingAssistantIndex < chatMessages.size()) {
             ChatUiMessage assistant = chatMessages.get(streamingAssistantIndex);
             assistant.setStreaming(false);
             if (assistant.getContent() == null || assistant.getContent().isEmpty()) {
                 assistant.setContent("已完成推荐。");
+            }
+            if (isCurrentAction("compare")) {
+                assistant.setContent(formatCompareReply(assistant.getContent()));
             }
             chatAdapter.notifyItemChanged(streamingAssistantIndex);
         }
@@ -804,37 +823,21 @@ public class MainActivity extends AppCompatActivity {
         if (reply == null || reply.isEmpty()) {
             reply = "已完成处理。";
         }
+        Map<String, Object> state = response.getState();
+        pendingState = state;
+        String action = state != null ? (String) state.get("action") : null;
+        if ("compare".equals(action)) {
+            reply = formatCompareReply(reply);
+        }
         chatMessages.add(ChatUiMessage.assistant(reply));
 
         List<RecommendResponse.Item> items = response.getItems();
         pendingItemsCount = items != null ? items.size() : 0;
 
-        // 根据 state.action 决定展示方式
-        Map<String, Object> state = response.getState();
-        String action = state != null ? (String) state.get("action") : null;
-
         if ("compare".equals(action) && items != null && !items.isEmpty()) {
-            for (RecommendResponse.Item item : items) {
-                chatMessages.add(ChatUiMessage.assistant(formatCompareItemMd(item)));
-            }
-            if (items.size() >= 2) {
-                RecommendResponse.Item a = items.get(0);
-                RecommendResponse.Item b = items.get(1);
-                String c;
-                if (a.getPrice() < b.getPrice())
-                    c = "\n如果预算更有限，**" + a.getTitle() + "** 更合适，因为价格更低。";
-                else if (b.getPrice() < a.getPrice())
-                    c = "\n如果预算更有限，**" + b.getTitle() + "** 更合适，因为价格更低。";
-                else
-                    c = "\n两款价格接近，可以优先按上面的证据和使用重点来选。";
-                chatMessages.add(ChatUiMessage.assistant(c));
-            }
+            appendCompareItems(items);
         } else if (items != null && !items.isEmpty()) {
-            List<Product> productList = new ArrayList<>();
-            for (RecommendResponse.Item item : items) {
-                productList.add(toProduct(item));
-            }
-            chatMessages.add(ChatUiMessage.productRow(productList));
+            appendProductItems(items);
         }
 
         chatAdapter.notifyDataSetChanged();
@@ -880,10 +883,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showResultCount() {
-        if (pendingResultCount > 0 && pendingItemsCount > 0) {
+        if (pendingItemsCount > 0 && !isCurrentAction("compare")) {
+            int totalCount = pendingResultCount > 0 ? pendingResultCount : pendingItemsCount;
             String text;
-            if (pendingResultCount > pendingItemsCount) {
-                text = "共找到 " + pendingResultCount + " 件，已为你推荐 " + pendingItemsCount + " 款";
+            if (totalCount > pendingItemsCount) {
+                text = "共找到 " + totalCount + " 件，已为你推荐 " + pendingItemsCount + " 款";
             } else {
                 text = "已为你推荐 " + pendingItemsCount + " 款";
             }
@@ -891,6 +895,35 @@ public class MainActivity extends AppCompatActivity {
             chatAdapter.notifyItemInserted(chatMessages.size() - 1);
             scrollToBottom();
         }
+    }
+
+    private boolean isCurrentAction(String action) {
+        if (pendingState == null) {
+            return false;
+        }
+        Object currentAction = pendingState.get("action");
+        return action.equals(currentAction);
+    }
+
+    private String formatCompareReply(String reply) {
+        if (reply == null || reply.isEmpty()) {
+            return reply;
+        }
+        String formatted = reply
+                .replace("。", "。\n\n")
+                .replace("；", "；\n")
+                .replace("，如果", "\n\n如果")
+                .replace("，但", "\n但")
+                .trim();
+        return formatted
+                .replace("优点：", "**优点：**")
+                .replace("优势：", "**优势：**")
+                .replace("不足：", "**不足：**")
+                .replace("缺点：", "**缺点：**")
+                .replace("结论：", "**结论：**")
+                .replace("依据是", "**依据是**")
+                .replace("如果预算", "**如果预算**")
+                .replace("更合适", "**更合适**");
     }
 
     private void setSendingState(boolean sending) {
@@ -909,61 +942,16 @@ public class MainActivity extends AppCompatActivity {
     // ========== SSE items 缓冲 & 对比卡片构建 ==========
 
     /**
-     * 根据 action 展示缓冲的 items：
-     * compare → 逐个产品 Markdown 文本气泡；其余 → 商品横滚。
+     * 展示缓冲的 items；对比结论使用后端 reply，前端补充逐个商品图文气泡。
      */
     private void processPendingStreamItems() {
         if (pendingStreamItems == null || pendingStreamItems.isEmpty()) return;
-        String action = pendingState != null ? (String) pendingState.get("action") : null;
-
-        if ("compare".equals(action)) {
-            for (RecommendResponse.Item item : pendingStreamItems) {
-                String md = formatCompareItemMd(item);
-                chatMessages.add(ChatUiMessage.assistant(md));
-            }
-            // 结论（后端只发 2 件后这里就是正确的 2 件对比）
-            if (pendingStreamItems.size() >= 2) {
-                RecommendResponse.Item a = pendingStreamItems.get(0);
-                RecommendResponse.Item b = pendingStreamItems.get(1);
-                String c;
-                if (a.getPrice() < b.getPrice()) {
-                    c = "\n如果预算更有限，**" + a.getTitle() + "** 更合适，因为价格更低。";
-                } else if (b.getPrice() < a.getPrice()) {
-                    c = "\n如果预算更有限，**" + b.getTitle() + "** 更合适，因为价格更低。";
-                } else {
-                    c = "\n两款价格接近，可以优先按上面的证据和使用重点来选。";
-                }
-                chatMessages.add(ChatUiMessage.assistant(c));
-            }
+        if (isCurrentAction("compare")) {
+            appendCompareItems(pendingStreamItems);
         } else {
             appendProductItems(pendingStreamItems);
         }
         pendingStreamItems = null;
-    }
-
-    /** 将单个商品格式化为 Markdown 文本 */
-    private static String formatCompareItemMd(RecommendResponse.Item item) {
-        StringBuilder sb = new StringBuilder();
-        // 标题行：**品牌 商品名**（加粗）
-        String brand = item.getBrand();
-        String title = item.getTitle();
-        String name = (brand != null && !brand.isEmpty() ? brand + " " : "") +
-                      (title != null ? title : "");
-        sb.append("**").append(name).append("**\n");
-        // 价格+元信息
-        sb.append("**¥").append(String.format("%.0f", item.getPrice())).append("**");
-        if (item.getRating() > 0) sb.append(" · ★").append(String.format("%.1f", item.getRating()));
-        if (item.getSold_count() > 0) {
-            int s = item.getSold_count();
-            sb.append(" · 已售").append(s >= 10000 ? String.format("%.1f万", s/10000.0) : s);
-        }
-        sb.append("\n\n");
-        // 理由+依据
-        if (item.getReason() != null && !item.getReason().isEmpty())
-            sb.append(item.getReason()).append("\n");
-        if (item.getEvidence() != null && !item.getEvidence().isEmpty())
-            sb.append("依据：").append(item.getEvidence()).append("\n");
-        return sb.toString();
     }
 
     // ========== 购物车多选面板 ==========

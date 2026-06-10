@@ -2,6 +2,10 @@ package com.client.shopguide.adapter;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.StyleSpan;
+import android.graphics.Typeface;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,6 +21,8 @@ import com.client.shopguide.R;
 import com.client.shopguide.model.ChatUiMessage;
 import com.client.shopguide.model.Product;
 
+import coil.Coil;
+import coil.request.ImageRequest;
 import io.noties.markwon.Markwon;
 
 import java.util.List;
@@ -31,6 +37,7 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private ProductCardAdapter.OnAddToCartListener onAddToCartListener;
     private OnTTSListener onTTSListener;
     private Markwon markwon;
+    private static final String IMAGE_BASE_URL = "http://8.137.191.215";
 
     public ChatAdapter(List<ChatUiMessage> messages) {
         this.messages = messages;
@@ -99,6 +106,8 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 return new AssistantViewHolder(inflater.inflate(R.layout.item_chat_assistant, parent, false));
             case ChatUiMessage.TYPE_PRODUCT_ROW:
                 return new ProductRowViewHolder(inflater.inflate(R.layout.item_chat_product_row, parent, false));
+            case ChatUiMessage.TYPE_COMPARE_PRODUCT:
+                return new CompareProductViewHolder(inflater.inflate(R.layout.item_chat_compare_product, parent, false));
             case ChatUiMessage.TYPE_PRODUCT:
                 return new ProductViewHolder(inflater.inflate(R.layout.item_product, parent, false));
             case ChatUiMessage.TYPE_DIVIDER:
@@ -136,19 +145,16 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     getMarkwon(holder.itemView).setMarkdown(avh.tvAssistantMessage, md);
                 }
                 avh.tvTtsIcon.setVisibility(View.GONE);
+                avh.tvTtsIcon.setOnClickListener(null);
+                avh.itemView.setOnLongClickListener(null);
+                avh.tvAssistantMessage.setOnLongClickListener(null);
 
                 // 长按出现 ▶ 播放按钮
                 if (!message.isStreaming() && text != null && !text.isEmpty()) {
                     final String speakText = message.getContent();
-                    avh.itemView.setOnLongClickListener(v -> {
-                        hideActiveTtsIcon();
-                        activeTtsHolder = avh;
-                        avh.tvTtsIcon.setVisibility(View.VISIBLE);
-                        avh.tvTtsIcon.setOnClickListener(icon -> {
-                            if (onTTSListener != null) onTTSListener.onSpeak(speakText);
-                        });
-                        return true;
-                    });
+                    View.OnLongClickListener longClickListener = v -> showTtsIcon(avh, speakText);
+                    avh.itemView.setOnLongClickListener(longClickListener);
+                    avh.tvAssistantMessage.setOnLongClickListener(longClickListener);
                 }
                 break;
             case ChatUiMessage.TYPE_PRODUCT_ROW:
@@ -160,6 +166,9 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 } else {
                     ((ProductRowViewHolder) holder).rvProductRow.setAdapter(null);
                 }
+                break;
+            case ChatUiMessage.TYPE_COMPARE_PRODUCT:
+                bindCompareProduct((CompareProductViewHolder) holder, message.getProduct(), message.getContent());
                 break;
             case ChatUiMessage.TYPE_PRODUCT:
                 bindProduct((ProductViewHolder) holder, message.getProduct());
@@ -194,6 +203,62 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     product.getTitle() + " 已加入购物车",
                     android.widget.Toast.LENGTH_SHORT).show();
         });
+    }
+
+    private void bindCompareProduct(CompareProductViewHolder holder, Product product, String label) {
+        if (product == null) return;
+        String imageUrl = product.getImageUrl();
+        String fullUrl = (imageUrl != null && !imageUrl.isEmpty()) ? IMAGE_BASE_URL + imageUrl : null;
+        ImageRequest request = new ImageRequest.Builder(holder.itemView.getContext())
+                .data(fullUrl)
+                .target(holder.ivCompareImage)
+                .placeholder(R.drawable.ic_placeholder_product)
+                .error(R.drawable.ic_placeholder_product)
+                .crossfade(250)
+                .build();
+        Coil.imageLoader(holder.itemView.getContext()).enqueue(request);
+
+        holder.tvCompareLabel.setText(label != null && !label.isEmpty() ? label : "对比商品");
+        holder.tvCompareTitle.setText(product.getTitle());
+        String priceRange = product.getPriceRange();
+        if (priceRange != null && !priceRange.isEmpty()) {
+            holder.tvComparePrice.setText(priceRange);
+        } else {
+            holder.tvComparePrice.setText("¥" + String.format("%.0f", product.getBase_price()));
+        }
+
+        String reason = product.getReason();
+        if (reason != null && !reason.isEmpty()) {
+            holder.tvCompareReason.setVisibility(View.VISIBLE);
+            holder.tvCompareReason.setText(boldPrefix("优点：", reason));
+        } else {
+            holder.tvCompareReason.setVisibility(View.GONE);
+        }
+
+        String evidence = product.getMatched_evidence();
+        if (evidence != null && !evidence.isEmpty()) {
+            holder.tvCompareEvidence.setVisibility(View.VISIBLE);
+            holder.tvCompareEvidence.setText(boldPrefix("依据：", evidence));
+        } else {
+            holder.tvCompareEvidence.setVisibility(View.GONE);
+        }
+    }
+
+    private static SpannableString boldPrefix(String prefix, String content) {
+        SpannableString text = new SpannableString(prefix + content);
+        text.setSpan(new StyleSpan(Typeface.BOLD), 0, prefix.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return text;
+    }
+
+    private boolean showTtsIcon(AssistantViewHolder holder, String speakText) {
+        hideActiveTtsIcon();
+        activeTtsHolder = holder;
+        holder.tvTtsIcon.setVisibility(View.VISIBLE);
+        holder.tvTtsIcon.bringToFront();
+        holder.tvTtsIcon.setOnClickListener(icon -> {
+            if (onTTSListener != null) onTTSListener.onSpeak(speakText);
+        });
+        return true;
     }
 
     @Override
@@ -330,6 +395,25 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             rvProductRow.setLayoutManager(
                     new LinearLayoutManager(itemView.getContext(),
                             LinearLayoutManager.HORIZONTAL, false));
+        }
+    }
+
+    static class CompareProductViewHolder extends RecyclerView.ViewHolder {
+        ImageView ivCompareImage;
+        TextView tvCompareLabel;
+        TextView tvCompareTitle;
+        TextView tvComparePrice;
+        TextView tvCompareReason;
+        TextView tvCompareEvidence;
+
+        CompareProductViewHolder(@NonNull View itemView) {
+            super(itemView);
+            ivCompareImage = itemView.findViewById(R.id.ivCompareImage);
+            tvCompareLabel = itemView.findViewById(R.id.tvCompareLabel);
+            tvCompareTitle = itemView.findViewById(R.id.tvCompareTitle);
+            tvComparePrice = itemView.findViewById(R.id.tvComparePrice);
+            tvCompareReason = itemView.findViewById(R.id.tvCompareReason);
+            tvCompareEvidence = itemView.findViewById(R.id.tvCompareEvidence);
         }
     }
 

@@ -35,7 +35,7 @@ public class ChatSseClient {
     public interface StreamListener {
         void onTextDelta(@NonNull String content);
 
-        void onItems(@NonNull List<RecommendResponse.Item> items);
+        void onItems(@NonNull List<RecommendResponse.Item> items, int resultCount);
 
         /** state 事件原始 JSON，包含 action/intent/result_count 等字段 */
         void onState(@NonNull String stateJson);
@@ -194,7 +194,14 @@ public class ChatSseClient {
         if ("items".equals(eventName) && json.has("items")) {
             List<RecommendResponse.Item> items = GSON.fromJson(json.get("items"), ITEM_LIST_TYPE);
             if (items != null) {
-                listener.onItems(items);
+                int resultCount = 0;
+                if (json.has("result_count") && !json.get("result_count").isJsonNull()) {
+                    try {
+                        resultCount = json.get("result_count").getAsInt();
+                    } catch (Exception ignored) {
+                    }
+                }
+                listener.onItems(items, resultCount);
             }
         }
     }
