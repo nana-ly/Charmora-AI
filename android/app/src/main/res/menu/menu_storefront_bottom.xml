@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/nav_home" android:icon="@android:drawable/ic_menu_view" android:title="首页" />
+    <item android:id="@+id/nav_categories" android:icon="@android:drawable/ic_menu_sort_by_size" android:title="分类" />
+    <item android:id="@+id/nav_ai" android:icon="@android:drawable/ic_menu_search" android:title="AI选购" />
+    <item android:id="@+id/nav_cart" android:icon="@android:drawable/ic_menu_agenda" android:title="购物车" />
+    <item android:id="@+id/nav_profile" android:icon="@android:drawable/ic_menu_myplaces" android:title="我的" />
+</menu>

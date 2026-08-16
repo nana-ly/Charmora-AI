@@ -55,6 +55,12 @@ def create_agent_runner(
     shared_understanding_service = understanding_service or LLMUserUnderstandingService(
         config=selected_config.llm
     )
+    commerce_tool = None
+    if selected_config.catalog_source.strip().lower() == "postgresql":
+        from agent.tools.commerce import CommerceTool
+        from db.session import create_database_runtime
+
+        commerce_tool = CommerceTool(create_database_runtime(selected_config.database))
 
     if runner_name == "langgraph":
         from agent.graph.runner import LangGraphAgentRunner
@@ -66,6 +72,7 @@ def create_agent_runner(
             llm_config=selected_config.llm,
             session_lock_manager=SessionLockManager(),
             session_lock_enabled=selected_config.agent_session_lock_enabled,
+            commerce_tool=commerce_tool,
         )
 
     raise ValueError("AGENT_RUNNER 仅支持 langgraph")

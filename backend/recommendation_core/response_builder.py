@@ -23,6 +23,7 @@ def build_response_item(
 
     return {
         "product_id": product.get("product_id", ""),
+        "sku_id": product.get("sku_id"),
         "title": product.get("title", ""),
         "brand": product.get("brand", ""),
         "price": get_product_price(product),

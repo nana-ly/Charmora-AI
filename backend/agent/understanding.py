@@ -38,6 +38,11 @@ class UserIntent(str, Enum):
     EXPLAIN = "explain"
     COMPARE = "compare"
     CLARIFY = "clarify"
+    ADD_TO_CART = "add_to_cart"
+    VIEW_CART = "view_cart"
+    CHECKOUT = "checkout"
+    ORDER_STATUS = "order_status"
+    CANCEL_ORDER = "cancel_order"
 
 
 class AgentAction(str, Enum):
@@ -48,6 +53,11 @@ class AgentAction(str, Enum):
     COMPARE = "compare"
     CLARIFY = "clarify"
     REPLY_ONLY = "reply_only"
+    ADD_TO_CART = "add_to_cart"
+    VIEW_CART = "view_cart"
+    CHECKOUT = "checkout"
+    ORDER_STATUS = "order_status"
+    CANCEL_ORDER = "cancel_order"
 
 
 class UserUnderstanding(BaseModel):
@@ -63,6 +73,9 @@ class UserUnderstanding(BaseModel):
     clarifying_question: str | None = None
     reset_context: bool = False
     restore_context_category: str | None = None
+    quantity: int = Field(default=1, ge=1, le=99)
+    order_id: str | None = None
+    checkout_confirmed: bool = False
 
     @field_validator("compare_item_indexes", mode="before")
     @classmethod
@@ -81,6 +94,9 @@ DEFAULT_UNDERSTANDING_FIELDS: dict[str, Any] = {
     "clarifying_question": None,
     "reset_context": False,
     "restore_context_category": None,
+    "quantity": 1,
+    "order_id": None,
+    "checkout_confirmed": False,
 }
 
 DEFAULT_CLARIFY_QUESTION = "可以告诉我想买的品类、预算和最在意的点吗？"
@@ -176,6 +192,7 @@ class ActionResult(BaseModel):
     compare_item_indexes: list[int] = Field(default_factory=list)
     clarifying_question: str | None = None
     negative_feedback: NegativeFeedbackApplicationResult | None = None
+    commerce_state: dict[str, Any] | None = None
 
     @field_validator("compare_item_indexes", mode="before")
     @classmethod
@@ -237,6 +254,12 @@ class LLMUserUnderstandingService:
         conversation: ConversationState,
     ) -> UserUnderstanding:
         """调用模型并解析为 `UserUnderstanding`。"""
+        from agent.commerce_rules import commerce_understanding
+
+        commerce = commerce_understanding(message, conversation)
+        if commerce is not None:
+            return commerce
+
         llm = self._resolve_llm()
         if llm is None:
             logger.debug(

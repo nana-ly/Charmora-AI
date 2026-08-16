@@ -91,6 +91,42 @@ def test_chat_stream_tool_error_uses_success_event_order(monkeypatch):
     assert '"tool_error": "recommendation_failed"' in body
 
 
+def test_chat_stream_card_keeps_sku_id_for_android_cart(monkeypatch):
+    from schemas.product import ProductCard
+
+    monkeypatch.setattr(
+        api_deps,
+        "run_chat",
+        lambda session_id, message: ChatResponse(
+            session_id=session_id,
+            reply="推荐如下 [INSERT:0]",
+            items=[
+                ProductCard(
+                    product_id="550e8400-e29b-41d4-a716-446655440000",
+                    sku_id="550e8400-e29b-41d4-a716-446655440001",
+                    title="Test item",
+                    brand="Test",
+                    price=19.9,
+                    reason="match",
+                    evidence="truth",
+                )
+            ],
+            state={"action": "recommend"},
+        ),
+    )
+
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={"session_id": "sse-card-sku", "message": "recommend"},
+    ) as response:
+        body = response.read().decode("utf-8")
+
+    assert 'event: card' in body
+    assert '"sku_id": "550e8400-e29b-41d4-a716-446655440001"' in body
+    assert '"request_id":' in body
+
+
 def test_chat_stream_unhandled_exception_uses_error_then_done(monkeypatch):
     def fail_run_chat(session_id, message):
         raise RuntimeError("boom")

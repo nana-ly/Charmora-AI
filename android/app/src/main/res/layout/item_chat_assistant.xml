@@ -19,9 +19,11 @@
             android:id="@+id/tvAssistantMessage"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:textIsSelectable="true"
+            android:letterSpacing="0.01"
+            android:lineSpacingExtra="6dp"
             android:textColor="@color/chat_assistant_text"
-            android:textSize="15sp"
-            android:lineSpacingExtra="2dp" />
+            android:textSize="15sp" />
 
         <TextView
             android:id="@+id/tvTtsIcon"

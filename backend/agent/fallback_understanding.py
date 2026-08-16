@@ -244,6 +244,12 @@ def fallback_understanding(
     conversation: ConversationState,
     reason: str,
 ) -> UserUnderstanding | None:
+    from agent.commerce_rules import commerce_understanding
+
+    commerce = commerce_understanding(message, conversation)
+    if commerce is not None:
+        return commerce
+
     negative_updates = extract_negative_updates(message)
 
     compare_indexes = _extract_compare_indexes(message)

@@ -65,6 +65,13 @@ class ProductVectorStore:
         result = collection.query(query_embeddings=[query_embedding], n_results=top_k)
         return _normalize_query_result(result)
 
+    def query_by_embedding(self, embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
+        result = self._get_collection().query(
+            query_embeddings=[embedding],
+            n_results=top_k,
+        )
+        return _normalize_query_result(result)
+
     def query_by_product_id(
         self, dataset_root: Path, product_id: str, top_k: int = 5
     ) -> list[dict[str, Any]]:
@@ -75,6 +82,26 @@ class ProductVectorStore:
         query_text = build_product_document(product_map[product_id])
         candidates = self.query_by_text(query_text, top_k=top_k + 1)
         return [item for item in candidates if item["product_id"] != product_id][:top_k]
+
+    def upsert_product(
+        self,
+        *,
+        product_id: str,
+        document: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Incrementally index one product without storing price or inventory facts."""
+        collection = self._get_collection()
+        collection.upsert(
+            ids=[product_id],
+            embeddings=[self.embedding_service.embed(document)],
+            documents=[document],
+            metadatas=[metadata],
+        )
+
+    def delete_products(self, product_ids: list[str]) -> None:
+        if product_ids:
+            self._get_collection().delete(ids=product_ids)
 
 
 def _normalize_query_result(result: dict[str, list[list[Any]]]) -> list[dict[str, Any]]:

@@ -54,9 +54,9 @@ class LLMReasonService:
 
     def _create_client(self) -> CompletionClient:
         """按需创建真实 LLM 客户端，避免未启用时加载外部依赖。"""
-        from llm.client import OpenAIChatClient
+        from llm.client import UniversalChatClient
 
-        return OpenAIChatClient(self.config)
+        return UniversalChatClient(self.config)
 
     def _build_prompt(
         self,

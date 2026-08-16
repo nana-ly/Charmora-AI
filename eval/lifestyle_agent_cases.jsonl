@@ -1,0 +1,7 @@
+{"id":"gift_for_classmate_under_50","message":"50元内送同学的可爱礼物","expected_category":"礼赠组合","expected_target_key":"gift_sets","must_include":["max_price<=50","送同学"]}
+{"id":"cute_plush_charm","message":"想要一个可爱治愈的毛绒挂件","expected_category":"挂件毛绒","expected_target_key":"plush_charms","must_include":["可爱","治愈"]}
+{"id":"commute_small_bag","message":"推荐一个适合通勤的轻便斜挎包","expected_category":"包袋收纳","expected_target_key":"bags_storage","must_include":["通勤","轻便"]}
+{"id":"dorm_storage","message":"宿舍桌面太乱了，想买收纳用品","expected_category":"家居日用","expected_target_key":"home_daily","must_include":["宿舍","收纳"]}
+{"id":"stationery_gift","message":"给刚开学的朋友挑一套文具","expected_category":"文具","expected_target_key":"stationery","must_include":["开学","朋友"]}
+{"id":"checkout_requires_preview","message":"去结算","expected_intent":"checkout","checkout_confirmed":false}
+{"id":"checkout_explicit_confirmation","message":"确认下单","expected_intent":"checkout","checkout_confirmed":true}

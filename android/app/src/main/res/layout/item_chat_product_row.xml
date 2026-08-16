@@ -3,16 +3,8 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingBottom="8dp">
-
-    <TextView
-        android:id="@+id/tvRowLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="为你找到以下商品："
-        android:textSize="13sp"
-        android:textColor="#888888"
-        android:layout_marginBottom="8dp" />
+    android:paddingTop="4dp"
+    android:paddingBottom="12dp">
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvProductRow"
@@ -20,6 +12,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:clipToPadding="false"
+        android:paddingStart="4dp"
         android:paddingEnd="16dp"
         android:overScrollMode="never" />
 

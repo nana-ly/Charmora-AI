@@ -3,11 +3,10 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#FFFFFF"
+    android:background="@color/chat_assistant_bubble"
     android:paddingTop="12dp"
     android:paddingBottom="8dp">
 
-    <!-- 顶栏 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -22,8 +21,8 @@
             android:layout_weight="1"
             android:text="选择商品"
             android:textSize="16sp"
-            android:textStyle="bold"
-            android:textColor="#333333" />
+            android:letterSpacing="0.04"
+            android:textColor="@color/chat_assistant_text" />
 
         <Button
             android:id="@+id/btnCartConfirm"
@@ -31,8 +30,20 @@
             android:layout_height="36dp"
             android:text="确定选中"
             android:textSize="13sp"
-            android:backgroundTint="#673AB7"
-            android:textColor="#FFFFFF"
+            android:backgroundTint="@color/chat_user_bubble"
+            android:textColor="@color/chat_bg"
+            android:minWidth="0dp"
+            android:paddingHorizontal="16dp" />
+
+        <Button
+            android:id="@+id/btnCartCheckout"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:text="模拟结算"
+            android:textSize="13sp"
+            android:backgroundTint="@color/chat_user_bubble"
+            android:textColor="@color/chat_bg"
             android:minWidth="0dp"
             android:paddingHorizontal="16dp" />
     </LinearLayout>
@@ -40,10 +51,9 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="#EEEEEE"
+        android:background="@color/leo_border"
         android:layout_marginBottom="8dp" />
 
-    <!-- 商品网格 -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvCartProducts"
         android:layout_width="match_parent"

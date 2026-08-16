@@ -11,6 +11,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -24,6 +25,7 @@ import com.client.shopguide.model.Product;
 import coil.Coil;
 import coil.request.ImageRequest;
 import io.noties.markwon.Markwon;
+import com.client.shopguide.network.BackendApiClient;
 
 import java.util.List;
 
@@ -37,7 +39,6 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private ProductCardAdapter.OnAddToCartListener onAddToCartListener;
     private OnTTSListener onTTSListener;
     private Markwon markwon;
-    private static final String IMAGE_BASE_URL = "http://8.137.191.215";
 
     public ChatAdapter(List<ChatUiMessage> messages) {
         this.messages = messages;
@@ -112,6 +113,8 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 return new ProductViewHolder(inflater.inflate(R.layout.item_product, parent, false));
             case ChatUiMessage.TYPE_DIVIDER:
                 return new DividerViewHolder(inflater.inflate(R.layout.item_chat_divider, parent, false));
+            case ChatUiMessage.TYPE_THINKING:
+                return new ThinkingChainViewHolder(inflater.inflate(R.layout.item_chat_thinking, parent, false));
             case ChatUiMessage.TYPE_LOADING:
             default:
                 return new LoadingViewHolder(inflater.inflate(R.layout.item_chat_loading, parent, false));
@@ -176,6 +179,9 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             case ChatUiMessage.TYPE_DIVIDER:
                 ((DividerViewHolder) holder).tvDividerTime.setText(message.getContent());
                 break;
+            case ChatUiMessage.TYPE_THINKING:
+                bindThinkingChain((ThinkingChainViewHolder) holder, message);
+                break;
             case ChatUiMessage.TYPE_LOADING:
                 bindLoading((LoadingViewHolder) holder);
                 break;
@@ -199,16 +205,16 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         holder.tvTitle.setText(product.getTitle());
         holder.tvPrice.setText("¥" + String.format("%.0f", product.getBase_price()));
         holder.btnAddToCart.setOnClickListener(v -> {
-            android.widget.Toast.makeText(v.getContext(),
-                    product.getTitle() + " 已加入购物车",
-                    android.widget.Toast.LENGTH_SHORT).show();
+            if (onAddToCartListener != null) {
+                onAddToCartListener.onAddToCart(product);
+            }
         });
     }
 
     private void bindCompareProduct(CompareProductViewHolder holder, Product product, String label) {
         if (product == null) return;
         String imageUrl = product.getImageUrl();
-        String fullUrl = (imageUrl != null && !imageUrl.isEmpty()) ? IMAGE_BASE_URL + imageUrl : null;
+        String fullUrl = new BackendApiClient().absoluteUrl(imageUrl);
         ImageRequest request = new ImageRequest.Builder(holder.itemView.getContext())
                 .data(fullUrl)
                 .target(holder.ivCompareImage)
@@ -309,7 +315,6 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             @Override
             public void run() {
                 if (!running) return;
-                // 三级渐进波浪：距 currentDot 越近越亮
                 animateDotByDistance(0);
                 animateDotByDistance(1);
                 animateDotByDistance(2);
@@ -323,67 +328,80 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             dot1 = itemView.findViewById(R.id.dot1);
             dot2 = itemView.findViewById(R.id.dot2);
             dot3 = itemView.findViewById(R.id.dot3);
-
-            // 初始全部 dim
             setDotStatic(dot1, 0.3f, 0.68f);
             setDotStatic(dot2, 0.3f, 0.68f);
             setDotStatic(dot3, 0.3f, 0.68f);
         }
 
-        void startAnimation() {
-            if (running) return;
-            running = true;
-            currentDot = 0;
-            cycleRunnable.run();
-        }
+        void startAnimation() { if (running) return; running = true; currentDot = 0; cycleRunnable.run(); }
+        void stopAnimation() { running = false; handler.removeCallbacks(cycleRunnable); resetDots(); }
 
-        void stopAnimation() {
-            running = false;
-            handler.removeCallbacks(cycleRunnable);
-            resetDots();
-        }
-
-        /** 计算 dot index 距当前高亮位置的"年龄"，0=当前, 1=上一个, 2=最远 */
-        private int distance(int index) {
-            return (index - currentDot + 3) % 3;
-        }
-
-        /** 根据距离设置三级亮度 + 缩放，200ms 平滑过渡 */
+        private int distance(int index) { return (index - currentDot + 3) % 3; }
         private void animateDotByDistance(int index) {
             View dot = (index == 0) ? dot1 : (index == 1) ? dot2 : dot3;
             if (dot == null) return;
             dot.animate().cancel();
             int dist = distance(index);
             switch (dist) {
-                case 0: // 当前 → 最亮最大
-                    dot.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
-                            .setDuration(200).start();
-                    break;
-                case 1: // 上一个 → 半亮
-                    dot.animate().alpha(0.5f).scaleX(0.82f).scaleY(0.82f)
-                            .setDuration(200).start();
-                    break;
-                case 2: // 最远 → 暗淡但仍可见
-                    dot.animate().alpha(0.28f).scaleX(0.68f).scaleY(0.68f)
-                            .setDuration(200).start();
-                    break;
+                case 0: dot.animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f).setDuration(200).start(); break;
+                case 1: dot.animate().alpha(0.5f).scaleX(0.82f).scaleY(0.82f).setDuration(200).start(); break;
+                case 2: dot.animate().alpha(0.28f).scaleX(0.68f).scaleY(0.68f).setDuration(200).start(); break;
             }
         }
+        private void setDotStatic(View dot, float alpha, float scale) { if (dot == null) return; dot.setAlpha(alpha); dot.setScaleX(scale); dot.setScaleY(scale); }
+        private void resetDots() { dot1.animate().cancel(); dot2.animate().cancel(); dot3.animate().cancel(); setDotStatic(dot1, 0.3f, 0.68f); setDotStatic(dot2, 0.3f, 0.68f); setDotStatic(dot3, 0.3f, 0.68f); }
+    }
 
-        private void setDotStatic(View dot, float alpha, float scale) {
-            if (dot == null) return;
-            dot.setAlpha(alpha);
-            dot.setScaleX(scale);
-            dot.setScaleY(scale);
+    // ========== 思考链 ==========
+
+    private void bindThinkingChain(ThinkingChainViewHolder holder, ChatUiMessage msg) {
+        List<String> steps = msg.getThinkingSteps();
+        boolean done = msg.isThinkingComplete();
+
+        holder.tvTitle.setText(done ? "思考完成" : "思考中...");
+
+        holder.llSteps.removeAllViews();
+        for (int i = 0; i < steps.size(); i++) {
+            final String full = steps.get(i);
+            View stepView = LayoutInflater.from(holder.itemView.getContext())
+                    .inflate(R.layout.item_thinking_step, holder.llSteps, false);
+            TextView tvLabel = stepView.findViewById(R.id.tvStepLabel);
+            TextView tvDetail = stepView.findViewById(R.id.tvStepDetail);
+
+            // 拆分：标签 — 详情
+            String[] parts = full.split(" — ", 2);
+            tvLabel.setText("— " + parts[0]);
+            if (parts.length > 1) {
+                tvDetail.setText(parts[1]);
+                tvDetail.setVisibility(msg.isThinkingExpanded() ? View.VISIBLE : View.GONE);
+            }
+            stepView.setOnClickListener(v -> {
+                if (!done) return;
+                msg.setThinkingExpanded(!msg.isThinkingExpanded());
+                notifyItemChanged(holder.getAdapterPosition());
+            });
+            holder.llSteps.addView(stepView);
         }
 
-        private void resetDots() {
-            dot1.animate().cancel();
-            dot2.animate().cancel();
-            dot3.animate().cancel();
-            setDotStatic(dot1, 0.3f, 0.68f);
-            setDotStatic(dot2, 0.3f, 0.68f);
-            setDotStatic(dot3, 0.3f, 0.68f);
+        // 完成后才可收起
+        if (done) {
+            holder.llSteps.setVisibility(msg.isThinkingExpanded() ? View.VISIBLE : View.GONE);
+            holder.itemView.setOnClickListener(v -> {
+                msg.setThinkingExpanded(!msg.isThinkingExpanded());
+                notifyItemChanged(holder.getAdapterPosition());
+            });
+        } else {
+            holder.llSteps.setVisibility(View.VISIBLE);
+        }
+    }
+
+    static class ThinkingChainViewHolder extends RecyclerView.ViewHolder {
+        TextView tvTitle;
+        LinearLayout llSteps;
+        ThinkingChainViewHolder(@NonNull View itemView) {
+            super(itemView);
+            tvTitle = itemView.findViewById(R.id.tvThinkingTitle);
+            llSteps = itemView.findViewById(R.id.llThinkingSteps);
         }
     }
 

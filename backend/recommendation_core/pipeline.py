@@ -47,10 +47,21 @@ def recommend_products(
     filters = extract_filters(query)
     # None 表示使用默认商品库；空列表表示调用方明确传入了空数据源。
     selected_products = products if product_source is None else product_source
-    structured_candidates = choose_candidates(selected_products, filters)
-    candidates = apply_negative_filters(structured_candidates, negative_filters)
     active_retriever = retriever or KeywordRetriever()
-    retrieval_results = active_retriever.search(query, candidates=candidates, top_k=top_k)
+    if hasattr(active_retriever, "search_truth"):
+        structured_candidates = []
+        candidates = []
+        retrieval_results, truth_result_count = active_retriever.search_truth(
+            query,
+            filters=filters,
+            negative_filters=negative_filters,
+            top_k=top_k,
+        )
+    else:
+        structured_candidates = choose_candidates(selected_products, filters)
+        candidates = apply_negative_filters(structured_candidates, negative_filters)
+        retrieval_results = active_retriever.search(query, candidates=candidates, top_k=top_k)
+        truth_result_count = len(candidates)
     items = []
     trace_items: list[dict[str, Any]] = []
     dropped: list[dict[str, str]] = []
@@ -77,7 +88,7 @@ def recommend_products(
     response = {
         "query": query,
         "filters": filters,
-        "result_count": len(candidates),
+        "result_count": truth_result_count,
         "items": items,
     }
     if include_trace:

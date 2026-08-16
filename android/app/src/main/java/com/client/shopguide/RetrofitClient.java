@@ -1,5 +1,9 @@
 package com.client.shopguide;
 
+import android.content.Context;
+
+import com.client.shopguide.network.BackendConfig;
+
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
@@ -9,9 +13,8 @@ import retrofit2.converter.gson.GsonConverterFactory;
 
 public class RetrofitClient {
 
-    private static final String BASE_URL = "http://8.137.191.215/";
-
     private static RetrofitClient instance;
+    private static String baseUrl = BackendConfig.DEFAULT_BASE_URL;
     private final Retrofit retrofit;
     private final ApiService apiService;
     private final OkHttpClient okHttpClient;
@@ -28,7 +31,7 @@ public class RetrofitClient {
                 .build();
 
         retrofit = new Retrofit.Builder()
-                .baseUrl(BASE_URL)
+                .baseUrl(baseUrl)
                 .client(okHttpClient)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build();
@@ -43,6 +46,14 @@ public class RetrofitClient {
         return instance;
     }
 
+    public static synchronized void configure(Context context) {
+        String configured = BackendConfig.getBaseUrl(context.getApplicationContext());
+        if (!configured.equals(baseUrl)) {
+            baseUrl = configured;
+            instance = null;
+        }
+    }
+
     public ApiService getApiService() {
         return apiService;
     }
@@ -52,6 +63,6 @@ public class RetrofitClient {
     }
 
     public String getBaseUrl() {
-        return BASE_URL;
+        return baseUrl;
     }
 }

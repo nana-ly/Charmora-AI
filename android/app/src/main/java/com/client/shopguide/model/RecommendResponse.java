@@ -88,6 +88,7 @@ public class RecommendResponse {
      */
     public static class Item {
         private String product_id;
+        private String sku_id;
         private String title;
         private String brand;
         private double price;
@@ -107,6 +108,9 @@ public class RecommendResponse {
 
         public String getProduct_id() { return product_id; }
         public void setProduct_id(String product_id) { this.product_id = product_id; }
+
+        public String getSku_id() { return sku_id; }
+        public void setSku_id(String sku_id) { this.sku_id = sku_id; }
 
         public String getTitle() { return title; }
         public void setTitle(String title) { this.title = title; }

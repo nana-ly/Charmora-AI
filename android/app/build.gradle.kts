@@ -2,15 +2,6 @@ plugins {
     id("com.android.application")
 }
 
-// ====== 读取项目根目录 .env 文件 ======
-import java.util.Properties
-
-val envFile = rootProject.file(".env")
-val envProps = Properties()
-if (envFile.exists()) {
-    envProps.load(envFile.inputStream())
-}
-
 android {
     namespace = "com.client.shopguide"
     compileSdk = 34
@@ -24,10 +15,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // 百度语音识别凭证，从 .env 注入到 BuildConfig
-        buildConfigField("String", "BAIDU_APP_ID", "\"${envProps.getProperty("BAIDU_APP_ID", "")}\"")
-        buildConfigField("String", "BAIDU_API_KEY", "\"${envProps.getProperty("BAIDU_API_KEY", "")}\"")
-        buildConfigField("String", "BAIDU_SECRET_KEY", "\"${envProps.getProperty("BAIDU_SECRET_KEY", "")}\"")
     }
 
     buildFeatures {

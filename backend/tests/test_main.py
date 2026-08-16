@@ -436,7 +436,7 @@ def test_chat_keeps_response_contract_with_langgraph_runner(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"session_id", "reply", "items", "state", "result_count"}
+    assert set(payload) == {"session_id", "reply", "items", "state", "result_count", "content_blocks"}
     assert payload["session_id"] == "test-chat-langgraph-session"
     assert payload["result_count"] >= len(payload["items"])
     assert payload["state"]["intent"] == "recommend"
@@ -521,7 +521,7 @@ def test_chat_no_results_keeps_response_shape_and_relax_options(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"session_id", "reply", "items", "state", "result_count"}
+    assert set(body) == {"session_id", "reply", "items", "state", "result_count", "content_blocks"}
     assert body["result_count"] == 0
     assert body["items"] == []
     assert body["state"]["result_status"] == "no_results"
@@ -648,7 +648,7 @@ def test_chat_negative_feedback_noop_keeps_response_contract(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"session_id", "reply", "items", "state", "result_count"}
+    assert set(body) == {"session_id", "reply", "items", "state", "result_count", "content_blocks"}
     assert body["result_count"] == 0
     assert body["items"] == []
     assert body["state"]["action"] == "reply_only"
@@ -739,7 +739,7 @@ def test_chat_pending_restore_confirmation_keeps_response_contract(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"session_id", "reply", "items", "state", "result_count"}
+    assert set(body) == {"session_id", "reply", "items", "state", "result_count", "content_blocks"}
     assert body["result_count"] == 1
     assert body["items"][0]["product_id"] == "p_restore_phone"
     assert body["state"]["action"] == "recommend"
@@ -767,7 +767,7 @@ def test_chat_tool_error_keeps_response_shape(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"session_id", "reply", "items", "state", "result_count"}
+    assert set(payload) == {"session_id", "reply", "items", "state", "result_count", "content_blocks"}
     assert payload["session_id"] == "test-chat-tool-error-session"
     assert payload["items"] == []
     assert payload["result_count"] == 0

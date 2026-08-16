@@ -1,4 +1,11 @@
-"""LangGraph 版导购 Agent Runner。"""
+"""LangGraph-style shopping Agent runner.
+
+This runner is the backend orchestration center: it keeps LLM understanding,
+conversation memory, deterministic policy, tool execution, and response state
+in one explicit turn pipeline.
+"""
+
+from __future__ import annotations
 
 import logging
 import time
@@ -25,13 +32,14 @@ from agent.memory import (
     SessionLockManager,
     VersionedConversationStore,
 )
-from agent.negative_feedback_models import NegativeFeedbackApplicationResult
 from agent.negative_feedback_rules import extract_negative_updates
 from agent.policy import decide_next_action
 from agent.reply_builder import (
     build_clarify_reply,
+    build_commerce_reply,
     build_compare_reply,
     build_explain_reply,
+    build_llm_reply,
     build_negative_feedback_noop_reply,
     build_no_results_reply,
     build_recommendation_reply,
@@ -54,24 +62,28 @@ from schemas.product import ProductCard
 
 logger = logging.getLogger(__name__)
 
-class ShoppingAgentState(TypedDict, total=False):
+
+class ShoppingGraphState(TypedDict, total=False):
+    """Mutable state passed between LangGraph nodes for one shopping turn."""
+
     session_id: str
     message: str
     conversation: ConversationState
+    persist_response: bool
     understanding: UserUnderstanding
-    negative_feedback_result: NegativeFeedbackApplicationResult
-    pending_restore_command: ConversationCommand
+    negative_feedback_result: Any
     current_turn_is_broad: bool
+    pending_restore_command: ConversationCommand
     action: AgentAction
     action_result: ActionResult
-    reply: str
     items: list[ProductCard]
+    reply: str
+    content_blocks: list[dict[str, Any]]
     response: ChatResponse
-    persist_response: bool
 
 
 class LangGraphAgentRunner:
-    """基于 LangGraph 的多轮导购 Agent。"""
+    """Multi-turn shopping Agent runner used by `/chat` and `/chat/stream`."""
 
     def __init__(
         self,
@@ -81,7 +93,8 @@ class LangGraphAgentRunner:
         llm_config: LLMConfig | None = None,
         session_lock_manager: SessionLockManager | None = None,
         session_lock_enabled: bool = True,
-    ):
+        commerce_tool=None,
+    ) -> None:
         self.store = store
         self.recommendation_tool = recommendation_tool
         self.llm_config = llm_config or load_app_config().llm
@@ -91,15 +104,73 @@ class LangGraphAgentRunner:
         self.session_lock_manager = session_lock_manager or SessionLockManager()
         self.session_lock_enabled = session_lock_enabled
         self.state_reducer = ConversationStateReducer()
-        self.action_executor = ActionExecutor(recommendation_tool)
+        self.action_executor = ActionExecutor(
+            recommendation_tool,
+            commerce_tool=commerce_tool,
+        )
         self.response_state_builder = ResponseStateBuilder()
-
+        self._node_callback: Callable[[str, str, str], None] | None = None
         self.graph = self._build_graph()
 
-    def run(self, session_id: str, message: str) -> ChatResponse:
+    def _build_graph(self):
+        """Compile the real conditional LangGraph used for every turn."""
+        builder = StateGraph(ShoppingGraphState)
+        builder.add_node("understand_user", self._graph_node("understand_user", self._understand_user))
+        builder.add_node("update_memory", self._graph_node("update_memory", self._update_memory))
+        builder.add_node(
+            "decide_next_action",
+            self._graph_node("decide_next_action", self._decide_next_action),
+        )
+        for action_name in (action.value for action in AgentAction):
+            node_name = f"execute_{action_name}"
+            builder.add_node(node_name, self._graph_node(node_name, self._execute_action))
+            builder.add_edge(node_name, "generate_reply")
+        builder.add_node("generate_reply", self._graph_node("generate_reply", self._generate_reply))
+        builder.add_node(
+            "finalize_response",
+            self._graph_node("finalize_response", self._finalize_response),
+        )
+
+        builder.add_edge(START, "understand_user")
+        builder.add_edge("understand_user", "update_memory")
+        builder.add_edge("update_memory", "decide_next_action")
+        builder.add_conditional_edges(
+            "decide_next_action",
+            self._route_action,
+            {
+                action.value: f"execute_{action.value}"
+                for action in AgentAction
+            },
+        )
+        builder.add_edge("generate_reply", "finalize_response")
+        builder.add_edge("finalize_response", END)
+        return builder.compile()
+
+    def _graph_node(
+        self,
+        node: str,
+        handler: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> Callable[[ShoppingGraphState], dict[str, Any]]:
+        def invoke(state: ShoppingGraphState) -> dict[str, Any]:
+            return self._timed_node(node, handler, dict(state))
+
+        return invoke
+
+    @staticmethod
+    def _route_action(state: ShoppingGraphState) -> str:
+        return state["action"].value
+
+    def run(
+        self,
+        session_id: str,
+        message: str,
+        node_callback: Callable[[str, str, str], None] | None = None,
+    ) -> ChatResponse:
+        self._node_callback = node_callback
         context = get_request_context()
-        request_id = context.request_id if context.request_id != "-" else uuid4().hex
+        request_id = context.request_id if context and context.request_id != "-" else uuid4().hex
         turn_id = uuid4().hex
+
         with set_request_context(
             request_id=request_id,
             session_id=session_id,
@@ -121,26 +192,26 @@ class LangGraphAgentRunner:
                     response = self._run_state_update(session_id, message)
             else:
                 response = self._run_state_update(session_id, message)
-            logger.info("agent run completed session_id=%s turn_id=%s", session_id, turn_id)
-        return response
+
+            logger.info(
+                "agent run completed session_id=%s turn_id=%s",
+                session_id,
+                turn_id,
+            )
+            return response
 
     def _run_state_update(self, session_id: str, message: str) -> ChatResponse:
-        """把一整轮图执行包进 store.update()，成功响应后才提交会话状态。"""
         if isinstance(self.store, VersionedConversationStore):
             response_holder: dict[str, ChatResponse] = {}
 
             def mutate(conversation: ConversationState) -> ConversationState:
-                # 冲突重试时 mutate 可能被再次执行；只把最终一次返回的状态交给 store 提交。
-                result = self.graph.invoke(
-                    {
-                        "session_id": session_id,
-                        "message": message,
-                        "conversation": conversation,
-                        "persist_response": False,
-                    }
+                response_holder["response"], next_state = self._run_turn(
+                    session_id=session_id,
+                    message=message,
+                    conversation=conversation,
+                    persist_response=False,
                 )
-                response_holder["response"] = result["response"]
-                return result["conversation"]
+                return next_state
 
             self.store.update(session_id, mutate)
             return response_holder["response"]
@@ -148,121 +219,95 @@ class LangGraphAgentRunner:
         logger.warning(
             "conversation store does not support atomic update; falling back to save path"
         )
-        result = self.graph.invoke(
-            {
-                "session_id": session_id,
-                "message": message,
-                "persist_response": True,
-            }
+        conversation = self.store.get_or_create(session_id)
+        response, _ = self._run_turn(
+            session_id=session_id,
+            message=message,
+            conversation=conversation,
+            persist_response=True,
         )
-        return result["response"]
+        return response
 
-    def _build_graph(self):
-        graph = StateGraph(ShoppingAgentState)
-        graph.add_node(
-            "understand_user",
-            self._timed_node("understand_user", self._understand_user),
-        )
-        graph.add_node(
-            "update_memory",
-            self._timed_node("update_memory", self._update_memory),
-        )
-        graph.add_node(
-            "decide_next_action",
-            self._timed_node("decide_next_action", self._decide_next_action),
-        )
-        graph.add_node(
-            "execute_action",
-            self._timed_node("execute_action", self._execute_action),
-        )
-        graph.add_node(
-            "generate_reply",
-            self._timed_node("generate_reply", self._generate_reply),
-        )
-        graph.add_node(
-            "finalize_response",
-            self._timed_node("finalize_response", self._finalize_response),
-        )
-
-        graph.add_edge(START, "understand_user")
-        graph.add_edge("understand_user", "update_memory")
-        graph.add_edge("update_memory", "decide_next_action")
-        graph.add_edge("decide_next_action", "execute_action")
-        graph.add_edge("execute_action", "generate_reply")
-        graph.add_edge("generate_reply", "finalize_response")
-        graph.add_edge("finalize_response", END)
-        return graph.compile()
+    def _run_turn(
+        self,
+        *,
+        session_id: str,
+        message: str,
+        conversation: ConversationState,
+        persist_response: bool,
+    ) -> tuple[ChatResponse, ConversationState]:
+        state: ShoppingGraphState = {
+            "session_id": session_id,
+            "message": message,
+            "conversation": conversation,
+            "persist_response": persist_response,
+        }
+        result = self.graph.invoke(state)
+        return result["response"], result["conversation"]
 
     def _timed_node(
         self,
         node: str,
-        handler: Callable[[ShoppingAgentState], dict[str, Any]],
-    ) -> Callable[[ShoppingAgentState], dict[str, Any]]:
-        """包装 LangGraph 节点，记录耗时和脱敏后的结构化状态。"""
-
-        def wrapped(state: ShoppingAgentState) -> dict[str, Any]:
-            started_at = time.perf_counter()
-            logger.info("agent node started node=%s", node)
-            try:
-                output = handler(state)
-            except Exception as exc:
-                duration_ms = (time.perf_counter() - started_at) * 1000
-                logger.exception(
-                    "agent node failed node=%s duration_ms=%.3f error_type=%s",
-                    node,
-                    duration_ms,
-                    type(exc).__name__,
-                )
-                raise
-
+        handler: Callable[[dict[str, Any]], dict[str, Any]],
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        self._emit("start", node)
+        started_at = time.perf_counter()
+        logger.info("agent node started node=%s", node)
+        try:
+            output = handler(state)
+        except Exception as exc:
             duration_ms = (time.perf_counter() - started_at) * 1000
-            merged_state: ShoppingAgentState = {**state, **output}
-            fields = self._node_log_fields(node, merged_state, output)
-            logger.info(
-                (
-                    "agent node completed node=%s duration_ms=%.3f status=ok "
-                    "intent=%s action=%s reply_type=%s fallback_reason=%s result_count=%s"
-                ),
+            logger.exception(
+                "agent node failed node=%s duration_ms=%.3f error_type=%s",
                 node,
                 duration_ms,
-                fields["intent"],
-                fields["action"],
-                fields["reply_type"],
-                fields["fallback_reason"],
-                fields["result_count"],
+                type(exc).__name__,
             )
-            return output
+            raise
 
-        return wrapped
+        duration_ms = (time.perf_counter() - started_at) * 1000
+        merged = {**state, **output}
+        fields = self._node_log_fields(merged)
+        logger.info(
+            (
+                "agent node completed node=%s duration_ms=%.3f status=ok "
+                "intent=%s action=%s reply_type=%s fallback_reason=%s result_count=%s"
+            ),
+            node,
+            duration_ms,
+            fields["intent"],
+            fields["action"],
+            fields["reply_type"],
+            fields["fallback_reason"],
+            fields["result_count"],
+        )
+        self._emit("done", node, self._node_detail(node, merged))
+        return output
 
-    def _node_log_fields(
-        self,
-        node: str,
-        state: ShoppingAgentState,
-        output: dict[str, Any],
-    ) -> dict[str, Any]:
+    def _node_log_fields(self, state: dict[str, Any]) -> dict[str, Any]:
         understanding = state.get("understanding")
         action = state.get("action")
         action_result = state.get("action_result")
         items = state.get("items")
-
-        fallback_reason = "-"
         result_count: int | str = "-"
+        fallback_reason = "-"
         reply_type = getattr(action_result, "reply_type", "-") if action_result else "-"
         if action_result:
-            result_count = len(action_result.items)
+            result_count = (
+                action_result.result_count
+                if action_result.result_count is not None
+                else len(action_result.items)
+            )
             fallback_reason = self._fallback_reason(action_result)
         elif isinstance(items, list):
             result_count = len(items)
-
         return {
-            "node": node,
             "intent": getattr(getattr(understanding, "intent", None), "value", "-"),
-            "action": getattr(getattr(action, "value", action), "value", action) or "-",
+            "action": getattr(action, "value", action) or "-",
             "reply_type": reply_type,
             "fallback_reason": fallback_reason,
             "result_count": result_count,
-            "output_keys": ",".join(sorted(output)),
         }
 
     def _fallback_reason(self, action_result: ActionResult) -> str:
@@ -275,11 +320,9 @@ class LangGraphAgentRunner:
             return negative_feedback.noop_reason or "negative_feedback_noop"
         return "-"
 
-    def _understand_user(self, state: ShoppingAgentState) -> dict[str, Any]:
-        conversation = state.get("conversation") or self.store.get_or_create(
-            state["session_id"]
-        )
-        message = state["message"]
+    def _understand_user(self, state: dict[str, Any]) -> dict[str, Any]:
+        conversation: ConversationState = state["conversation"]
+        message: str = state["message"]
         conversation.messages.append(ChatMessage(role="user", content=message))
 
         message_negative_updates = extract_negative_updates(message)
@@ -330,26 +373,27 @@ class LangGraphAgentRunner:
         )
 
         restore_category = understanding.restore_context_category
-        if restore_category:
-            if request_restore(conversation, restore_category):
-                understanding = UserUnderstanding(
-                    intent=UserIntent.CLARIFY,
-                    confidence=understanding.confidence,
-                    clarifying_question=(
-                        "是否恢复之前的"
-                        f"{conversation.pending_restore_display_target or restore_category}"
-                        "需求？"
-                    ),
-                    restore_context_category=restore_category,
-                )
+        if restore_category and request_restore(conversation, restore_category):
+            understanding = UserUnderstanding(
+                intent=UserIntent.CLARIFY,
+                confidence=understanding.confidence,
+                clarifying_question=(
+                    "是否恢复之前的"
+                    f"{conversation.pending_restore_display_target or restore_category}"
+                    "需求？"
+                ),
+                restore_context_category=restore_category,
+            )
+
         logger.info("agent intent understood intent=%s", understanding.intent.value)
         return {"conversation": conversation, "understanding": understanding}
 
-    def _update_memory(self, state: ShoppingAgentState) -> dict[str, Any]:
+    def _update_memory(self, state: dict[str, Any]) -> dict[str, Any]:
         result = self.state_reducer.reduce(
             conversation=state["conversation"],
             understanding=state["understanding"],
-            restore_command=state.get("pending_restore_command"),
+            restore_command=state.get("pending_restore_command")
+            or ConversationCommand.NONE,
         )
         return {
             "conversation": result.conversation,
@@ -358,7 +402,7 @@ class LangGraphAgentRunner:
             "current_turn_is_broad": result.current_turn_is_broad,
         }
 
-    def _decide_next_action(self, state: ShoppingAgentState) -> dict[str, AgentAction]:
+    def _decide_next_action(self, state: dict[str, Any]) -> dict[str, Any]:
         return {
             "action": decide_next_action(
                 state["understanding"],
@@ -367,36 +411,25 @@ class LangGraphAgentRunner:
             )
         }
 
-    def _execute_action(self, state: ShoppingAgentState) -> dict[str, ActionResult]:
-        action_result = self.action_executor.execute(
-            action=state["action"],
-            conversation=state["conversation"],
-            understanding=state["understanding"],
-            negative_feedback_result=state.get("negative_feedback_result"),
-        )
-        return {"action_result": action_result}
+    def _execute_action(self, state: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "action_result": self.action_executor.execute(
+                action=state["action"],
+                conversation=state["conversation"],
+                understanding=state["understanding"],
+                negative_feedback_result=state.get("negative_feedback_result"),
+            )
+        }
 
-    def _generate_reply(self, state: ShoppingAgentState) -> dict[str, Any]:
-        action_result = state["action_result"]
+    def _generate_reply(self, state: dict[str, Any]) -> dict[str, Any]:
+        action: AgentAction = state["action"]
+        action_result: ActionResult = state["action_result"]
+        content_blocks: list[dict[str, Any]] = []
 
         if action_result.reply_type == "negative_feedback_noop_reply":
-            return {
-                "reply": build_negative_feedback_noop_reply(
-                    action_result.negative_feedback
-                ),
-                "items": action_result.items,
-            }
-
-        if action_result.reply_type == "recommendation_reply":
-            target_category = state["conversation"].preferences.get("target_category")
-            reply = build_recommendation_reply(
-                items=action_result.items,
-                negative_feedback=action_result.negative_feedback,
-                current_turn_is_broad=state.get("current_turn_is_broad") is True,
-                target_category=(
-                    target_category if isinstance(target_category, str) else None
-                ),
-            )
+            reply = build_negative_feedback_noop_reply(action_result.negative_feedback)
+        elif action_result.reply_type == "recommendation_reply":
+            reply, content_blocks = self._build_recommendation_text(state)
         elif action_result.reply_type == "explain_reply":
             reply = build_explain_reply(action_result)
         elif action_result.reply_type == "compare_reply":
@@ -405,28 +438,89 @@ class LangGraphAgentRunner:
             reply = build_no_results_reply(action_result.no_results)
         elif action_result.reply_type == "tool_error_reply":
             reply = build_tool_error_reply()
+        elif action_result.reply_type in {
+            "cart_reply",
+            "cart_updated_reply",
+            "order_created_reply",
+            "order_status_reply",
+            "order_cancelled_reply",
+            "commerce_error_reply",
+        }:
+            reply = build_commerce_reply(
+                action_result.reply_type,
+                action_result.commerce_state,
+            )
         else:
             reply = build_clarify_reply(action_result.clarifying_question)
 
-        return {"reply": reply, "items": action_result.items}
+        return {
+            "reply": reply,
+            "items": action_result.items,
+            "content_blocks": content_blocks,
+            "action": action,
+        }
 
-    def _finalize_response(self, state: ShoppingAgentState) -> dict[str, Any]:
-        conversation = state["conversation"]
+    def _build_recommendation_text(
+        self,
+        state: dict[str, Any],
+    ) -> tuple[str, list[dict[str, Any]]]:
+        action_result: ActionResult = state["action_result"]
+        conversation: ConversationState = state["conversation"]
+        try:
+            return build_llm_reply(
+                action_result=action_result,
+                action=state["action"],
+                purchase_need=conversation.purchase_need,
+                messages=conversation.messages,
+                preferences=conversation.preferences,
+                llm_config=self.llm_config,
+            )
+        except Exception:
+            logger.debug("llm reply generation unavailable; using deterministic reply")
 
+        target_category = conversation.preferences.get("target_category")
+        return (
+            build_recommendation_reply(
+                items=action_result.items,
+                negative_feedback=action_result.negative_feedback,
+                current_turn_is_broad=state.get("current_turn_is_broad") is True,
+                target_category=target_category if isinstance(target_category, str) else None,
+            ),
+            [],
+        )
+
+    def _finalize_response(self, state: dict[str, Any]) -> dict[str, Any]:
+        conversation: ConversationState = state["conversation"]
         conversation.messages.append(ChatMessage(role="assistant", content=state["reply"]))
         if state.get("persist_response", True):
             self.store.save(conversation)
 
-        return {
-            "conversation": conversation,
-            "response": self.response_state_builder.build_response(
-                session_id=state["session_id"],
-                reply=state["reply"],
-                items=state["items"],
-                conversation=conversation,
-                understanding=state["understanding"],
-                action=state["action"],
-                action_result=state["action_result"],
-                negative_feedback_result=state.get("negative_feedback_result"),
-            )
-        }
+        response = self.response_state_builder.build_response(
+            session_id=state["session_id"],
+            reply=state["reply"],
+            items=state["items"],
+            conversation=conversation,
+            understanding=state["understanding"],
+            action=state["action"],
+            action_result=state["action_result"],
+            negative_feedback_result=state.get("negative_feedback_result"),
+            content_blocks=state.get("content_blocks") or [],
+        )
+        return {"conversation": conversation, "response": response}
+
+    def _node_detail(self, node: str, state: dict[str, Any]) -> str:
+        if node == "understand_user" and state.get("understanding"):
+            return f"识别意图：{state['understanding'].intent.value}"
+        if node == "decide_next_action" and state.get("action"):
+            return f"选择动作：{state['action'].value}"
+        if node == "execute_action" and state.get("action_result"):
+            result = state["action_result"]
+            count = result.result_count if result.result_count is not None else len(result.items)
+            return f"工具结果：{result.reply_type}，候选 {count} 个"
+        if node == "generate_reply":
+            return "生成导购回复"
+        return node
+
+    def _emit(self, event: str, node: str, detail: str = "") -> None:
+        if self._node_callback:
+            self._node_callback(event, node, detail)

@@ -156,6 +156,8 @@ class ConversationState(BaseModel):
     previous_purchase_contexts: list[PurchaseContext] = Field(default_factory=list)
     pending_restore_category: str | None = None
     pending_restore_display_target: str | None = None
+    last_order_id: str | None = None
+    pending_checkout_token: str | None = None
 
     def preferences_model(self) -> PurchasePreferences:
         """以 typed helper 读取偏好，持久化层仍保留 dict 兼容旧会话。"""

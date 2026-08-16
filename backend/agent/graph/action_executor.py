@@ -9,7 +9,8 @@ from agent.memory import ConversationState
 from agent.negative_feedback import build_negative_filters
 from agent.negative_feedback_models import NegativeFeedbackApplicationResult
 from agent.query_builder import build_recommendation_query
-from agent.tools import CompareTool, ExplainTool, RecommendationTool
+from agent.tools import CommerceTool, CompareTool, ExplainTool, RecommendationTool
+from core.errors import AppError
 from agent.understanding import (
     ActionResult,
     AgentAction,
@@ -30,10 +31,12 @@ class ActionExecutor:
         *,
         explain_tool: ExplainTool | None = None,
         compare_tool: CompareTool | None = None,
+        commerce_tool: CommerceTool | None = None,
     ) -> None:
         self.recommendation_tool = recommendation_tool
         self.explain_tool = explain_tool or ExplainTool()
         self.compare_tool = compare_tool or CompareTool()
+        self.commerce_tool = commerce_tool
 
     def execute(
         self,
@@ -71,6 +74,31 @@ class ActionExecutor:
                 negative_feedback=negative_feedback_result,
             )
 
+        if action in {
+            AgentAction.ADD_TO_CART,
+            AgentAction.VIEW_CART,
+            AgentAction.CHECKOUT,
+            AgentAction.ORDER_STATUS,
+            AgentAction.CANCEL_ORDER,
+        }:
+            if self.commerce_tool is None:
+                return ActionResult(
+                    action=action,
+                    reply_type="commerce_error_reply",
+                    commerce_state={"code": "commerce_unavailable"},
+                )
+            try:
+                return self.commerce_tool.run(action, conversation, understanding)
+            except (AppError, ValueError) as exc:
+                return ActionResult(
+                    action=action,
+                    reply_type="commerce_error_reply",
+                    commerce_state={
+                        "code": getattr(exc, "code", "invalid_commerce_request"),
+                        "message": getattr(exc, "message", str(exc)),
+                    },
+                )
+
         question = (
             negative_feedback_result.clarifying_question
             if negative_feedback_result and negative_feedback_result.clarifying_question
@@ -89,7 +117,7 @@ class ActionExecutor:
         conversation: ConversationState,
         negative_feedback: NegativeFeedbackApplicationResult | None = None,
     ) -> ActionResult:
-        recommendation_query = build_recommendation_query(conversation)
+        recommendation_query = build_recommendation_query(conversation) or "推荐商品"
         logger.debug("agent recommendation query_length=%s", len(recommendation_query))
         try:
             result = self.recommendation_tool.run(

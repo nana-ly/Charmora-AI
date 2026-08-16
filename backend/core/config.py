@@ -41,6 +41,41 @@ class RAGConfig:
 
 
 @dataclass(frozen=True)
+class DatabaseConfig:
+    """PostgreSQL business database configuration."""
+
+    url: str = "postgresql+psycopg://shopguide:shopguide@localhost:5432/shopguide"
+    pool_size: int = 5
+    max_overflow: int = 10
+    pool_timeout_seconds: float = 10.0
+    echo: bool = False
+    expected_revision: str = "20260816_0002"
+
+
+@dataclass(frozen=True)
+class MultimodalConfig:
+    upload_root: str = "data/uploads"
+    max_image_bytes: int = 10 * 1024 * 1024
+    max_audio_bytes: int = 15 * 1024 * 1024
+    max_audio_seconds: int = 60
+    image_embedding_url: str = ""
+    image_embedding_api_key: str = ""
+    vision_enabled: bool = False
+    vision_api_key: str = ""
+    vision_base_url: str = "https://api.openai.com/v1"
+    vision_model: str = "gpt-4o-mini"
+    asr_enabled: bool = False
+    asr_api_key: str = ""
+    asr_base_url: str = "https://api.openai.com/v1"
+    asr_model: str = "whisper-1"
+    tts_enabled: bool = False
+    tts_api_key: str = ""
+    tts_base_url: str = "https://api.openai.com/v1"
+    tts_model: str = "gpt-4o-mini-tts"
+    tts_voice: str = "alloy"
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """后端应用级配置。
 
@@ -60,8 +95,11 @@ class AppConfig:
     product_image_base_url: str = "/assets/products"
     product_image_static_root: str = "../ecommerce_agent_dataset"
     product_image_static_enabled: bool = True
+    catalog_source: str = "legacy"
     llm: LLMConfig = field(default_factory=LLMConfig)
     rag: RAGConfig = field(default_factory=RAGConfig)
+    database: DatabaseConfig = field(default_factory=DatabaseConfig)
+    multimodal: MultimodalConfig = field(default_factory=MultimodalConfig)
 
 
 def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] / ".env") -> AppConfig:
@@ -69,6 +107,10 @@ def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] 
     if env_file is not None:
         # 不覆盖已存在的环境变量，便于测试和部署平台显式传入配置。
         load_dotenv(env_file, override=False)
+
+    demo_database = Path(__file__).resolve().parents[1] / "data" / "charmora_demo.db"
+    demo_database.parent.mkdir(parents=True, exist_ok=True)
+    demo_database_url = "sqlite+pysqlite:///" + demo_database.as_posix()
 
     return AppConfig(
         agent_runner=os.getenv("AGENT_RUNNER", "langgraph"),
@@ -112,6 +154,42 @@ def load_app_config(env_file: Path | None = Path(__file__).resolve().parents[1] 
             embedding_api=os.getenv("embedding_api", ""),
             embedding_model=os.getenv("embedding_model", "text-embedding-v4"),
             embedding_dimensions=_read_embedding_dimensions(),
+        ),
+        catalog_source=os.getenv(
+            "CATALOG_SOURCE",
+            "postgresql" if os.getenv("DATABASE_URL") else "legacy",
+        ),
+        database=DatabaseConfig(
+            url=os.getenv(
+                "DATABASE_URL",
+                demo_database_url,
+            ),
+            pool_size=int(os.getenv("DATABASE_POOL_SIZE", "5")),
+            max_overflow=int(os.getenv("DATABASE_MAX_OVERFLOW", "10")),
+            pool_timeout_seconds=float(os.getenv("DATABASE_POOL_TIMEOUT_SECONDS", "10")),
+            echo=os.getenv("DATABASE_ECHO", "false").lower() == "true",
+            expected_revision=os.getenv("DATABASE_EXPECTED_REVISION", "20260816_0002"),
+        ),
+        multimodal=MultimodalConfig(
+            upload_root=os.getenv("MULTIMODAL_UPLOAD_ROOT", "data/uploads"),
+            max_image_bytes=int(os.getenv("MAX_IMAGE_UPLOAD_BYTES", str(10 * 1024 * 1024))),
+            max_audio_bytes=int(os.getenv("MAX_AUDIO_UPLOAD_BYTES", str(15 * 1024 * 1024))),
+            max_audio_seconds=int(os.getenv("MAX_AUDIO_SECONDS", "60")),
+            image_embedding_url=os.getenv("IMAGE_EMBEDDING_URL", ""),
+            image_embedding_api_key=os.getenv("IMAGE_EMBEDDING_API_KEY", ""),
+            vision_enabled=os.getenv("VISION_ENABLED", "false").lower() == "true",
+            vision_api_key=os.getenv("VISION_API_KEY", ""),
+            vision_base_url=os.getenv("VISION_BASE_URL", "https://api.openai.com/v1"),
+            vision_model=os.getenv("VISION_MODEL", "gpt-4o-mini"),
+            asr_enabled=os.getenv("ASR_ENABLED", "false").lower() == "true",
+            asr_api_key=os.getenv("ASR_API_KEY", ""),
+            asr_base_url=os.getenv("ASR_BASE_URL", "https://api.openai.com/v1"),
+            asr_model=os.getenv("ASR_MODEL", "whisper-1"),
+            tts_enabled=os.getenv("TTS_ENABLED", "false").lower() == "true",
+            tts_api_key=os.getenv("TTS_API_KEY", ""),
+            tts_base_url=os.getenv("TTS_BASE_URL", "https://api.openai.com/v1"),
+            tts_model=os.getenv("TTS_MODEL", "gpt-4o-mini-tts"),
+            tts_voice=os.getenv("TTS_VOICE", "alloy"),
         ),
     )
 

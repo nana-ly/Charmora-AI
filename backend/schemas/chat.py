@@ -29,6 +29,7 @@ class ChatResponse(BaseModel):
     result_count: int | None = None
     items: list[ProductCard] = Field(default_factory=list)
     state: dict[str, Any] = Field(default_factory=dict)
+    content_blocks: list[dict[str, Any]] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def default_result_count(self):

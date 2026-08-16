@@ -1,0 +1,1178 @@
+[
+  {
+    "product_id": "life-01-001",
+    "title": "奶油白蝴蝶结抓夹",
+    "brand": "ShopGuide Select",
+    "category": "首饰发饰",
+    "base_price": 19.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-01.jpg",
+    "attributes": {
+      "color": "奶油白",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-01-001-default",
+        "properties": {
+          "颜色": "奶油白",
+          "规格": "默认规格"
+        },
+        "price": 19.9,
+        "stock": 36
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "甜美日常盘发。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-01-002",
+    "title": "星月叠戴项链",
+    "brand": "ShopGuide Select",
+    "category": "首饰发饰",
+    "base_price": 29.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-01.jpg",
+    "attributes": {
+      "color": "银色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-01-002-default",
+        "properties": {
+          "颜色": "银色",
+          "规格": "默认规格"
+        },
+        "price": 29.9,
+        "stock": 43
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "简约通勤搭配。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-01-003",
+    "title": "磨砂几何发圈三件套",
+    "brand": "ShopGuide Select",
+    "category": "首饰发饰",
+    "base_price": 15.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-01.jpg",
+    "attributes": {
+      "color": "燕麦色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-01-003-default",
+        "properties": {
+          "颜色": "燕麦色",
+          "规格": "默认规格"
+        },
+        "price": 15.9,
+        "stock": 50
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "低饱和日常发饰。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-01-004",
+    "title": "珍珠小花耳钉",
+    "brand": "ShopGuide Select",
+    "category": "首饰发饰",
+    "base_price": 22.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-01.jpg",
+    "attributes": {
+      "color": "珍珠白",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-01-004-default",
+        "properties": {
+          "颜色": "珍珠白",
+          "规格": "默认规格"
+        },
+        "price": 22.9,
+        "stock": 57
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "轻巧礼赠首饰。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-01-005",
+    "title": "复古方糖戒指",
+    "brand": "ShopGuide Select",
+    "category": "首饰发饰",
+    "base_price": 26.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-01.jpg",
+    "attributes": {
+      "color": "金色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-01-005-default",
+        "properties": {
+          "颜色": "金色",
+          "规格": "默认规格"
+        },
+        "price": 26.9,
+        "stock": 64
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "可调节叠戴戒指。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-01-006",
+    "title": "彩色串珠手链",
+    "brand": "ShopGuide Select",
+    "category": "首饰发饰",
+    "base_price": 18.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-01.jpg",
+    "attributes": {
+      "color": "彩色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-01-006-default",
+        "properties": {
+          "颜色": "彩色",
+          "规格": "默认规格"
+        },
+        "price": 18.9,
+        "stock": 71
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "活泼夏日配饰。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-02-001",
+    "title": "困困小熊毛绒挂件",
+    "brand": "ShopGuide Select",
+    "category": "挂件毛绒",
+    "base_price": 25.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-02.jpg",
+    "attributes": {
+      "color": "焦糖棕",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-02-001-default",
+        "properties": {
+          "颜色": "焦糖棕",
+          "规格": "默认规格"
+        },
+        "price": 25.9,
+        "stock": 47
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "书包钥匙治愈挂件。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-02-002",
+    "title": "软糖兔坐姿玩偶",
+    "brand": "ShopGuide Select",
+    "category": "挂件毛绒",
+    "base_price": 49.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-02.jpg",
+    "attributes": {
+      "color": "草莓粉",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-02-002-default",
+        "properties": {
+          "颜色": "草莓粉",
+          "规格": "默认规格"
+        },
+        "price": 49.9,
+        "stock": 54
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "宿舍床头软萌玩偶。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-02-003",
+    "title": "吐司小狗钥匙扣",
+    "brand": "ShopGuide Select",
+    "category": "挂件毛绒",
+    "base_price": 19.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-02.jpg",
+    "attributes": {
+      "color": "奶油黄",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-02-003-default",
+        "properties": {
+          "颜色": "奶油黄",
+          "规格": "默认规格"
+        },
+        "price": 19.9,
+        "stock": 61
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "轻量可爱随身挂件。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-02-004",
+    "title": "云朵猫咪毛绒挂件",
+    "brand": "ShopGuide Select",
+    "category": "挂件毛绒",
+    "base_price": 23.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-02.jpg",
+    "attributes": {
+      "color": "雾蓝",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-02-004-default",
+        "properties": {
+          "颜色": "雾蓝",
+          "规格": "默认规格"
+        },
+        "price": 23.9,
+        "stock": 68
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "送朋友的小巧礼物。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-02-005",
+    "title": "趴趴企鹅桌面玩偶",
+    "brand": "ShopGuide Select",
+    "category": "挂件毛绒",
+    "base_price": 39.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-02.jpg",
+    "attributes": {
+      "color": "黑白",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-02-005-default",
+        "properties": {
+          "颜色": "黑白",
+          "规格": "默认规格"
+        },
+        "price": 39.9,
+        "stock": 18
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "桌面陪伴毛绒摆件。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-02-006",
+    "title": "迷你恐龙挂件",
+    "brand": "ShopGuide Select",
+    "category": "挂件毛绒",
+    "base_price": 21.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-02.jpg",
+    "attributes": {
+      "color": "抹茶绿",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-02-006-default",
+        "properties": {
+          "颜色": "抹茶绿",
+          "规格": "默认规格"
+        },
+        "price": 21.9,
+        "stock": 25
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "双肩包趣味挂饰。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-03-001",
+    "title": "云朵绗缝化妆包",
+    "brand": "ShopGuide Select",
+    "category": "包袋收纳",
+    "base_price": 35.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-03.jpg",
+    "attributes": {
+      "color": "雾紫",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-03-001-default",
+        "properties": {
+          "颜色": "雾紫",
+          "规格": "默认规格"
+        },
+        "price": 35.9,
+        "stock": 58
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "旅行通勤分区收纳。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-03-002",
+    "title": "轻便多隔层斜挎包",
+    "brand": "ShopGuide Select",
+    "category": "包袋收纳",
+    "base_price": 69.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-03.jpg",
+    "attributes": {
+      "color": "黑色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-03-002-default",
+        "properties": {
+          "颜色": "黑色",
+          "规格": "默认规格"
+        },
+        "price": 69.9,
+        "stock": 65
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "轻装通勤随身包。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-03-003",
+    "title": "透明网纱洗漱包",
+    "brand": "ShopGuide Select",
+    "category": "包袋收纳",
+    "base_price": 29.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-03.jpg",
+    "attributes": {
+      "color": "透明白",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-03-003-default",
+        "properties": {
+          "颜色": "透明白",
+          "规格": "默认规格"
+        },
+        "price": 29.9,
+        "stock": 72
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "浴室旅行可视收纳。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-03-004",
+    "title": "小熊刺绣帆布袋",
+    "brand": "ShopGuide Select",
+    "category": "包袋收纳",
+    "base_price": 45.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-03.jpg",
+    "attributes": {
+      "color": "米白",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-03-004-default",
+        "properties": {
+          "颜色": "米白",
+          "规格": "默认规格"
+        },
+        "price": 45.9,
+        "stock": 22
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "上课通勤大容量包。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-03-005",
+    "title": "抽绳束口便当袋",
+    "brand": "ShopGuide Select",
+    "category": "包袋收纳",
+    "base_price": 24.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-03.jpg",
+    "attributes": {
+      "color": "格纹绿",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-03-005-default",
+        "properties": {
+          "颜色": "格纹绿",
+          "规格": "默认规格"
+        },
+        "price": 24.9,
+        "stock": 29
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "午餐与小物手提袋。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-03-006",
+    "title": "三层证件卡包",
+    "brand": "ShopGuide Select",
+    "category": "包袋收纳",
+    "base_price": 18.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-03.jpg",
+    "attributes": {
+      "color": "奶茶色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-03-006-default",
+        "properties": {
+          "颜色": "奶茶色",
+          "规格": "默认规格"
+        },
+        "price": 18.9,
+        "stock": 36
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "校园门禁卡收纳。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-04-001",
+    "title": "便携气垫梳",
+    "brand": "ShopGuide Select",
+    "category": "美妆工具",
+    "base_price": 16.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-04.jpg",
+    "attributes": {
+      "color": "樱花粉",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-04-001-default",
+        "properties": {
+          "颜色": "樱花粉",
+          "规格": "默认规格"
+        },
+        "price": 16.9,
+        "stock": 69
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "通勤旅行随身梳。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-04-002",
+    "title": "旅行化妆刷五件套",
+    "brand": "ShopGuide Select",
+    "category": "美妆工具",
+    "base_price": 39.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-04.jpg",
+    "attributes": {
+      "color": "香槟色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-04-002-default",
+        "properties": {
+          "颜色": "香槟色",
+          "规格": "默认规格"
+        },
+        "price": 39.9,
+        "stock": 19
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "新手便携基础刷具。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-04-003",
+    "title": "软硅胶洁面刷",
+    "brand": "ShopGuide Select",
+    "category": "美妆工具",
+    "base_price": 12.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-04.jpg",
+    "attributes": {
+      "color": "薄荷绿",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-04-003-default",
+        "properties": {
+          "颜色": "薄荷绿",
+          "规格": "默认规格"
+        },
+        "price": 12.9,
+        "stock": 26
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "日常清洁辅助工具。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-04-004",
+    "title": "迷你睫毛夹",
+    "brand": "ShopGuide Select",
+    "category": "美妆工具",
+    "base_price": 15.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-04.jpg",
+    "attributes": {
+      "color": "银色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-04-004-default",
+        "properties": {
+          "颜色": "银色",
+          "规格": "默认规格"
+        },
+        "price": 15.9,
+        "stock": 33
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "化妆包便携工具。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-04-005",
+    "title": "双面折叠化妆镜",
+    "brand": "ShopGuide Select",
+    "category": "美妆工具",
+    "base_price": 22.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-04.jpg",
+    "attributes": {
+      "color": "奶油白",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-04-005-default",
+        "properties": {
+          "颜色": "奶油白",
+          "规格": "默认规格"
+        },
+        "price": 22.9,
+        "stock": 40
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "桌面随身两用镜。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-04-006",
+    "title": "吸水干发帽",
+    "brand": "ShopGuide Select",
+    "category": "美妆工具",
+    "base_price": 19.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-04.jpg",
+    "attributes": {
+      "color": "浅紫",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-04-006-default",
+        "properties": {
+          "颜色": "浅紫",
+          "规格": "默认规格"
+        },
+        "price": 19.9,
+        "stock": 47
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "洗护日常速干用品。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-05-001",
+    "title": "奶油色按动中性笔六支装",
+    "brand": "ShopGuide Select",
+    "category": "文具",
+    "base_price": 15.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-05.jpg",
+    "attributes": {
+      "color": "奶油色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-05-001-default",
+        "properties": {
+          "颜色": "奶油色",
+          "规格": "默认规格"
+        },
+        "price": 15.9,
+        "stock": 23
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "课堂笔记办公记录。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-05-002",
+    "title": "周计划线圈本",
+    "brand": "ShopGuide Select",
+    "category": "文具",
+    "base_price": 18.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-05.jpg",
+    "attributes": {
+      "color": "鼠尾草绿",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-05-002-default",
+        "properties": {
+          "颜色": "鼠尾草绿",
+          "规格": "默认规格"
+        },
+        "price": 18.9,
+        "stock": 30
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "学习工作周计划。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-05-003",
+    "title": "透明磨砂笔袋",
+    "brand": "ShopGuide Select",
+    "category": "文具",
+    "base_price": 16.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-05.jpg",
+    "attributes": {
+      "color": "半透明",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-05-003-default",
+        "properties": {
+          "颜色": "半透明",
+          "规格": "默认规格"
+        },
+        "price": 16.9,
+        "stock": 37
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "大容量文具收纳。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-05-004",
+    "title": "猫咪索引便签套装",
+    "brand": "ShopGuide Select",
+    "category": "文具",
+    "base_price": 12.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-05.jpg",
+    "attributes": {
+      "color": "彩色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-05-004-default",
+        "properties": {
+          "颜色": "彩色",
+          "规格": "默认规格"
+        },
+        "price": 12.9,
+        "stock": 44
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "阅读标记手账装饰。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-05-005",
+    "title": "桌面迷你订书机",
+    "brand": "ShopGuide Select",
+    "category": "文具",
+    "base_price": 14.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-05.jpg",
+    "attributes": {
+      "color": "浅蓝",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-05-005-default",
+        "properties": {
+          "颜色": "浅蓝",
+          "规格": "默认规格"
+        },
+        "price": 14.9,
+        "stock": 51
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "宿舍办公桌工具。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-05-006",
+    "title": "柔和色双头荧光笔五支装",
+    "brand": "ShopGuide Select",
+    "category": "文具",
+    "base_price": 17.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-05.jpg",
+    "attributes": {
+      "color": "柔和彩色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-05-006-default",
+        "properties": {
+          "颜色": "柔和彩色",
+          "规格": "默认规格"
+        },
+        "price": 17.9,
+        "stock": 58
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "重点标记手账配色。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-06-001",
+    "title": "桌面分格收纳盒",
+    "brand": "ShopGuide Select",
+    "category": "家居日用",
+    "base_price": 24.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-06.jpg",
+    "attributes": {
+      "color": "半透明",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-06-001-default",
+        "properties": {
+          "颜色": "半透明",
+          "规格": "默认规格"
+        },
+        "price": 24.9,
+        "stock": 34
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "宿舍办公桌小物收纳。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-06-002",
+    "title": "旅行衣物收纳袋三件套",
+    "brand": "ShopGuide Select",
+    "category": "家居日用",
+    "base_price": 45.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-06.jpg",
+    "attributes": {
+      "color": "燕麦米",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-06-002-default",
+        "properties": {
+          "颜色": "燕麦米",
+          "规格": "默认规格"
+        },
+        "price": 45.9,
+        "stock": 41
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "旅行箱衣柜分类整理。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-06-003",
+    "title": "按压式桌面垃圾桶",
+    "brand": "ShopGuide Select",
+    "category": "家居日用",
+    "base_price": 29.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-06.jpg",
+    "attributes": {
+      "color": "奶油白",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-06-003-default",
+        "properties": {
+          "颜色": "奶油白",
+          "规格": "默认规格"
+        },
+        "price": 29.9,
+        "stock": 48
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "桌面化妆台小型垃圾桶。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-06-004",
+    "title": "可折叠脏衣篮",
+    "brand": "ShopGuide Select",
+    "category": "家居日用",
+    "base_price": 39.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-06.jpg",
+    "attributes": {
+      "color": "浅灰",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-06-004-default",
+        "properties": {
+          "颜色": "浅灰",
+          "规格": "默认规格"
+        },
+        "price": 39.9,
+        "stock": 55
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "宿舍浴室衣物收纳。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-06-005",
+    "title": "便携随行水杯",
+    "brand": "ShopGuide Select",
+    "category": "家居日用",
+    "base_price": 32.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-06.jpg",
+    "attributes": {
+      "color": "雾蓝",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-06-005-default",
+        "properties": {
+          "颜色": "雾蓝",
+          "规格": "默认规格"
+        },
+        "price": 32.9,
+        "stock": 62
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "学习通勤日常饮水。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-06-006",
+    "title": "香氛衣柜挂片三片装",
+    "brand": "ShopGuide Select",
+    "category": "家居日用",
+    "base_price": 19.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-06.jpg",
+    "attributes": {
+      "color": "白茶",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-06-006-default",
+        "properties": {
+          "颜色": "白茶",
+          "规格": "默认规格"
+        },
+        "price": 19.9,
+        "stock": 69
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "衣柜抽屉清新用品。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-07-001",
+    "title": "元气学习礼物组合",
+    "brand": "ShopGuide Select",
+    "category": "礼赠组合",
+    "base_price": 49.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-07.jpg",
+    "attributes": {
+      "color": "清新绿",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-07-001-default",
+        "properties": {
+          "颜色": "清新绿",
+          "规格": "默认规格"
+        },
+        "price": 49.9,
+        "stock": 45
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "同学朋友开学礼物。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-07-002",
+    "title": "治愈系随身礼物组合",
+    "brand": "ShopGuide Select",
+    "category": "礼赠组合",
+    "base_price": 59.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-07.jpg",
+    "attributes": {
+      "color": "甜心粉",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-07-002-default",
+        "properties": {
+          "颜色": "甜心粉",
+          "规格": "默认规格"
+        },
+        "price": 59.9,
+        "stock": 52
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "毛绒挂件化妆包组合。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-07-003",
+    "title": "通勤新手实用组合",
+    "brand": "ShopGuide Select",
+    "category": "礼赠组合",
+    "base_price": 89.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-07.jpg",
+    "attributes": {
+      "color": "黑色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-07-003-default",
+        "properties": {
+          "颜色": "黑色",
+          "规格": "默认规格"
+        },
+        "price": 89.9,
+        "stock": 59
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "斜挎包卡包随身梳。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-07-004",
+    "title": "宿舍收纳入门组合",
+    "brand": "ShopGuide Select",
+    "category": "礼赠组合",
+    "base_price": 79.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-07.jpg",
+    "attributes": {
+      "color": "燕麦米",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-07-004-default",
+        "properties": {
+          "颜色": "燕麦米",
+          "规格": "默认规格"
+        },
+        "price": 79.9,
+        "stock": 66
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "桌面与衣物收纳组合。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-07-005",
+    "title": "手账文具惊喜组合",
+    "brand": "ShopGuide Select",
+    "category": "礼赠组合",
+    "base_price": 39.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-07.jpg",
+    "attributes": {
+      "color": "柔和彩色",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-07-005-default",
+        "properties": {
+          "颜色": "柔和彩色",
+          "规格": "默认规格"
+        },
+        "price": 39.9,
+        "stock": 73
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "计划本笔和便签组合。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  },
+  {
+    "product_id": "life-07-006",
+    "title": "周末旅行轻装组合",
+    "brand": "ShopGuide Select",
+    "category": "礼赠组合",
+    "base_price": 99.9,
+    "image_path": "synthetic_lifestyle_v1/images/category-07.jpg",
+    "attributes": {
+      "color": "雾紫",
+      "data_origin": "synthetic",
+      "source_batch": "synthetic-lifestyle-v1",
+      "image_source": "Wikimedia Commons category reference"
+    },
+    "skus": [
+      {
+        "sku_id": "life-07-006-default",
+        "properties": {
+          "颜色": "雾紫",
+          "规格": "默认规格"
+        },
+        "price": 99.9,
+        "stock": 23
+      }
+    ],
+    "rag_knowledge": {
+      "marketing_description": "洗漱包收纳袋干发帽。模拟商品，仅用于 ShopGuide 功能演示。"
+    }
+  }
+]

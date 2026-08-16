@@ -368,6 +368,55 @@ start -> error -> done
 }
 ```
 
+## Lifestyle 商品与交易接口
+
+商城客户端使用 PostgreSQL 商品真值库接口：
+
+```http
+GET    /categories
+GET    /products?query=挂件&category_id={uuid}&min_price=0&max_price=50&in_stock=true&sort=price_asc
+GET    /products/{product_id}
+GET    /cart/{session_id}
+POST   /cart/{session_id}/items
+PATCH  /cart/{session_id}/items/{sku_id}
+DELETE /cart/{session_id}/items/{sku_id}
+POST   /orders/preview
+POST   /orders
+GET    /orders?session_id={session_id}
+GET    /orders/{order_id}
+POST   /orders/{order_id}/cancel
+POST   /orders/{order_id}/complete
+```
+
+`GET /products` 的 `sort` 只接受 `newest`、`price_asc`、`price_desc`、`title`。响应中的 `total` 是筛选结果总数；商品包含 `category_name`、`source_key`、图片、SKU、当前价格和可用库存。
+
+结算必须先调用 `POST /orders/preview`。预览会复核价格与库存并返回十分钟有效的一次性 `confirmation_token`。购物车、价格或库存版本变化后，旧 token 不可继续使用。
+
+```json
+{
+  "session_id": "demo-session"
+}
+```
+
+确认模拟支付时调用 `POST /orders`：
+
+```json
+{
+  "session_id": "demo-session",
+  "confirmation_token": "preview-token",
+  "idempotency_key": "android-demo-session-preview-token",
+  "recipient_name": "演示用户",
+  "recipient_phone": "13800000000",
+  "shipping_address": "演示地址",
+  "customer_note": "",
+  "payment_method": "demo_wechat"
+}
+```
+
+`payment_method` 只接受 `demo_wechat`、`demo_alipay`、`demo_bank_card`，不会触发真实扣款。重复的 `idempotency_key` 返回同一订单。订单状态事件依次记录 `created`、`paid`、`preparing`，演示完成后进入 `completed`；取消会进入 `cancelled` 并回补库存。
+
+Agent 的“结算”只生成预览；只有用户明确回复“确认下单”“确认支付”或“确认购买”才创建订单。
+
 ## 后端推荐链路
 
 ```text

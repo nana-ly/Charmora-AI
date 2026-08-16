@@ -10,6 +10,8 @@
 - `GET /`：服务基本信息。
 - `GET /health`：健康检查。
 - `GET /ready`：推荐依赖就绪检查。
+
+本地未配置 `DATABASE_URL` 时会创建 `backend/data/charmora_demo.db`，并自动导入仓库内的 42 个模拟商品，方便 Android 真机联调。部署环境仍建议显式配置 PostgreSQL。
 - `POST /rag/search`：RAG 向量检索调试接口。
 - `POST /recommend`：单轮商品推荐。
 - `POST /chat`：多轮导购对话，使用 LangGraph Runner 维护会话状态并调用推荐工具。
@@ -37,6 +39,16 @@ uv sync
 uv run fastapi dev main.py --host 127.0.0.1 --port 8000
 ```
 
+首次启动业务数据库前执行迁移：
+
+```powershell
+$env:DATABASE_URL="postgresql+psycopg://shopguide:shopguide@localhost:5432/shopguide"
+uv run alembic upgrade head
+```
+
+数据库迁移不会由 Web 进程自动执行。生产部署应在启动 API 前单独执行
+`alembic upgrade head`；回滚前必须先备份业务数据库。
+
 本地服务地址：
 
 ```text
@@ -63,6 +75,32 @@ CONVERSATION_STORE_PATH=data/conversations.sqlite3
 CONVERSATION_STORE_UPDATE_RETRIES=3
 AGENT_SESSION_LOCK_ENABLED=true
 RECOMMEND_TRACE_ENABLED=false
+DATABASE_URL=postgresql+psycopg://shopguide:shopguide@localhost:5432/shopguide
+DATABASE_POOL_SIZE=5
+DATABASE_MAX_OVERFLOW=10
+DATABASE_POOL_TIMEOUT_SECONDS=10
+DATABASE_ECHO=false
+DATABASE_EXPECTED_REVISION=20260816_0002
+CATALOG_SOURCE=postgresql
+MULTIMODAL_UPLOAD_ROOT=data/uploads
+MAX_IMAGE_UPLOAD_BYTES=10485760
+MAX_AUDIO_UPLOAD_BYTES=15728640
+MAX_AUDIO_SECONDS=60
+IMAGE_EMBEDDING_URL=
+IMAGE_EMBEDDING_API_KEY=
+VISION_ENABLED=false
+VISION_API_KEY=
+VISION_BASE_URL=https://api.openai.com/v1
+VISION_MODEL=gpt-4o-mini
+ASR_ENABLED=false
+ASR_API_KEY=
+ASR_BASE_URL=https://api.openai.com/v1
+ASR_MODEL=whisper-1
+TTS_ENABLED=false
+TTS_API_KEY=
+TTS_BASE_URL=https://api.openai.com/v1
+TTS_MODEL=gpt-4o-mini-tts
+TTS_VOICE=alloy
 
 PRODUCT_IMAGE_BASE_URL=/assets/products
 PRODUCT_IMAGE_STATIC_ROOT=../ecommerce_agent_dataset
@@ -226,6 +264,25 @@ cd backend
 uv run pytest tests -q
 uv run ruff check .
 ```
+
+真实 PostgreSQL 集成门使用每次自动创建并清理的隔离 schema，不会用 SQLite
+替代行锁与事务语义：
+
+```powershell
+$env:TEST_DATABASE_URL="postgresql+psycopg://shopguide_test:password@localhost:5432/shopguide_test"
+uv run pytest tests/test_postgresql_integration.py -q
+```
+
+该门覆盖 Alembic 升降级、幂等导入、outbox、并发库存、下单回滚、取消回补，
+以及 Chroma 候选必须经 PostgreSQL 回表过滤。
+
+新增业务接口包括：
+
+- `GET /products`、`GET /products/{product_id}`、`GET /products/{product_id}/inventory`
+- `POST /imports/products`、`GET /imports`、`GET /imports/{batch_id}`
+- `GET /vector-sync/status`、`POST /vector-sync/run`、`POST /vector-sync/retry-failed`
+- `GET/POST/PATCH/DELETE /cart...` 与 `POST/GET /orders...`
+- `POST /multimodal/images/search`、`images/understand`、`asr`、`tts`
 
 Agent resilience 相关的确定性测试不需要真实 LLM 凭证。常用定向命令：
 

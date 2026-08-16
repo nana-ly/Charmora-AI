@@ -23,6 +23,7 @@ import java.util.List;
 
 import coil.Coil;
 import coil.request.ImageRequest;
+import com.client.shopguide.network.BackendApiClient;
 import com.google.gson.Gson;
 
 public class ProductCardAdapter extends RecyclerView.Adapter<ProductCardAdapter.ViewHolder> {
@@ -30,9 +31,6 @@ public class ProductCardAdapter extends RecyclerView.Adapter<ProductCardAdapter.
     public interface OnAddToCartListener {
         void onAddToCart(Product product);
     }
-
-    /** 后端静态文件根 URL（模拟器用 10.0.2.2，真机改局域网IP） */
-    private static final String IMAGE_BASE_URL = "http://8.137.191.215";
 
     private List<Product> products;
     private OnAddToCartListener onAddToCartListener;
@@ -59,8 +57,7 @@ public class ProductCardAdapter extends RecyclerView.Adapter<ProductCardAdapter.
 
         // 用 Coil 加载商品图片（URL 为空时显示占位图）
         String imageUrl = product.getImageUrl();
-        String fullUrl = (imageUrl != null && !imageUrl.isEmpty())
-                ? IMAGE_BASE_URL + imageUrl : null;
+        String fullUrl = new BackendApiClient().absoluteUrl(imageUrl);
 
         ImageRequest request = new ImageRequest.Builder(holder.itemView.getContext())
                 .data(fullUrl)
@@ -124,7 +121,7 @@ public class ProductCardAdapter extends RecyclerView.Adapter<ProductCardAdapter.
                 TextView tagView = new TextView(holder.llTags.getContext());
                 tagView.setText(tag);
                 tagView.setTextSize(10);
-                tagView.setTextColor(0xFFFF5722);
+                tagView.setTextColor(0xFF2c2c2c);
                 tagView.setBackgroundResource(R.drawable.bg_tag);
                 tagView.setPadding(6, 2, 6, 2);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -168,9 +165,10 @@ public class ProductCardAdapter extends RecyclerView.Adapter<ProductCardAdapter.
         holder.btnAddToCart.setOnClickListener(v -> {
             if (onAddToCartListener != null) {
                 onAddToCartListener.onAddToCart(product);
+            } else {
+                Toast.makeText(v.getContext(),
+                        product.getTitle() + " 已加入购物车", Toast.LENGTH_SHORT).show();
             }
-            Toast.makeText(v.getContext(),
-                    product.getTitle() + " 已加入购物车", Toast.LENGTH_SHORT).show();
         });
     }
 

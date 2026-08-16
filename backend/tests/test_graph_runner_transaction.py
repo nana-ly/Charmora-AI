@@ -100,6 +100,30 @@ def test_langgraph_runner_uses_store_update_and_does_not_call_save():
     assert store.state.last_successful_items[0].product_id == "p_tx_phone"
 
 
+def test_langgraph_runner_compiles_conditional_action_routes():
+    from agent.understanding import AgentAction
+
+    runner = LangGraphAgentRunner(
+        store=TrackingVersionedStore(),
+        recommendation_tool=RecommendationTool(recommend_func=one_item_recommendation),
+        understanding_service=StaticUnderstandingService(),
+    )
+
+    graph = runner.graph.get_graph()
+    assert "decide_next_action" in graph.nodes
+    for action in AgentAction:
+        assert f"execute_{action.value}" in graph.nodes
+
+    conditional_destinations = {
+        edge.target
+        for edge in graph.edges
+        if edge.source == "decide_next_action"
+    }
+    assert conditional_destinations == {
+        f"execute_{action.value}" for action in AgentAction
+    }
+
+
 class FailingUnderstandingService:
     """理解阶段抛错，用于验证半成品状态不会提交。"""
 

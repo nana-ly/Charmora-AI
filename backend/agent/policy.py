@@ -1,4 +1,4 @@
-"""导购 Agent 的确定性动作决策。"""
+"""Deterministic action policy for the shopping Agent."""
 
 from agent.memory import ConversationState
 from agent.negative_feedback_models import NegativeFeedbackApplicationResult
@@ -10,15 +10,23 @@ def decide_next_action(
     conversation: ConversationState,
     negative_feedback: NegativeFeedbackApplicationResult | None = None,
 ) -> AgentAction:
-    """根据用户理解、会话状态和负反馈结果选择下一步动作。"""
+    """Choose the next tool/action from structured understanding and memory."""
+    commerce_actions = {
+        UserIntent.ADD_TO_CART: AgentAction.ADD_TO_CART,
+        UserIntent.VIEW_CART: AgentAction.VIEW_CART,
+        UserIntent.CHECKOUT: AgentAction.CHECKOUT,
+        UserIntent.ORDER_STATUS: AgentAction.ORDER_STATUS,
+        UserIntent.CANCEL_ORDER: AgentAction.CANCEL_ORDER,
+    }
+    if understanding.intent in commerce_actions:
+        return commerce_actions[understanding.intent]
+
     if negative_feedback and negative_feedback.needs_clarification:
         return AgentAction.CLARIFY
     if negative_feedback and negative_feedback.noop:
         return AgentAction.REPLY_ONLY
     if negative_feedback and (negative_feedback.applied or negative_feedback.removed):
-        if conversation.purchase_need:
-            return AgentAction.RECOMMEND
-        return AgentAction.CLARIFY
+        return AgentAction.RECOMMEND if conversation.purchase_need else AgentAction.CLARIFY
     if negative_feedback and negative_feedback.detected and not conversation.purchase_need:
         return AgentAction.CLARIFY
 

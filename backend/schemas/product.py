@@ -10,6 +10,7 @@ class ProductCard(BaseModel):
     """
 
     product_id: str
+    sku_id: str | None = None
     title: str
     brand: str
     price: float

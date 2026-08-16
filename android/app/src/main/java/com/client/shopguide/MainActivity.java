@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
+import android.media.MediaPlayer;
 import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Bundle;
@@ -30,6 +31,7 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -41,8 +43,8 @@ import com.client.shopguide.model.ChatResponse;
 import com.client.shopguide.model.ChatUiMessage;
 import com.client.shopguide.model.Product;
 import com.client.shopguide.model.RecommendResponse;
+import com.client.shopguide.network.BackendApiClient;
 import com.client.shopguide.network.ChatSseClient;
-import com.client.shopguide.voice.BaiduAsrClient;
 import coil.Coil;
 import coil.request.ImageRequest;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
@@ -53,6 +55,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.text.SimpleDateFormat;
@@ -77,7 +80,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_LAST_ACTIVE = "last_active_time";
     private static final String MESSAGES_FILE = "chat_messages.json";
     private static final int SESSION_GAP_MINUTES = 5;
-    private static final String WELCOME_MESSAGE = "你好！告诉我品类、预算和偏好，我来帮你推荐商品。你也可以追问「再便宜一点」或「为什么推荐第一款」。";
+    private static final String WELCOME_MESSAGE = "你好，想买点什么？\n告诉我想买的品类、预算和偏好的话，我能更懂你。";
 
     /** 后端 POST /chat/stream 已就绪，默认走 SSE；404 时自动回退 POST /chat */
     private static final boolean USE_SSE_STREAM = true;
@@ -86,11 +89,17 @@ public class MainActivity extends AppCompatActivity {
 
     private EditText etMessage;
     private ImageButton btnMic;
-    private ImageButton btnPlus;
     private ImageButton btnSend;
-    private Button btnNewChat;
+    private ImageButton btnPlus;
+    private ImageButton btnNewChat;
+    private ImageButton btnMenu;
     private ChipGroup chipGroupExamples;
     private RecyclerView rvChat;
+    private RecyclerView rvHistory;
+    private EditText etHistorySearch;
+    private LinearLayout drawerHistoryPanel;
+
+    private androidx.drawerlayout.widget.DrawerLayout drawerLayout;
 
     private ChatAdapter chatAdapter;
     private final List<ChatUiMessage> chatMessages = new ArrayList<>();
@@ -101,7 +110,105 @@ public class MainActivity extends AppCompatActivity {
     private boolean isSending = false;
 
     private ChatSseClient chatSseClient;
+    private BackendApiClient backendApiClient;
     private int streamingAssistantIndex = -1;
+
+    // 流式文本逐字输出：缓冲区 + 定时排空
+    private final StringBuilder streamingBuffer = new StringBuilder();
+    private boolean flushScheduled = false;
+    private boolean streamFinished = false;
+    private static final long FLUSH_INTERVAL_MS = 45;
+    private static final int FLUSH_CHARS_PER_TICK = 5;
+    private final Runnable flushTask = new Runnable() {
+        @Override
+        public void run() {
+            if (streamingBuffer.length() == 0) {
+                flushScheduled = false;
+                if (streamFinished) {
+                    finishStreamingResponse();
+                    showResultCount();
+                }
+                return;
+            }
+            if (streamingAssistantIndex < 0 || streamingAssistantIndex >= chatMessages.size()) {
+                streamingBuffer.setLength(0);
+                flushScheduled = false;
+                return;
+            }
+            int take = Math.min(FLUSH_CHARS_PER_TICK, streamingBuffer.length());
+            String chunk = streamingBuffer.substring(0, take);
+            streamingBuffer.delete(0, take);
+
+            ChatUiMessage assistant = chatMessages.get(streamingAssistantIndex);
+            assistant.appendContent(chunk);
+            chatAdapter.notifyItemChanged(streamingAssistantIndex);
+            scrollToBottom();
+
+            if (streamingBuffer.length() > 0) {
+                mainHandler.postDelayed(this, FLUSH_INTERVAL_MS);
+            } else {
+                flushScheduled = false;
+                if (streamFinished) {
+                    finishStreamingResponse();
+                    showResultCount();
+                }
+            }
+        }
+    };
+
+    // 商品/对比卡片逐条输出
+    private boolean itemFlushScheduled = false;
+    private static final long ITEM_FLUSH_INTERVAL_MS = 400;
+    private final List<Product> streamingProductList = new ArrayList<>();
+    private final Runnable itemFlushTask = new Runnable() {
+        @Override
+        public void run() {
+            if (pendingStreamItems == null || pendingStreamItems.isEmpty()) {
+                itemFlushScheduled = false;
+                return;
+            }
+            RecommendResponse.Item raw = pendingStreamItems.remove(0);
+            displaySingleItem(raw);
+
+            if (!pendingStreamItems.isEmpty()) {
+                mainHandler.postDelayed(this, ITEM_FLUSH_INTERVAL_MS);
+            } else {
+                itemFlushScheduled = false;
+                pendingStreamItems = null;
+                // 推荐模式累积完毕后一次性创建 PRODUCT_ROW
+                flushStreamingProductRow();
+            }
+        }
+    };
+
+    /**
+     * 展示单个商品 item。
+     * 对比模式：每条创建独立 COMPARE_PRODUCT 气泡，逐条插入。
+     * 推荐模式：先累积到 streamingProductList，待全部排空后由 flushStreamingProductRow 统一展示。
+     */
+    private void displaySingleItem(RecommendResponse.Item raw) {
+        Product product = toProduct(raw);
+        if (isCurrentAction("compare")) {
+            int idx = 1;
+            for (ChatUiMessage m : chatMessages) {
+                if (m.getType() == ChatUiMessage.TYPE_COMPARE_PRODUCT) idx++;
+            }
+            chatMessages.add(ChatUiMessage.compareProduct(product, idx));
+            chatAdapter.notifyItemInserted(chatMessages.size() - 1);
+            scrollToBottom();
+        } else {
+            streamingProductList.add(product);
+        }
+    }
+
+    /** 推荐模式：将累积的商品一次性创建 PRODUCT_ROW（横向滚屏）。 */
+    private void flushStreamingProductRow() {
+        if (streamingProductList.isEmpty()) return;
+        chatMessages.add(ChatUiMessage.productRow(new ArrayList<>(streamingProductList)));
+        chatAdapter.notifyItemInserted(chatMessages.size() - 1);
+        streamingProductList.clear();
+        scrollToBottom();
+    }
 
     // 功能面板
     private LinearLayout llFunctionPanel;
@@ -115,6 +222,7 @@ public class MainActivity extends AppCompatActivity {
 
     // TTS 语音
     private TextToSpeech tts;
+    private MediaPlayer mediaPlayer;
 
     // SSE 状态：result_count
     private int pendingResultCount = 0;
@@ -124,6 +232,11 @@ public class MainActivity extends AppCompatActivity {
     /** SSE items 缓冲区：等 state 事件到达后决定展示推荐横滚或对比商品气泡 */
     private List<RecommendResponse.Item> pendingStreamItems;
 
+    /** 当前思考链消息对象引用（避免索引在列表变动后失效） */
+    private ChatUiMessage currentThinkingMessage;
+    /** 第一次 thinking 事件已创建思考链，后续 delta 需等一帧 */
+    private boolean thinkingJustCreated;
+
     // 拍照相关
     private Uri currentPhotoUri;
 
@@ -132,8 +245,7 @@ public class MainActivity extends AppCompatActivity {
     private final ActivityResultLauncher<Uri> takePhotoLauncher =
             registerForActivityResult(new ActivityResultContracts.TakePicture(), success -> {
                 if (success && currentPhotoUri != null) {
-                    Toast.makeText(this, "已拍照：" + currentPhotoUri.getPath(), Toast.LENGTH_SHORT).show();
-                    // TODO: 上传图片到后端接口，拿到返回结果后插入对话
+                    handleSelectedImage(currentPhotoUri);
                 }
             });
 
@@ -141,8 +253,7 @@ public class MainActivity extends AppCompatActivity {
     private final ActivityResultLauncher<String> pickImageLauncher =
             registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
                 if (uri != null) {
-                    Toast.makeText(this, "已选图：" + uri.getPath(), Toast.LENGTH_SHORT).show();
-                    // TODO: 上传图片到后端接口，拿到返回结果后插入对话
+                    handleSelectedImage(uri);
                 }
             });
 
@@ -168,16 +279,33 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        RetrofitClient.configure(this);
         setContentView(R.layout.activity_main);
 
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         chatSseClient = new ChatSseClient();
+        backendApiClient = new BackendApiClient();
         gson = new Gson();
 
         initViews();
         initRecyclerView();
         loadHistoryAndInitSession();
         setupListeners();
+        setupUnifiedBottomNavigation();
+    }
+
+    private void setupUnifiedBottomNavigation() {
+        com.google.android.material.bottomnavigation.BottomNavigationView nav = findViewById(R.id.chatBottomNav);
+        nav.setSelectedItemId(R.id.nav_ai);
+        nav.setOnItemSelectedListener(item -> {
+            if (item.getItemId() == R.id.nav_ai) return true;
+            Intent intent = new Intent(this, StorefrontActivity.class);
+            intent.putExtra("selected_tab", item.getItemId());
+            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            startActivity(intent);
+            overridePendingTransition(0, 0);
+            return true;
+        });
     }
 
     @Override
@@ -191,9 +319,15 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         chatSseClient.cancel();
+        mainHandler.removeCallbacks(flushTask);
+        mainHandler.removeCallbacks(itemFlushTask);
         if (tts != null) {
             tts.stop();
             tts.shutdown();
+        }
+        if (mediaPlayer != null) {
+            mediaPlayer.release();
+            mediaPlayer = null;
         }
     }
 
@@ -202,11 +336,26 @@ public class MainActivity extends AppCompatActivity {
     private void initViews() {
         etMessage = findViewById(R.id.etMessage);
         btnMic = findViewById(R.id.btnMic);
-        btnPlus = findViewById(R.id.btnPlus);
         btnSend = findViewById(R.id.btnSend);
+        btnPlus = findViewById(R.id.btnPlus);
         btnNewChat = findViewById(R.id.btnNewChat);
+        btnMenu = findViewById(R.id.btnMenu);
         chipGroupExamples = findViewById(R.id.chipGroupExamples);
         rvChat = findViewById(R.id.rvChat);
+        rvHistory = findViewById(R.id.rvHistory);
+        etHistorySearch = findViewById(R.id.etHistorySearch);
+        drawerHistoryPanel = findViewById(R.id.drawerHistory);
+        drawerLayout = findViewById(R.id.drawerLayout);
+        // 清空历史记录
+        findViewById(R.id.tvClearHistory).setOnClickListener(v -> {
+            clearHistoryFiles();
+            drawerLayout.closeDrawer(drawerHistoryPanel);
+        });
+        // 设置 → 添加商品
+        findViewById(R.id.tvSettings).setOnClickListener(v -> {
+            drawerLayout.closeDrawer(drawerHistoryPanel);
+            showAddProductDialog();
+        });
         llFunctionPanel = findViewById(R.id.llFunctionPanel);
     }
 
@@ -216,13 +365,11 @@ public class MainActivity extends AppCompatActivity {
             if (!cartProducts.contains(product)) {
                 cartProducts.add(product);
             }
+            addProductToServerCart(product);
         });
         // TTS 回调
         tts = new TextToSpeech(this, status -> {});
-        chatAdapter.setOnTTSListener(text -> {
-            tts.setLanguage(Locale.CHINESE);
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
-        });
+        chatAdapter.setOnTTSListener(this::speakText);
         rvChat.setLayoutManager(new LinearLayoutManager(this));
         rvChat.setAdapter(chatAdapter);
 
@@ -257,13 +404,23 @@ public class MainActivity extends AppCompatActivity {
         // 新对话
         btnNewChat.setOnClickListener(v -> startNewSession(true));
 
+        // 侧边栏历史
+        btnMenu.setOnClickListener(v -> {
+            if (drawerLayout.isDrawerOpen(drawerHistoryPanel)) {
+                drawerLayout.closeDrawer(drawerHistoryPanel);
+            } else {
+                loadHistoryDrawer();
+                drawerLayout.openDrawer(drawerHistoryPanel);
+            }
+        });
+
         // 发送按钮
         btnSend.setOnClickListener(v -> sendCurrentMessage());
 
         // 麦克风按钮 → 语音识别
         btnMic.setOnClickListener(v -> startVoiceInput());
 
-        // 加号按钮 → 展开/收起内嵌功能面板
+        // 加号按钮 → 展开/收起功能面板
         btnPlus.setOnClickListener(v -> toggleFunctionPanel());
 
         setupExampleChips();
@@ -358,7 +515,7 @@ public class MainActivity extends AppCompatActivity {
         byte[] pcmData = baos.toByteArray();
         if (pcmData.length == 0) return null;
 
-        return BaiduAsrClient.recognize(pcmData, pcmData.length);
+        return backendApiClient.transcribePcm(pcmData);
     }
 
     /** 计算 PCM 16bit 数据的 RMS（均方根能量） */
@@ -373,7 +530,182 @@ public class MainActivity extends AppCompatActivity {
         return samples > 0 ? Math.sqrt((double) sum / samples) : 0;
     }
 
-    // ========== 功能面板（微信式滑入/滑出） ==========
+    // ========== 历史抽屉 ==========
+
+    private static final String SESSIONS_DIR = "chat_sessions";
+
+    private void loadHistoryDrawer() {
+        try {
+        File dir = new File(getFilesDir(), SESSIONS_DIR);
+        if (!dir.exists()) dir.mkdirs();
+        File[] files = dir.listFiles();
+        final List<File> sessionFiles = new ArrayList<>();
+        final List<String> titles = new ArrayList<>();
+
+        if (files != null) {
+            for (File f : files) {
+                if (f.getName().endsWith(".json")) {
+                    sessionFiles.add(f);
+                    titles.add(readSessionTitle(f));
+                }
+            }
+        }
+        if (sessionFiles.isEmpty()) {
+            titles.add("暂无历史");
+            sessionFiles.add(null);
+        }
+
+        rvHistory.setLayoutManager(new LinearLayoutManager(this));
+        rvHistory.setAdapter(new RecyclerView.Adapter() {
+            @NonNull @Override
+            public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int t) {
+                View card = LayoutInflater.from(parent.getContext())
+                        .inflate(R.layout.item_history_session, parent, false);
+                return new RecyclerView.ViewHolder(card) {};
+            }
+            @Override public void onBindViewHolder(@NonNull RecyclerView.ViewHolder h, int pos) {
+                ((TextView) h.itemView.findViewById(R.id.tvHistoryTitle)).setText(titles.get(pos));
+                File f = sessionFiles.get(pos);
+                String time = f != null ? formatSessionTime(f.getName()) : "";
+                ((TextView) h.itemView.findViewById(R.id.tvHistoryTime)).setText(time);
+                h.itemView.setOnClickListener(v -> {
+                    if (f != null) {
+                        saveCurrentSessionToFile(f);
+                        restoreSessionFromFile(f);
+                        drawerLayout.closeDrawer(drawerHistoryPanel);
+                    }
+                });
+            }
+            @Override public int getItemCount() { return titles.size(); }
+        });
+
+        // 搜索过滤
+        etHistorySearch.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void afterTextChanged(android.text.Editable s) {
+                String q = s.toString().trim().toLowerCase();
+                titles.clear(); sessionFiles.clear();
+                if (files != null) {
+                    for (File f : files) {
+                        if (!f.getName().endsWith(".json")) continue;
+                        String t = readSessionTitle(f);
+                        if (q.isEmpty() || t.toLowerCase().contains(q)) {
+                            titles.add(t);
+                            sessionFiles.add(f);
+                        }
+                    }
+                }
+                rvHistory.getAdapter().notifyDataSetChanged();
+            }
+            @Override public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            @Override public void onTextChanged(CharSequence c, int a, int b, int d) {}
+        });
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    private String readSessionTitle(File file) {
+        try {
+            InputStreamReader r = new InputStreamReader(new FileInputStream(file), "UTF-8");
+            List<ChatUiMessage> msgs = gson.fromJson(r,
+                    new TypeToken<List<ChatUiMessage>>() {}.getType());
+            r.close();
+            if (msgs != null) {
+                for (ChatUiMessage m : msgs) {
+                    if (m.getType() == ChatUiMessage.TYPE_USER && m.getContent() != null)
+                        return m.getContent().length() > 30
+                                ? m.getContent().substring(0, 30) + "..." : m.getContent();
+                }
+            }
+        } catch (Exception ignored) {}
+        return "对话记录";
+    }
+
+    private String formatSessionTime(String fileName) {
+        try {
+            long ts = Long.parseLong(fileName.replace(".json", ""));
+            return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(new Date(ts));
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    private void archiveCurrentSession() {
+        List<ChatUiMessage> toSave = new ArrayList<>();
+        for (ChatUiMessage m : chatMessages) {
+            if (m.getType() == ChatUiMessage.TYPE_LOADING
+                    || m.getType() == ChatUiMessage.TYPE_DIVIDER) continue;
+            if (m.getType() == ChatUiMessage.TYPE_ASSISTANT
+                    && WELCOME_MESSAGE.equals(m.getContent())) continue;
+            toSave.add(m);
+        }
+        if (toSave.isEmpty()) return;
+        try {
+            File dir = new File(getFilesDir(), SESSIONS_DIR);
+            dir.mkdirs();
+            File f = new File(dir, System.currentTimeMillis() + ".json");
+            OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(f), "UTF-8");
+            gson.toJson(toSave, w);
+            w.close();
+        } catch (IOException ignored) {}
+    }
+
+    private void saveCurrentSessionToFile(File target) {
+        List<ChatUiMessage> toSave = new ArrayList<>();
+        for (ChatUiMessage m : chatMessages) {
+            if (m.getType() == ChatUiMessage.TYPE_LOADING
+                    || m.getType() == ChatUiMessage.TYPE_DIVIDER) continue;
+            toSave.add(m);
+        }
+        try {
+            OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(target), "UTF-8");
+            gson.toJson(toSave, w);
+            w.close();
+        } catch (IOException ignored) {}
+    }
+
+    private void restoreSessionFromFile(File file) {
+        try {
+            InputStreamReader r = new InputStreamReader(new FileInputStream(file), "UTF-8");
+            List<ChatUiMessage> msgs = gson.fromJson(r,
+                    new TypeToken<List<ChatUiMessage>>() {}.getType());
+            r.close();
+            if (msgs != null) {
+                chatMessages.clear();
+                chatMessages.addAll(msgs);
+                chatAdapter.notifyDataSetChanged();
+                sessionId = UUID.randomUUID().toString();
+                prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
+                scrollToBottom();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void clearHistoryFiles() {
+        File dir = new File(getFilesDir(), SESSIONS_DIR);
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) f.delete();
+        }
+        new File(getFilesDir(), MESSAGES_FILE).delete();
+        archiveCurrentSession();
+        chatMessages.clear();
+        chatAdapter.notifyDataSetChanged();
+        startNewSession(false);
+        Toast.makeText(this, "已清空历史记录", Toast.LENGTH_SHORT).show();
+    }
+
+    private void showAddProductDialog() {
+        AlertDialog dialog = new AlertDialog.Builder(this).create();
+        View form = LayoutInflater.from(this).inflate(R.layout.dialog_add_product, null);
+        dialog.setView(form);
+        form.findViewById(R.id.btnSubmitProduct).setOnClickListener(v -> {
+            Toast.makeText(this, "功能开发中，敬请期待", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+        });
+        dialog.show();
+    }
+
+    // ========== 功能面板切换 ==========
 
     private void toggleFunctionPanel() {
         if (isPanelVisible) {
@@ -397,27 +729,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupFunctionPanel() {
-        // 相册
         LinearLayout llAlbum = findViewById(R.id.llAlbum);
-        llAlbum.setOnClickListener(v -> {
-            openGallery();
-            hideFunctionPanel();
-        });
-
-        // 拍照
+        llAlbum.setOnClickListener(v -> { openGallery(); hideFunctionPanel(); });
         LinearLayout llCamera = findViewById(R.id.llCamera);
-        llCamera.setOnClickListener(v -> {
-            requestCameraPermission();
-            hideFunctionPanel();
-        });
-
-        // 购物车 → 商品多选 BottomSheet
+        llCamera.setOnClickListener(v -> { requestCameraPermission(); hideFunctionPanel(); });
         LinearLayout llCart = findViewById(R.id.llCart);
-        llCart.setOnClickListener(v -> {
-            hideFunctionPanel();
-            showShoppingCart();
-        });
-
+        llCart.setOnClickListener(v -> { hideFunctionPanel(); showShoppingCart(); });
     }
 
     // 拍照
@@ -506,10 +823,15 @@ public class MainActivity extends AppCompatActivity {
     // 会话管理
 
     private void startNewSession(boolean showToast) {
-        saveMessages();
+        archiveCurrentSession();
         sessionId = UUID.randomUUID().toString();
         prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
         chatSseClient.cancel();
+        mainHandler.removeCallbacks(itemFlushTask);
+        drainStreamingBuffer();
+        streamFinished = false;
+        itemFlushScheduled = false;
+        streamingProductList.clear();
         chatMessages.clear();
         streamingAssistantIndex = -1;
         pendingState = null;
@@ -623,8 +945,10 @@ public class MainActivity extends AppCompatActivity {
 
         etMessage.setText("");
         chatMessages.add(ChatUiMessage.user(message));
-
         chatMessages.add(ChatUiMessage.loading());
+
+        currentThinkingMessage = null;
+        thinkingJustCreated = false;
         chatAdapter.notifyDataSetChanged();
         scrollToBottom();
 
@@ -644,6 +968,9 @@ public class MainActivity extends AppCompatActivity {
         pendingItemsCount = 0;
         pendingState = null;
         pendingStreamItems = null;
+        streamFinished = false;
+        itemFlushScheduled = false;
+        streamingProductList.clear();
         chatSseClient.streamChat(sessionId, message, new ChatSseClient.StreamListener() {
             @Override
             public void onTextDelta(String content) {
@@ -662,8 +989,7 @@ public class MainActivity extends AppCompatActivity {
                                 pendingResultCount = ((Double) rc).intValue();
                             }
                         }
-                        // state 到达后，立即处理之前缓冲的 items
-                        processPendingStreamItems();
+                        // state 到达，仅记录；产品在 done 后才统一展示
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -672,36 +998,34 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onItems(List<RecommendResponse.Item> items, int resultCount) {
-                mainHandler.post(() -> {
-                    if (items != null && !items.isEmpty()) {
-                        if (resultCount > 0) {
-                            pendingResultCount = resultCount;
-                        }
-                        pendingItemsCount = items.size();
-                        // 先缓冲 items，等 state 到达后再决定展示方式
-                        if (pendingStreamItems == null) {
-                            pendingStreamItems = new ArrayList<>();
-                        }
-                        pendingStreamItems.addAll(items);
-                        // 如果 state 已经到了，立即处理
-                        if (pendingState != null) {
-                            processPendingStreamItems();
-                        }
-                    }
-                });
+                // 不再使用独立的 items 事件，全部由 card 事件驱动
+            }
+
+            @Override
+            public void onCard(com.google.gson.JsonObject itemData) {
+                mainHandler.post(() -> onCardEvent(itemData));
+            }
+
+            @Override
+            public void onThinking(String event, String node, String detail) {
+                mainHandler.post(() -> onThinkingEvent(event, node, detail));
             }
 
             @Override
             public void onDone() {
                 mainHandler.post(() -> {
-                    finishStreamingResponse();
-                    showResultCount();
+                    streamFinished = true;
                 });
             }
 
             @Override
             public void onError(String errorMessage) {
                 mainHandler.post(() -> {
+                    streamFinished = true;
+                    mainHandler.removeCallbacks(itemFlushTask);
+                    itemFlushScheduled = false;
+                    streamingProductList.clear();
+                    drainStreamingBuffer();
                     removeLoadingMessage();
                     chatMessages.add(ChatUiMessage.assistant(errorMessage));
                     chatAdapter.notifyDataSetChanged();
@@ -747,7 +1071,16 @@ public class MainActivity extends AppCompatActivity {
     // ========== SSE 流式处理 ==========
 
     private void appendStreamingText(String delta) {
-        removeLoadingMessage();
+        // 标记思考链完成，此后允许收起
+        if (currentThinkingMessage != null) {
+            currentThinkingMessage.setThinkingComplete(true);
+        }
+
+        // 思考链刚创建，等一帧再处理文字
+        if (thinkingJustCreated) {
+            rvChat.postDelayed(() -> appendStreamingText(delta), 150);
+            return;
+        }
 
         if (streamingAssistantIndex < 0 || streamingAssistantIndex >= chatMessages.size()) {
             ChatUiMessage assistant = ChatUiMessage.assistant("");
@@ -756,10 +1089,45 @@ public class MainActivity extends AppCompatActivity {
             streamingAssistantIndex = chatMessages.size() - 1;
         }
 
-        ChatUiMessage assistant = chatMessages.get(streamingAssistantIndex);
-        assistant.appendContent(delta);
-        chatAdapter.notifyItemChanged(streamingAssistantIndex);
-        scrollToBottom();
+        streamingBuffer.append(delta);
+        scheduleStreamingFlush();
+    }
+
+    /**
+     * 幂等调度：如果还没有排空的定时任务，就 postDelayed 一个。
+     */
+    private void scheduleStreamingFlush() {
+        if (!flushScheduled) {
+            flushScheduled = true;
+            mainHandler.postDelayed(flushTask, FLUSH_INTERVAL_MS);
+        }
+    }
+
+    /**
+     * 强制排空缓冲区：取消定时器，把剩余内容一次性追加到 assistant 气泡。
+     */
+    private void drainStreamingBuffer() {
+        mainHandler.removeCallbacks(flushTask);
+        if (streamingBuffer.length() > 0) {
+            String remaining = streamingBuffer.toString();
+            streamingBuffer.setLength(0);
+            if (streamingAssistantIndex >= 0 && streamingAssistantIndex < chatMessages.size()) {
+                ChatUiMessage assistant = chatMessages.get(streamingAssistantIndex);
+                assistant.appendContent(remaining);
+                chatAdapter.notifyItemChanged(streamingAssistantIndex);
+            }
+        }
+        flushScheduled = false;
+    }
+
+    /**
+     * 幂等调度 itemFlushTask：只在未调度且有缓冲 items 时启动逐条展示。
+     */
+    private void scheduleItemFlush() {
+        if (!itemFlushScheduled && pendingStreamItems != null && !pendingStreamItems.isEmpty()) {
+            itemFlushScheduled = true;
+            mainHandler.postDelayed(itemFlushTask, ITEM_FLUSH_INTERVAL_MS);
+        }
     }
 
     private void appendProductItems(List<RecommendResponse.Item> items) {
@@ -801,8 +1169,7 @@ public class MainActivity extends AppCompatActivity {
             chatAdapter.notifyItemChanged(streamingAssistantIndex);
         }
         streamingAssistantIndex = -1;
-        // 兜底：如果 state 事件没能触发处理，在 done 时统一刷新缓冲的 items
-        processPendingStreamItems();
+        // 思考链保留在对话中，不删除
         setSendingState(false);
         scrollToBottom();
     }
@@ -811,42 +1178,54 @@ public class MainActivity extends AppCompatActivity {
 
     private void handleChatResponse(ChatResponse response) {
         removeLoadingMessage();
-
-        pendingResultCount = response.getResult_count();
-
         if (response.getSession_id() != null) {
             sessionId = response.getSession_id();
             prefs.edit().putString(KEY_SESSION_ID, sessionId).apply();
         }
 
-        String reply = response.getReply();
-        if (reply == null || reply.isEmpty()) {
-            reply = "已完成处理。";
-        }
-        Map<String, Object> state = response.getState();
-        pendingState = state;
-        String action = state != null ? (String) state.get("action") : null;
-        if ("compare".equals(action)) {
-            reply = formatCompareReply(reply);
-        }
-        chatMessages.add(ChatUiMessage.assistant(reply));
-
-        List<RecommendResponse.Item> items = response.getItems();
-        pendingItemsCount = items != null ? items.size() : 0;
-
-        if ("compare".equals(action) && items != null && !items.isEmpty()) {
-            appendCompareItems(items);
-        } else if (items != null && !items.isEmpty()) {
-            appendProductItems(items);
+        // 优先 content_blocks（LLM 驱动，文本卡片交替）
+        List<Map<String, Object>> blocks = response.getContent_blocks();
+        if (blocks != null && !blocks.isEmpty()) {
+            for (Map<String, Object> block : blocks) {
+                if ("text".equals(block.get("type"))) {
+                    String t = (String) block.get("content");
+                    chatMessages.add(ChatUiMessage.assistant(t != null ? t : ""));
+                } else if ("card".equals(block.get("type"))) {
+                    Map<String, Object> itemData = (Map<String, Object>) block.get("item");
+                    if (itemData != null) {
+                        RecommendResponse.Item item = gson.fromJson(
+                                gson.toJson(itemData), RecommendResponse.Item.class);
+                        List<Product> list = new ArrayList<>();
+                        list.add(toProduct(item));
+                        chatMessages.add(ChatUiMessage.productRow(list));
+                    }
+                }
+            }
+        } else {
+            String reply = response.getReply();
+            chatMessages.add(ChatUiMessage.assistant(
+                    reply != null && !reply.isEmpty() ? reply : "已完成处理。"));
         }
 
         chatAdapter.notifyDataSetChanged();
         scrollToBottom();
-        showResultCount();
         setSendingState(false);
     }
 
     // ========== 工具方法 ==========
+
+    private void removeThinkingMessage() {
+        if (currentThinkingMessage != null) {
+            int idx = chatMessages.indexOf(currentThinkingMessage);
+            if (idx >= 0) {
+                chatMessages.remove(idx);
+                chatAdapter.notifyItemRemoved(idx);
+            }
+        }
+        currentThinkingMessage = null;
+    }
+
+    /** 刷新思考链列表里所有 item 的索引（在 done 后调用一次） */
 
     private void removeLoadingMessage() {
         for (int i = chatMessages.size() - 1; i >= 0; i--) {
@@ -864,6 +1243,7 @@ public class MainActivity extends AppCompatActivity {
     private Product toProduct(RecommendResponse.Item item) {
         Product product = new Product();
         product.setProduct_id(item.getProduct_id());
+        product.setSku_id(item.getSku_id());
         product.setTitle(item.getTitle());
         product.setBrand(item.getBrand());
         product.setBase_price(item.getPrice());
@@ -939,12 +1319,74 @@ public class MainActivity extends AppCompatActivity {
         rvChat.post(() -> rvChat.smoothScrollToPosition(chatMessages.size() - 1));
     }
 
+    // ========== SSE 思考链 ==========
+
+    /**
+     * card SSE 事件：LLM 提到了某个商品，直接在当前对话流中插入商品卡片。
+     */
+    private void onCardEvent(com.google.gson.JsonObject itemData) {
+        RecommendResponse.Item item = gson.fromJson(itemData, RecommendResponse.Item.class);
+        if (item == null) return;
+        Product product = toProduct(item);
+        List<Product> list = new ArrayList<>();
+        list.add(product);
+        chatMessages.add(ChatUiMessage.productRow(list));
+        chatAdapter.notifyItemInserted(chatMessages.size() - 1);
+        scrollToBottom();
+    }
+
+    private void onThinkingEvent(String event, String node, String detail) {
+        String label;
+        if ("done".equals(event) && detail != null && !detail.isEmpty()) {
+            label = detail;
+        } else {
+            label = mapNodeLabel(node);
+        }
+
+        if (currentThinkingMessage == null) {
+            removeLoadingMessage();
+            currentThinkingMessage = ChatUiMessage.thinking();
+            chatMessages.add(currentThinkingMessage);
+            chatAdapter.notifyDataSetChanged();
+            thinkingJustCreated = true;
+            scrollToBottom();
+            // 等一帧让 RecyclerView 渲染完再处理 delta
+            rvChat.post(() -> thinkingJustCreated = false);
+            return;
+        }
+
+        if (currentThinkingMessage != null) {
+            currentThinkingMessage.addThinkingStep(label);
+            int idx = chatMessages.indexOf(currentThinkingMessage);
+            if (idx >= 0) {
+                // 每一步延迟一帧渲染，让用户看到渐进过程
+                rvChat.postDelayed(() -> chatAdapter.notifyItemChanged(idx), 50);
+            }
+        }
+        scrollToBottom();
+    }
+
+    private String mapNodeLabel(String node) {
+        switch (node) {
+            case "understand_user": return "理解需求";
+            case "decide_next_action": return "规划动作";
+            case "execute_action": return "检索商品";
+            case "generate_reply": return "生成回复";
+            case "finalize_response": return "整理回复";
+            default: return node;
+        }
+    }
+
     // ========== SSE items 缓冲 & 对比卡片构建 ==========
 
     /**
-     * 展示缓冲的 items；对比结论使用后端 reply，前端补充逐个商品图文气泡。
+     * 兜底：取消逐条定时器，一次性展示剩余缓冲 items（用于 done / error 收尾）。
      */
     private void processPendingStreamItems() {
+        mainHandler.removeCallbacks(itemFlushTask);
+        itemFlushScheduled = false;
+        // 先把推荐模式累积的 product 刷出
+        flushStreamingProductRow();
         if (pendingStreamItems == null || pendingStreamItems.isEmpty()) return;
         if (isCurrentAction("compare")) {
             appendCompareItems(pendingStreamItems);
@@ -952,6 +1394,112 @@ public class MainActivity extends AppCompatActivity {
             appendProductItems(pendingStreamItems);
         }
         pendingStreamItems = null;
+    }
+
+    private void addProductToServerCart(Product product) {
+        String skuId = product.getSku_id();
+        if (skuId == null || skuId.trim().isEmpty()) {
+            Toast.makeText(this, "该商品暂无可购买 SKU", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new Thread(() -> {
+            try {
+                backendApiClient.addToCart(sessionId, skuId);
+                runOnUiThread(() -> Toast.makeText(this,
+                        product.getTitle() + " 已加入购物车", Toast.LENGTH_SHORT).show());
+            } catch (IOException error) {
+                runOnUiThread(() -> Toast.makeText(this,
+                        error.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        }, "shopguide-add-cart").start();
+    }
+
+    private void handleSelectedImage(Uri uri) {
+        Toast.makeText(this, "正在理解图片…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            try (InputStream input = getContentResolver().openInputStream(uri);
+                 java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+                if (input == null) throw new IOException("无法读取图片");
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                String mimeType = getContentResolver().getType(uri);
+                if (mimeType == null) mimeType = "image/jpeg";
+                byte[] image = output.toByteArray();
+                String description = null;
+                String failure = null;
+                List<Product> similar = new ArrayList<>();
+                try {
+                    description = backendApiClient.understandImage(image, mimeType);
+                } catch (IOException error) {
+                    failure = error.getMessage();
+                }
+                try {
+                    similar = backendApiClient.searchSimilar(image, mimeType, 5);
+                } catch (IOException error) {
+                    if (failure == null) failure = error.getMessage();
+                }
+                String finalDescription = description;
+                String finalFailure = failure;
+                List<Product> finalSimilar = similar;
+                runOnUiThread(() -> {
+                    if (finalDescription != null && !finalDescription.trim().isEmpty()) {
+                        chatMessages.add(ChatUiMessage.assistant("图片识别：" + finalDescription));
+                        etMessage.setText("请根据这张图片帮我找相似商品：" + finalDescription);
+                        etMessage.setSelection(etMessage.length());
+                    }
+                    if (!finalSimilar.isEmpty()) {
+                        chatMessages.add(ChatUiMessage.productRow(finalSimilar));
+                    }
+                    if (finalDescription != null || !finalSimilar.isEmpty()) {
+                        chatAdapter.notifyDataSetChanged();
+                        scrollToBottom();
+                    } else {
+                        Toast.makeText(this, finalFailure != null ? finalFailure : "图片能力未配置",
+                                Toast.LENGTH_LONG).show();
+                    }
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> Toast.makeText(this,
+                        error.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        }, "shopguide-image-understand").start();
+    }
+
+    private void speakText(String text) {
+        new Thread(() -> {
+            try {
+                byte[] audio = backendApiClient.synthesize(text);
+                File file = new File(getCacheDir(), "tts-" + UUID.randomUUID() + ".mp3");
+                try (FileOutputStream output = new FileOutputStream(file)) {
+                    output.write(audio);
+                }
+                runOnUiThread(() -> {
+                    try {
+                        if (mediaPlayer != null) mediaPlayer.release();
+                        mediaPlayer = new MediaPlayer();
+                        mediaPlayer.setDataSource(file.getAbsolutePath());
+                        mediaPlayer.setOnCompletionListener(player -> {
+                            player.release();
+                            if (mediaPlayer == player) mediaPlayer = null;
+                            file.delete();
+                        });
+                        mediaPlayer.prepare();
+                        mediaPlayer.start();
+                    } catch (IOException error) {
+                        speakWithDeviceTts(text);
+                    }
+                });
+            } catch (IOException error) {
+                runOnUiThread(() -> speakWithDeviceTts(text));
+            }
+        }, "shopguide-tts").start();
+    }
+
+    private void speakWithDeviceTts(String text) {
+        if (tts == null) return;
+        tts.setLanguage(Locale.CHINESE);
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
     }
 
     // ========== 购物车多选面板 ==========
@@ -974,8 +1522,8 @@ public class MainActivity extends AppCompatActivity {
 
         sheetView.findViewById(R.id.btnCartConfirm).setOnClickListener(v -> {
             List<String> selected = cartAdapter.getSelectedNames();
-            if (selected.isEmpty()) {
-                Toast.makeText(this, "请至少选一个商品", Toast.LENGTH_SHORT).show();
+            if (selected.size() < 2) {
+                Toast.makeText(this, "请至少选择两个商品进行对比", Toast.LENGTH_SHORT).show();
                 return;
             }
             StringBuilder sb = new StringBuilder();
@@ -988,11 +1536,30 @@ public class MainActivity extends AppCompatActivity {
             sheet.dismiss();
         });
 
+        sheetView.findViewById(R.id.btnCartCheckout).setOnClickListener(v -> {
+            v.setEnabled(false);
+            new Thread(() -> {
+                try {
+                    String orderId = backendApiClient.checkout(sessionId);
+                    runOnUiThread(() -> {
+                        cartProducts.clear();
+                        sheet.dismiss();
+                        Toast.makeText(this, "模拟下单成功，订单号：" + orderId,
+                                Toast.LENGTH_LONG).show();
+                    });
+                } catch (IOException error) {
+                    runOnUiThread(() -> {
+                        v.setEnabled(true);
+                        Toast.makeText(this, error.getMessage(), Toast.LENGTH_LONG).show();
+                    });
+                }
+            }, "shopguide-checkout").start();
+        });
+
         sheet.show();
     }
 
     static class CartProductAdapter extends RecyclerView.Adapter<CartProductAdapter.Vh> {
-        private static final String IMG_BASE = "http://8.137.191.215";
         private final List<Product> items;
         private final boolean[] selected;
 
@@ -1027,7 +1594,7 @@ public class MainActivity extends AppCompatActivity {
             String url = p.getImageUrl();
             if (url != null && !url.isEmpty()) {
                 ImageRequest req = new ImageRequest.Builder(h.itemView.getContext())
-                        .data(IMG_BASE + url)
+                        .data(new BackendApiClient().absoluteUrl(url))
                         .target(h.ivImage)
                         .placeholder(R.drawable.ic_placeholder_product)
                         .error(R.drawable.ic_placeholder_product)

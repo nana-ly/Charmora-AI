@@ -1,11 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="black">#FF000000</color>
+    <color name="black">#6F5967</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="chat_bg">#F5F5F5</color>
-    <color name="chat_user_bubble">#D3423AB6</color>
-    <color name="chat_assistant_bubble">#FFFFFF</color>
-    <color name="chat_user_text">#FFFFFF</color>
-    <color name="chat_assistant_text">#333333</color>
-    <color name="chat_hint">#999999</color>
+    <color name="chat_bg">#FFF9FB</color>
+    <color name="chat_user_bubble">#C98FA6</color>
+    <color name="chat_assistant_bubble">#FFFDFD</color>
+    <!-- 文字色 -->
+    <color name="chat_user_text">#FFFDFD</color>
+    <color name="chat_assistant_text">#6F5967</color>
+    <!-- 辅助文字 -->
+    <color name="chat_hint">#A38C99</color>
+    <!-- 线条 -->
+    <color name="leo_border">#EAD9E1</color>
+    <color name="charmora_rose">#C98FA6</color>
+    <color name="charmora_rose_soft">#F5E4EA</color>
+    <color name="charmora_lilac">#B4A1C8</color>
+    <color name="charmora_lilac_soft">#DED4E8</color>
 </resources>

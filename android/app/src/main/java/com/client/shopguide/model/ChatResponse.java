@@ -13,42 +13,25 @@ public class ChatResponse {
     private int result_count;
     private List<RecommendResponse.Item> items;
     private Map<String, Object> state;
+    private List<Map<String, Object>> content_blocks;
 
-    public ChatResponse() {
-    }
+    public ChatResponse() {}
 
-    public String getSession_id() {
-        return session_id;
-    }
+    public String getSession_id() { return session_id; }
+    public void setSession_id(String v) { session_id = v; }
 
-    public void setSession_id(String session_id) {
-        this.session_id = session_id;
-    }
-
-    public String getReply() {
-        return reply;
-    }
-
-    public void setReply(String reply) {
-        this.reply = reply;
-    }
+    public String getReply() { return reply; }
+    public void setReply(String v) { reply = v; }
 
     public int getResult_count() { return result_count; }
-    public void setResult_count(int result_count) { this.result_count = result_count; }
+    public void setResult_count(int v) { result_count = v; }
 
-    public List<RecommendResponse.Item> getItems() {
-        return items;
-    }
+    public List<RecommendResponse.Item> getItems() { return items; }
+    public void setItems(List<RecommendResponse.Item> v) { items = v; }
 
-    public void setItems(List<RecommendResponse.Item> items) {
-        this.items = items;
-    }
+    public Map<String, Object> getState() { return state; }
+    public void setState(Map<String, Object> v) { state = v; }
 
-    public Map<String, Object> getState() {
-        return state;
-    }
-
-    public void setState(Map<String, Object> state) {
-        this.state = state;
-    }
+    public List<Map<String, Object>> getContent_blocks() { return content_blocks; }
+    public void setContent_blocks(List<Map<String, Object>> v) { content_blocks = v; }
 }

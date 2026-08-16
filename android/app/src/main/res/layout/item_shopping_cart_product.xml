@@ -12,7 +12,7 @@
         android:layout_width="80dp"
         android:layout_height="80dp"
         android:scaleType="centerCrop"
-        android:background="#F0F0F0"
+        android:background="@color/leo_border"
         android:layout_gravity="center_horizontal"
         android:layout_marginBottom="4dp" />
 
@@ -29,10 +29,10 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textSize="13sp"
-        android:textStyle="bold"
-        android:textColor="#333333"
+        android:textColor="@color/chat_assistant_text"
         android:maxLines="2"
         android:ellipsize="end"
+        android:lineSpacingExtra="2dp"
         android:layout_marginBottom="4dp" />
 
     <TextView
@@ -40,6 +40,5 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textSize="14sp"
-        android:textStyle="bold"
-        android:textColor="#FF5722" />
+        android:textColor="@color/chat_assistant_text" />
 </LinearLayout>

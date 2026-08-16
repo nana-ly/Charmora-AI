@@ -4,8 +4,8 @@
 推荐链路通过 ReasonService 接口注入，确保没有密钥时仍能离线运行。
 """
 
-from llm.client import OpenAIChatClient, create_llm
+from llm.client import UniversalChatClient, create_llm
 from llm.reason_service import LLMReasonService
 
-__all__ = ["LLMReasonService", "OpenAIChatClient", "create_llm"]
+__all__ = ["LLMReasonService", "UniversalChatClient", "create_llm"]
 

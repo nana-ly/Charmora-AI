@@ -1,5 +1,6 @@
 package com.client.shopguide.model;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -13,6 +14,7 @@ public class ChatUiMessage {
     public static final int TYPE_LOADING = 3;
     public static final int TYPE_PRODUCT_ROW = 4;
     public static final int TYPE_COMPARE_PRODUCT = 5;
+    public static final int TYPE_THINKING = 7;
     public static final int TYPE_DIVIDER = 6;
 
     private final int type;
@@ -20,6 +22,9 @@ public class ChatUiMessage {
     private transient CharSequence styledContent;
     private Product product;
     private List<Product> productList;
+    private final List<String> thinkingSteps = new ArrayList<>(); // 思考链步骤
+    private boolean thinkingExpanded;
+    private boolean thinkingComplete;
     private boolean streaming;
 
     public ChatUiMessage(int type, String content) {
@@ -56,6 +61,17 @@ public class ChatUiMessage {
     public static ChatUiMessage loading() {
         return new ChatUiMessage(TYPE_LOADING, "正在思考...");
     }
+
+    public static ChatUiMessage thinking() {
+        return new ChatUiMessage(TYPE_THINKING, "");
+    }
+
+    public void addThinkingStep(String step) { thinkingSteps.add(step); }
+    public List<String> getThinkingSteps() { return thinkingSteps; }
+    public boolean isThinkingExpanded() { return thinkingExpanded; }
+    public void setThinkingExpanded(boolean v) { thinkingExpanded = v; }
+    public boolean isThinkingComplete() { return thinkingComplete; }
+    public void setThinkingComplete(boolean v) { thinkingComplete = v; }
 
     public static ChatUiMessage divider(String time) {
         return new ChatUiMessage(TYPE_DIVIDER, time);

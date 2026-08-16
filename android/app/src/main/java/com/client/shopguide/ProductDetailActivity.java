@@ -13,14 +13,13 @@ import coil.Coil;
 import coil.request.ImageRequest;
 import com.client.shopguide.model.FaqItem;
 import com.client.shopguide.model.ReviewItem;
+import com.client.shopguide.network.BackendApiClient;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
 import java.util.List;
 
 public class ProductDetailActivity extends AppCompatActivity {
-
-    private static final String IMAGE_BASE_URL = "http://8.137.191.215";
 
     private ImageView ivProductImage;
     private TextView tvTitle, tvBrand, tvPrice, tvReason, tvEvidence;
@@ -30,6 +29,7 @@ public class ProductDetailActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        RetrofitClient.configure(this);
         setContentView(R.layout.activity_product_detail);
 
         ivProductImage = findViewById(R.id.ivDetailImage);
@@ -60,8 +60,7 @@ public class ProductDetailActivity extends AppCompatActivity {
         String faqsJson = getIntent().getStringExtra("faqs_json");
 
         // 用 Coil 加载商品大图
-        String fullUrl = (imageUrl != null && !imageUrl.isEmpty())
-                ? IMAGE_BASE_URL + imageUrl : null;
+        String fullUrl = new BackendApiClient().absoluteUrl(imageUrl);
         ImageRequest imgReq = new ImageRequest.Builder(this)
                 .data(fullUrl)
                 .target(ivProductImage)
@@ -136,8 +135,22 @@ public class ProductDetailActivity extends AppCompatActivity {
         findViewById(R.id.btnBack).setOnClickListener(v -> finish());
 
         // 加入购物车
-        findViewById(R.id.btnAddToCart).setOnClickListener(v ->
-                Toast.makeText(this, title + " 已加入购物车", Toast.LENGTH_SHORT).show());
+        String skuId = getIntent().getStringExtra("sku_id");
+        String sessionId = getIntent().getStringExtra("session_id");
+        findViewById(R.id.btnAddToCart).setOnClickListener(v -> {
+            if (skuId == null || sessionId == null) {
+                Toast.makeText(this, "该商品暂时无法加入购物车", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            new Thread(() -> {
+                try {
+                    new BackendApiClient().addToCart(sessionId, skuId);
+                    runOnUiThread(() -> Toast.makeText(this, title + " 已加入购物车", Toast.LENGTH_SHORT).show());
+                } catch (Exception error) {
+                    runOnUiThread(() -> Toast.makeText(this, error.getMessage(), Toast.LENGTH_LONG).show());
+                }
+            }, "shopguide-detail-add-cart").start();
+        });
     }
 
     // ========== 评论：默认折叠前3条，点「查看更多」展开全部 ==========
@@ -200,9 +213,9 @@ public class ProductDetailActivity extends AppCompatActivity {
         headerRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         headerRow.setPadding(0, 6, 0, 4);
 
-        // 头像占位（彩色圆 + 首字）
+        // 头像占位（低饱和圆 + 首字）
         String firstChar = rv.getNickname().isEmpty() ? "?" : rv.getNickname().substring(0, 1);
-        int[] colors = {0xFF4CAF50, 0xFF2196F3, 0xFFFF9800, 0xFFE91E63, 0xFF9C27B0};
+        int[] colors = {0xFF8C8279, 0xFF9E9489, 0xFFA89888, 0xFFB0A090, 0xFF7A7068};
         int avatarColor = colors[Math.abs(rv.getNickname().hashCode()) % colors.length];
 
         TextView avatar = new TextView(this);
@@ -225,7 +238,7 @@ public class ProductDetailActivity extends AppCompatActivity {
         TextView nameTv = new TextView(this);
         nameTv.setText(rv.getNickname());
         nameTv.setTextSize(13);
-        nameTv.setTextColor(0xFF666666);
+        nameTv.setTextColor(0xFFa8a09a);
         headerRow.addView(nameTv);
 
         // 弹簧占满中间
@@ -237,7 +250,7 @@ public class ProductDetailActivity extends AppCompatActivity {
         TextView ratingTv = new TextView(this);
         ratingTv.setText("★ " + rv.getRating());
         ratingTv.setTextSize(12);
-        ratingTv.setTextColor(0xFFFF9800);
+        ratingTv.setTextColor(0xFFa8a09a);
         headerRow.addView(ratingTv);
 
         llReviews.addView(headerRow);
@@ -246,7 +259,7 @@ public class ProductDetailActivity extends AppCompatActivity {
         TextView contentTv = new TextView(this);
         contentTv.setText(fullContent);
         contentTv.setTextSize(13);
-        contentTv.setTextColor(0xFF333333);
+        contentTv.setTextColor(0xFF2c2c2c);
         contentTv.setMaxLines(2);
         contentTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
         contentTv.setPadding(0, 0, 0, 2);
@@ -256,7 +269,7 @@ public class ProductDetailActivity extends AppCompatActivity {
         TextView toggleTv = new TextView(this);
         toggleTv.setText("展开全文 ▼");
         toggleTv.setTextSize(11);
-        toggleTv.setTextColor(0xFF673AB7);
+        toggleTv.setTextColor(0xFFa8a09a);
         toggleTv.setPadding(0, 0, 0, 6);
         toggleTv.setOnClickListener(v -> {
             if (contentTv.getMaxLines() == 2) {
@@ -275,7 +288,7 @@ public class ProductDetailActivity extends AppCompatActivity {
         View divider = new View(this);
         divider.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 1));
-        divider.setBackgroundColor(0xFFEEEEEE);
+        divider.setBackgroundColor(0xFFe8e4df);
         llReviews.addView(divider);
     }
 
@@ -294,8 +307,7 @@ public class ProductDetailActivity extends AppCompatActivity {
             TextView qTv = new TextView(this);
             qTv.setText("▼ Q: " + fq.getQuestion());
             qTv.setTextSize(13);
-            qTv.setTextColor(0xFF333333);
-            qTv.setTypeface(null, android.graphics.Typeface.BOLD);
+            qTv.setTextColor(0xFF2c2c2c);
             qTv.setPadding(0, 8, 0, 4);
             qTv.setCompoundDrawablePadding(8);
             llFaqs.addView(qTv);
@@ -304,7 +316,7 @@ public class ProductDetailActivity extends AppCompatActivity {
             TextView aTv = new TextView(this);
             aTv.setText(fq.getAnswer());
             aTv.setTextSize(13);
-            aTv.setTextColor(0xFF666666);
+            aTv.setTextColor(0xFFa8a09a);
             aTv.setPadding(0, 0, 0, 8);
             aTv.setVisibility(View.GONE);
             llFaqs.addView(aTv);

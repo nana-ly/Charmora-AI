@@ -39,6 +39,7 @@ class ResponseStateBuilder:
         action: AgentAction,
         action_result: ActionResult,
         negative_feedback_result: NegativeFeedbackApplicationResult | None = None,
+        content_blocks: list[dict[str, Any]] | None = None,
     ) -> ChatResponse:
         response_state: dict[str, Any] = {
             "intent": understanding.intent.value,
@@ -84,6 +85,8 @@ class ResponseStateBuilder:
         )
         if negative_feedback and negative_feedback.detected:
             response_state["negative_feedback"] = negative_feedback.model_dump()
+        if action_result.commerce_state is not None:
+            response_state["commerce"] = action_result.commerce_state
 
         # 只暴露本轮推荐执行状态，避免 explain/compare 继承上一轮失败标记。
         if action_result.action == AgentAction.RECOMMEND and conversation.last_result_status:
@@ -111,4 +114,5 @@ class ResponseStateBuilder:
             ),
             items=items,
             state=response_state,
+            content_blocks=content_blocks or [],
         )

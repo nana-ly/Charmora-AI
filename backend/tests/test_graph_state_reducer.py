@@ -129,3 +129,41 @@ def test_state_reducer_filters_item_scoped_negative_updates_when_target_switches
     assert result.negative_feedback_result.detected is False
     assert conversation.excluded_product_ids == []
     assert conversation.preferences["canonical_target_key"] == "skin_care"
+
+
+def test_state_reducer_archives_phone_preferences_when_switching_to_food():
+    from agent.graph.state_reducer import ConversationStateReducer
+
+    conversation = ConversationState(session_id="phone-to-food")
+    conversation.purchase_need = "拍照和续航好的手机"
+    conversation.preferences = {
+        "target_category": "手机",
+        "category": "数码电子",
+        "canonical_target_key": "phone",
+        "focus": ["拍照", "续航"],
+        "budget": 6000,
+    }
+
+    ConversationStateReducer().reduce(
+        conversation=conversation,
+        understanding=make_understanding(
+            intent=UserIntent.RECOMMEND,
+            purchase_need="我要买吃的",
+            preference_updates={
+                "target_category": "食品",
+                "category": "食品生活",
+                "canonical_target_key": "food",
+                "is_broad_category_request": True,
+            },
+        ),
+    )
+
+    assert conversation.purchase_need == "我要买吃的"
+    assert conversation.preferences["canonical_target_key"] == "food"
+    assert "focus" not in conversation.preferences
+    assert "budget" not in conversation.preferences
+    assert len(conversation.previous_purchase_contexts) == 1
+    archived = conversation.previous_purchase_contexts[0]
+    assert archived.canonical_target_key == "phone"
+    assert archived.preferences["focus"] == ["拍照", "续航"]
+    assert archived.preferences["budget"] == 6000

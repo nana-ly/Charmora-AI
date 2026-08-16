@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.BooleanSupplier;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -43,6 +44,12 @@ public class ChatSseClient {
         void onDone();
 
         void onError(@NonNull String message);
+
+        /** 思考链事件：后端节点执行进度 */
+        void onThinking(@NonNull String event, @NonNull String node, @NonNull String detail);
+
+        /** LLM 驱动的商品卡片，嵌入在对话流中 */
+        void onCard(@NonNull JsonObject itemData);
 
         /** SSE 不可用（如 404）时回退到 REST /chat */
         void onFallbackToRest();
@@ -112,44 +119,82 @@ public class ChatSseClient {
                     return;
                 }
 
-                executor.execute(() -> parseSseStream(responseBody, listener));
+                executor.execute(() -> parseSseStream(call, responseBody, listener));
             }
         });
     }
 
-    private void parseSseStream(ResponseBody responseBody, StreamListener listener) {
-        String eventName = "message";
-        StringBuilder dataBuilder = new StringBuilder();
-
+    private void parseSseStream(Call call, ResponseBody responseBody, StreamListener listener) {
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(responseBody.byteStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.startsWith("event:")) {
-                    eventName = line.substring(6).trim();
-                } else if (line.startsWith("data:")) {
-                    if (dataBuilder.length() > 0) {
-                        dataBuilder.append('\n');
-                    }
-                    dataBuilder.append(line.substring(5).trim());
-                } else if (line.isEmpty() && dataBuilder.length() > 0) {
-                    dispatchEvent(eventName, dataBuilder.toString(), listener);
-                    eventName = "message";
-                    dataBuilder.setLength(0);
-                }
-            }
-
-            if (dataBuilder.length() > 0) {
-                dispatchEvent(eventName, dataBuilder.toString(), listener);
-            }
+            parseLines(reader, call::isCanceled, listener);
         } catch (IOException e) {
-            listener.onError("流读取失败：" + e.getMessage());
+            if (!call.isCanceled()) {
+                listener.onError("流读取失败：" + e.getMessage());
+            }
         } finally {
             responseBody.close();
         }
     }
 
-    private void dispatchEvent(String eventName, String data, StreamListener listener) {
+    static void parseLines(
+            BufferedReader reader,
+            BooleanSupplier canceled,
+            StreamListener listener
+    ) throws IOException {
+        String eventName = "message";
+        StringBuilder dataBuilder = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (canceled.getAsBoolean()) return;
+            if (line.startsWith("event:")) {
+                eventName = line.substring(6).trim();
+            } else if (line.startsWith("data:")) {
+                if (dataBuilder.length() > 0) dataBuilder.append('\n');
+                dataBuilder.append(line.substring(5).trim());
+            } else if (line.isEmpty() && dataBuilder.length() > 0) {
+                if (!canceled.getAsBoolean()) {
+                    dispatchEvent(eventName, dataBuilder.toString(), listener);
+                }
+                eventName = "message";
+                dataBuilder.setLength(0);
+            }
+        }
+        if (dataBuilder.length() > 0 && !canceled.getAsBoolean()) {
+            dispatchEvent(eventName, dataBuilder.toString(), listener);
+        }
+    }
+
+    private static void parseThinkingData(String data, StreamListener listener) {
+        try {
+            JsonObject obj = GSON.fromJson(data, JsonObject.class);
+            String event = obj.has("event") ? obj.get("event").getAsString() : "";
+            String node = obj.has("node") ? obj.get("node").getAsString() : "";
+            String detail = obj.has("detail") ? obj.get("detail").getAsString() : "";
+            listener.onThinking(event, node, detail);
+        } catch (Exception ignored) {}
+    }
+
+    private static void parseCardData(String data, StreamListener listener) {
+        try {
+            JsonObject obj = GSON.fromJson(data, JsonObject.class);
+            if (obj.has("item")) {
+                listener.onCard(obj.getAsJsonObject("item"));
+            }
+        } catch (Exception ignored) {}
+    }
+
+    static void dispatchEvent(String eventName, String data, StreamListener listener) {
+        if ("thinking".equals(eventName)) {
+            parseThinkingData(data, listener);
+            return;
+        }
+
+        if ("card".equals(eventName)) {
+            parseCardData(data, listener);
+            return;
+        }
+
         if ("done".equals(eventName)) {
             listener.onDone();
             return;
@@ -206,7 +251,7 @@ public class ChatSseClient {
         }
     }
 
-    private String parseErrorMessage(String data) {
+    private static String parseErrorMessage(String data) {
         try {
             JsonObject json = GSON.fromJson(data, JsonObject.class);
             if (json != null && json.has("message")) {

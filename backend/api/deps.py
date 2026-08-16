@@ -24,6 +24,6 @@ agent_runner = create_agent_runner(
 )
 
 
-def run_chat(session_id: str, message: str) -> ChatResponse:
-    """执行一轮 Agent 对话。"""
-    return agent_runner.run(session_id, message)
+def run_chat(session_id: str, message: str, node_callback=None) -> ChatResponse:
+    """执行一轮 Agent 对话，可选 node_callback 获取实时进度。"""
+    return agent_runner.run(session_id, message, node_callback=node_callback)

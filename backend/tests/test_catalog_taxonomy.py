@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_catalog_taxonomy_aliases_are_unique_and_have_required_fields():
     from agent.catalog_taxonomy import catalog_targets
 
@@ -55,3 +58,31 @@ def test_catalog_taxonomy_golden_queries_keep_existing_rule_outputs():
         "keywords": ["手机", "学生"],
     }
     assert extract_negative_updates("不考虑华为") == {"excluded_brands": ["华为"]}
+
+
+def test_food_dataset_terms_map_to_the_food_catalog_category():
+    from agent.category_rules import detect_target_category
+    from recommendation_core.filters import extract_filters
+
+    for query in ("我要买吃的", "推荐食品", "想看看零食", "买点方便食品"):
+        target = detect_target_category(query)
+        assert target is not None
+        assert target.canonical_target_key == "food"
+        assert target.catalog_category == "食品生活"
+        assert extract_filters(query)["category"] == "食品生活"
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("可爱的毛绒挂件", "挂件毛绒"),
+        ("通勤斜挎包", "包袋收纳"),
+        ("宿舍桌面收纳用品", "家居日用"),
+        ("开学文具", "文具"),
+        ("50元内送同学的礼物", "礼赠组合"),
+    ],
+)
+def test_lifestyle_catalog_categories_are_detectable(query, expected):
+    from agent.catalog_taxonomy import detect_catalog_category
+
+    assert detect_catalog_category(query) == expected
